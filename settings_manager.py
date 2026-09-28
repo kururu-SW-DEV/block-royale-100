@@ -45,10 +45,10 @@ BGM_STAGE_SET_LABELS = {
 BGM_STAGE_SET_DESCS = {
     "random": "경기를 시작할 때마다 5가지 세트 중 하나가 무작위로 선택됩니다.",
     "0": "오리지널 3부작: Cyber Rush -> Hyperdrive Override -> Apex Protocol",
-    "1": "Neon Circuit -> Circuit Breaker -> Overclock (Gm 계열, 질주감 있는 신스웨이브)",
-    "2": "Pulse Overdrive -> Redline -> Terminal Velocity (Cm 계열, 저돌적인 베이스라인)",
-    "3": "Chrome Requiem -> Ghost Protocol -> Blackout Surge (Bm 계열, 어둡고 웅장한 분위기)",
-    "4": "Vector Surge -> Quantum Drift -> Singularity (C#m 계열, 가장 빠르고 화려한 세트)",
+    "1": "Neon Circuit -> Circuit Breaker -> Overclock",
+    "2": "Pulse Overdrive -> Redline -> Terminal Velocity",
+    "3": "Chrome Requiem -> Ghost Protocol -> Blackout Surge",
+    "4": "Vector Surge -> Quantum Drift -> Singularity",
 }
 
 # 기본 조작키 프리셋
