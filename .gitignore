@@ -25,6 +25,3 @@ __pycache__/
 Thumbs.db
 desktop.ini
 .DS_Store
-
-# workflow 스코프 권한 확보 전까지 임시 제외 (gh 토큰에 workflow 스코프 없어서 push 거부됨)
-/.github/workflows/tests.yml
