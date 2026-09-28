@@ -71,6 +71,11 @@ class GameMixin:
                     elif event.key == pygame.K_ESCAPE:
                         if self.net_mgr.mode != "NONE" and not self.match.match_finished:
                             self._confirm_leave_network_game()
+                        elif self.net_mgr.mode == "NONE" and not self.is_paused:
+                            self.is_paused = True                 # 관전 중에도 일시정지 메뉴로 나가기/설정 선택 가능(P 키와 동일하게 동작)
+                            self.match.is_paused = True
+                            self.renderer.pause_focus = 0
+                            self.sound_mgr.pause_bgm()
                         else:
                             self.return_to_menu()
                         return
@@ -84,8 +89,20 @@ class GameMixin:
                         self.match.cycle_spectate_target(0)
                         self.sound_mgr.play('move')
                         return
-                    elif event.key in [pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE]:
+                    elif event.key in (pygame.K_LEFT, pygame.K_RIGHT):
+                        ids = self._result_button_ids()
+                        step = -1 if event.key == pygame.K_LEFT else 1
+                        i = ids.index(self.renderer.result_focus_id) if self.renderer.result_focus_id in ids else 0
+                        self.renderer.result_focus_id = ids[(i + step) % len(ids)]
+                        self.sound_mgr.play('move')
+                        return
+                    elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                         if time.time() < self.result_lock_until:      # 탈락 직후 하드드롭 연타로 결과 화면이 닫히는 것 방지
+                            return
+                        self._activate_result_focus()
+                        return
+                    elif event.key == pygame.K_ESCAPE:
+                        if time.time() < self.result_lock_until:
                             return
                         self.return_to_menu()
                         return
@@ -226,6 +243,30 @@ class GameMixin:
                     self.match.set_manual_target(pid)
                     self.sound_mgr.play('attack')
                     break
+
+    def _result_button_ids(self):
+        """결과 화면(K.O.)에 실제로 보이는 버튼 id 목록 (왼쪽부터). ui_renderer._render_result_overlay의 분기와 맞춰야 함"""
+        net_on = self.net_mgr.mode != "NONE"
+        can_spectate = self.match.alive_count > 1
+        if net_on:
+            return (["spectate"] if can_spectate else []) + ["return"]
+        elif can_spectate:
+            return ["restart", "spectate", "return"]
+        else:
+            return ["restart", "return"]
+
+    def _activate_result_focus(self, bid=None):
+        """결과 화면(K.O.) 버튼 실행 (키보드 엔터/마우스 클릭 공용)"""
+        if bid is None:
+            bid = self.renderer.result_focus_id
+        self.sound_mgr.play('move')
+        if bid == "restart":
+            self._restart_after_match()
+        elif bid == "spectate":
+            self.match.is_spectating = True
+            self.match.cycle_spectate_target(0)
+        elif bid == "return":
+            self.return_to_menu()
 
     def _activate_pause_focus(self, idx=None):
         """일시정지 메뉴 항목 실행 (0=계속하기 1=환경설정 2=나가기). 키보드 엔터/마우스 클릭 공용"""

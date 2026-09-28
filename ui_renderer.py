@@ -159,6 +159,7 @@ class UIRenderer:
         self.result_return_btn = None
         self.result_restart_btn = None
         self.result_spectate_btn = None
+        self.result_focus_id = "return"     # 결과 화면 키보드 포커스 (restart/spectate/return)
         self.pause_resume_btn = None
         self.pause_settings_btn = None
         self.pause_exit_btn = None
@@ -707,12 +708,13 @@ class UIRenderer:
         self.pause_resume_btn = pygame.Rect(px + 40, py + 88, pw - 80, 44)
         self.pause_settings_btn = pygame.Rect(px + 40, py + 142, pw - 80, 44)
         self.pause_exit_btn = pygame.Rect(px + 40, py + 196, pw - 80, 44)
-        self._button(self.pause_resume_btn, "계속하기", "blue",
-                     self.pause_resume_btn.collidepoint(mx, my) or self.pause_focus == 0, "P")
-        self._button(self.pause_settings_btn, "환경 설정", "green",
-                     self.pause_settings_btn.collidepoint(mx, my) or self.pause_focus == 1)
-        self._button(self.pause_exit_btn, "메인 메뉴로 나가기", "red",
-                     self.pause_exit_btn.collidepoint(mx, my) or self.pause_focus == 2, "ESC")
+        for i, btn in enumerate((self.pause_resume_btn, self.pause_settings_btn, self.pause_exit_btn)):
+            if btn.collidepoint(mx, my):        # 마우스가 다른 버튼 위에 있으면 키보드 포커스도 그쪽으로 옮겨서, 두 버튼이 동시에 하이라이트되지 않게 함
+                self.pause_focus = i
+                break
+        self._button(self.pause_resume_btn, "계속하기", "blue", self.pause_focus == 0, "P")
+        self._button(self.pause_settings_btn, "환경 설정", "green", self.pause_focus == 1)
+        self._button(self.pause_exit_btn, "메인 메뉴로 나가기", "red", self.pause_focus == 2, "ESC")
 
     # ---------------------------------------------------------------- 상단 HUD
     def _render_top_banner(self, match, ox=0, oy=0):
@@ -1882,29 +1884,43 @@ class UIRenderer:
             # 네트워크 경기 도중 탈락: 재도전은 없음 (경기가 끝나면 대기실로 복귀). 관전 / 메인 메뉴만.
             btn_w, g = 260, 16
             sbx = bx + (box_w - (btn_w * 2 + g)) // 2
-            self.result_spectate_btn = pygame.Rect(sbx, btn_y, btn_w, btn_h) if can_spectate else None
-            self.result_return_btn = pygame.Rect(sbx + btn_w + g, btn_y, btn_w, btn_h)
-            if self.result_spectate_btn:
-                self._button(self.result_spectate_btn, "경기 관전", "gold", self.result_spectate_btn.collidepoint(mx, my), "S")
-            self._button(self.result_return_btn, "메인 메뉴", "blue", self.result_return_btn.collidepoint(mx, my), "ESC")
+            specs = []
+            if can_spectate:
+                specs.append(("spectate", pygame.Rect(sbx, btn_y, btn_w, btn_h), "경기 관전", "gold", "S"))
+            specs.append(("return", pygame.Rect(sbx + btn_w + g, btn_y, btn_w, btn_h), "메인 메뉴", "blue", "ESC"))
         elif can_spectate:
             btn_w, g = 196, 12
             sbx = bx + (box_w - (btn_w * 3 + g * 2)) // 2
-            self.result_restart_btn = pygame.Rect(sbx, btn_y, btn_w, btn_h)
-            self.result_spectate_btn = pygame.Rect(sbx + btn_w + g, btn_y, btn_w, btn_h)
-            self.result_return_btn = pygame.Rect(sbx + (btn_w + g) * 2, btn_y, btn_w, btn_h)
-            self._button(self.result_restart_btn, "재도전", "green", self.result_restart_btn.collidepoint(mx, my), "R")
-            self._button(self.result_spectate_btn, "경기 관전", "gold", self.result_spectate_btn.collidepoint(mx, my), "S")
-            self._button(self.result_return_btn, "메인 메뉴", "blue", self.result_return_btn.collidepoint(mx, my), "ESC")
+            specs = [
+                ("restart", pygame.Rect(sbx, btn_y, btn_w, btn_h), "재도전", "green", "R"),
+                ("spectate", pygame.Rect(sbx + btn_w + g, btn_y, btn_w, btn_h), "경기 관전", "gold", "S"),
+                ("return", pygame.Rect(sbx + (btn_w + g) * 2, btn_y, btn_w, btn_h), "메인 메뉴", "blue", "ESC"),
+            ]
         else:
             btn_w, g = 260, 16
             sbx = bx + (box_w - (btn_w * 2 + g)) // 2
-            self.result_restart_btn = pygame.Rect(sbx, btn_y, btn_w, btn_h)
-            self.result_return_btn = pygame.Rect(sbx + btn_w + g, btn_y, btn_w, btn_h)
-            self._button(self.result_restart_btn, "재도전", "green", self.result_restart_btn.collidepoint(mx, my), "R")
-            self._button(self.result_return_btn, "메인 메뉴", "blue", self.result_return_btn.collidepoint(mx, my), "ESC")
+            specs = [
+                ("restart", pygame.Rect(sbx, btn_y, btn_w, btn_h), "재도전", "green", "R"),
+                ("return", pygame.Rect(sbx + btn_w + g, btn_y, btn_w, btn_h), "메인 메뉴", "blue", "ESC"),
+            ]
 
-        self._draw_text("버튼을 클릭하거나 단축키로 바로 실행할 수 있습니다", self.font_tiny, C_DIM,
+        ids = [s[0] for s in specs]
+        if self.result_focus_id not in ids:
+            self.result_focus_id = ids[0]
+        for bid, rect, _label, _style, _hint in specs:
+            if rect.collidepoint(mx, my):       # 마우스가 다른 버튼 위에 있으면 키보드 포커스도 그쪽으로 옮김 (이중 하이라이트 방지)
+                self.result_focus_id = bid
+                break
+        for bid, rect, label, style, hint in specs:
+            if bid == "restart":
+                self.result_restart_btn = rect
+            elif bid == "spectate":
+                self.result_spectate_btn = rect
+            elif bid == "return":
+                self.result_return_btn = rect
+            self._button(rect, label, style, self.result_focus_id == bid, hint)
+
+        self._draw_text("버튼을 클릭하거나 단축키로, ← → 와 Enter 로도 실행할 수 있습니다", self.font_tiny, C_DIM,
                         bx + box_w // 2, by + box_h - 36, "midtop")
 
     # ---------------------------------------------------------------- 관전 HUD
@@ -1931,7 +1947,7 @@ class UIRenderer:
         hints = [("← →", "대상 변경"), ("클릭", "미니 보드 선택")]
         if not net_on:
             hints.append(("R", "재도전"))
-        hints.append(("ESC", "메뉴"))
+        hints.append(("ESC", "일시정지" if not net_on else "메뉴"))
         self._keycap_hints(hints, rect.centerx, rect.y + 36)
 
     def _keycap_hints(self, items, cx, y, gap=14):

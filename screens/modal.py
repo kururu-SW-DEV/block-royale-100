@@ -34,7 +34,9 @@ class ModalMixin:
                          [("stay", "취소", "blue", "ESC"), ("quit_app", "종료", "red", "Y")])
 
     def _open_modal(self, title, lines, buttons):
-        self.modal = {"title": title, "lines": lines, "buttons": buttons, "rects": {}}
+        ids = [b[0] for b in buttons]
+        focus = ids.index("stay") if "stay" in ids else 0        # 기본 포커스는 항상 안전한 쪽
+        self.modal = {"title": title, "lines": lines, "buttons": buttons, "rects": {}, "focus": focus}
         self.sound_mgr.play('warning')
 
     def _modal_choose(self, bid):
@@ -58,8 +60,14 @@ class ModalMixin:
         buttons = self.modal["buttons"]
         if event.type == pygame.KEYDOWN:
             ids = [b[0] for b in buttons]
-            if event.key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                self._modal_choose("stay" if "stay" in ids else ids[0])      # 기본 동작은 항상 안전한 쪽 (계속 플레이 / 확인)
+            if event.key == pygame.K_ESCAPE:
+                self._modal_choose("stay" if "stay" in ids else ids[0])      # ESC는 항상 안전한 쪽 (포커스 위치와 무관)
+            elif event.key in (pygame.K_LEFT, pygame.K_RIGHT):
+                step = -1 if event.key == pygame.K_LEFT else 1
+                self.modal["focus"] = (self.modal["focus"] + step) % len(buttons)
+                self.sound_mgr.play('move')
+            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                self._modal_choose(ids[self.modal["focus"]])
             elif event.key == pygame.K_y and "leave" in ids:
                 self._modal_choose("leave")
             elif event.key == pygame.K_y:
@@ -90,7 +98,12 @@ class ModalMixin:
         bw, gap = 230, 20
         sx = x + (w - (bw * n + gap * (n - 1))) // 2
         m["rects"] = {}
+        rects = [pygame.Rect(sx + i * (bw + gap), y + h - 84, bw, 52) for i in range(n)]
+        for i, rect in enumerate(rects):
+            if rect.collidepoint(mx, my):       # 마우스가 다른 버튼 위에 있으면 키보드 포커스도 그쪽으로 옮김 (이중 하이라이트 방지)
+                m["focus"] = i
+                break
         for i, (bid, label, style, hint) in enumerate(m["buttons"]):
-            rect = pygame.Rect(sx + i * (bw + gap), y + h - 84, bw, 52)
+            rect = rects[i]
             m["rects"][bid] = rect
-            r._button(rect, label, style, rect.collidepoint(mx, my), hint)
+            r._button(rect, label, style, m["focus"] == i, hint)
