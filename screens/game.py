@@ -26,6 +26,7 @@ class GameMixin:
                     and self.match.local_is_alive and not self.match.match_finished):
                 self.is_paused = True
                 self.match.is_paused = True
+                self.renderer.pause_focus = 0
                 self.sound_mgr.pause_bgm()
             return
         # 인게임 조작
@@ -89,8 +90,17 @@ class GameMixin:
                         self.return_to_menu()
                         return
 
-            if self.is_paused and not self.settings.is_action_key(event.key, "pause") and event.key != pygame.K_ESCAPE:
-                return
+            if self.is_paused:
+                if event.key in (pygame.K_UP, pygame.K_DOWN):
+                    step = -1 if event.key == pygame.K_UP else 1
+                    self.renderer.pause_focus = (self.renderer.pause_focus + step) % 3
+                    self.sound_mgr.play('move')
+                    return
+                if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                    self._activate_pause_focus()
+                    return
+                if not self.settings.is_action_key(event.key, "pause") and event.key != pygame.K_ESCAPE:
+                    return
             if self.settings.is_action_key(event.key, "move_left"):
                 self.key_left_down = True
                 self.h_dir = -1
@@ -130,6 +140,7 @@ class GameMixin:
                 if self.match:
                     self.match.is_paused = self.is_paused
                 if self.is_paused:
+                    self.renderer.pause_focus = 0
                     self.sound_mgr.pause_bgm()
                 else:
                     self.sound_mgr.unpause_bgm()
@@ -145,6 +156,7 @@ class GameMixin:
                     self.is_paused = True
                     if self.match:
                         self.match.is_paused = True
+                    self.renderer.pause_focus = 0
                     self.sound_mgr.pause_bgm()
                     return
                 if not self.match.match_finished and self.match.local_is_alive:
@@ -175,23 +187,13 @@ class GameMixin:
             # 1. 일시정지 중 팝업 버튼 인터랙션
             if self.is_paused:
                 if getattr(self.renderer, 'pause_resume_btn', None) and self.renderer.pause_resume_btn.collidepoint(mx, my):
-                    self.sound_mgr.play('move')
-                    self.is_paused = False
-                    if self.match:
-                        self.match.is_paused = False
-                    self.sound_mgr.unpause_bgm()
+                    self._activate_pause_focus(0)
                     return
                 if getattr(self.renderer, 'pause_settings_btn', None) and self.renderer.pause_settings_btn.collidepoint(mx, my):
-                    self.sound_mgr.play('move')
-                    self.previous_state = "GAME"
-                    self.state = "SETTINGS"
+                    self._activate_pause_focus(1)
                     return
                 if getattr(self.renderer, 'pause_exit_btn', None) and self.renderer.pause_exit_btn.collidepoint(mx, my):
-                    self.sound_mgr.play('move')
-                    if not self.match.match_finished and self.match.local_is_alive:
-                        self._confirm_leave_network_game()
-                    else:
-                        self.return_to_menu()
+                    self._activate_pause_focus(2)
                     return
             
             # 게임 종료/탈락 시 결과 오버레이 버튼 클릭
@@ -224,6 +226,25 @@ class GameMixin:
                     self.match.set_manual_target(pid)
                     self.sound_mgr.play('attack')
                     break
+
+    def _activate_pause_focus(self, idx=None):
+        """일시정지 메뉴 항목 실행 (0=계속하기 1=환경설정 2=나가기). 키보드 엔터/마우스 클릭 공용"""
+        if idx is None:
+            idx = self.renderer.pause_focus
+        self.sound_mgr.play('move')
+        if idx == 0:
+            self.is_paused = False
+            if self.match:
+                self.match.is_paused = False
+            self.sound_mgr.unpause_bgm()
+        elif idx == 1:
+            self.previous_state = "GAME"
+            self.state = "SETTINGS"
+        elif idx == 2:
+            if not self.match.match_finished and self.match.local_is_alive:
+                self._confirm_leave_network_game()
+            else:
+                self.return_to_menu()
 
     def _open_settings_from_game(self):
         self.sound_mgr.play('move')
@@ -356,7 +377,8 @@ class GameMixin:
                 lines=self.match.local_engine.lines_cleared_total,
                 max_combo=getattr(self.match.local_engine, 'max_combo', 0),
                 survival_sec=survival_sec,
-                mode="battle" if self.match.attacks_enabled else "survival"
+                mode="battle" if self.match.attacks_enabled else "survival",
+                difficulty=self.match.bot_difficulty
             )
             
         # 주기적 네트워크 패킷 동기화 (15Hz)

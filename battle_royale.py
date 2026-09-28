@@ -326,7 +326,10 @@ class BattleRoyaleMatch:
             ko = self.local_ko_count
         else:
             t = p["survival"] if p.get("survival") is not None else self.elapsed
-            lines, score, attacks, ko = p.get("lines", 0), p.get("score", 0), p.get("attacks", 0), p.get("ko_count", 0)
+            lines, score, ko = p.get("lines", 0), p.get("score", 0), p.get("ko_count", 0)
+            bot = p.get("bot")
+            # 봇은 상쇄로 소모된 공격력도 생성치로 집계 (들어오는 쓰레기를 막아내느라 APM이 0에 묶이는 것 방지)
+            attacks = bot.engine.attack_generated_total if bot else p.get("attacks", 0)
         t = float(t)
         te = max(1.0, t)
         return {"time": t, "apm": attacks / te * 60.0, "lpm": lines / te * 60.0,

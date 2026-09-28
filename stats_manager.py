@@ -85,7 +85,7 @@ class StatsManager:
         except Exception as e:
             print(f"[StatsManager] Failed to save stats: {e}")
 
-    def record_match(self, rank, total_players, kos, lines, max_combo, survival_sec, mode="battle"):
+    def record_match(self, rank, total_players, kos, lines, max_combo, survival_sec, mode="battle", difficulty="mixed"):
         """경기 완료 시 전적 기록 및 통계 갱신 (mode: "battle" 배틀로얄 / "survival" 서바이벌)"""
         d = self._bucket(mode)
         d["total_games"] = d.get("total_games", 0) + 1
@@ -118,7 +118,8 @@ class StatsManager:
             "lines": lines,
             "max_combo": max_combo,
             "survival_sec": int(survival_sec),
-            "won": is_victory
+            "won": is_victory,
+            "difficulty": difficulty
         }
         
         rec = d.get("recent_matches", [])

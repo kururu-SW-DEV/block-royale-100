@@ -3,7 +3,7 @@ Block Royale 100 - 전적 기록실 화면
 BlockRoyaleApp(main.py)이 상속하는 믹스인: 메서드 본문은 원래 main.py에 있던 그대로이며 self로 앱 상태를 공유함
 """
 
-from app_common import C_ACCENT, C_DIM, C_GOLD, C_GREEN, C_ORANGE, C_TEXT, SCREEN_WIDTH, _mix, pygame
+from app_common import BOT_DIFFICULTY_LABELS, C_ACCENT, C_DIM, C_GOLD, C_GREEN, C_ORANGE, C_TEXT, SCREEN_WIDTH, _mix, pygame
 
 
 class RecordsMixin:
@@ -106,8 +106,8 @@ class RecordsMixin:
         tbl_y = box_y + 130
         tbl_w = box_w - 50
         ix = box_x + 25
-        columns = [("#", 60), ("일시", 170), ("최종 순위", 170), ("K.O.", 100),
-                   ("제거 줄", 100), ("최대 콤보", 110), ("생존 시간", 110), ("결과", 170)]
+        columns = [("#", 50), ("난이도", 90), ("일시", 150), ("최종 순위", 150), ("K.O.", 90),
+                   ("제거 줄", 90), ("최대 콤보", 100), ("생존 시간", 100), ("결과", 170)]
 
         self._t("최근 경기", self.font_mid, C_TEXT, ix, tbl_y)
         self._t("최근 100경기 · 휠 / ↑↓ 로 스크롤", self.font_tiny, C_DIM, ix + tbl_w, tbl_y + 4, "topright")
@@ -164,14 +164,16 @@ class RecordsMixin:
                     rank_str, rank_col = f"{rank}위 / {m.get('total_players', 100)}", C_TEXT
                     result_str, result_col = "탈락", (200, 110, 120)
 
+                diff_str = BOT_DIFFICULTY_LABELS.get(m.get("difficulty"), "-").split(" (")[0]
                 cells = [
-                    (f"{len(recent) - idx}", 60, C_DIM),
-                    (str(m.get("date", "-")), 170, (185, 200, 228)),
-                    (rank_str, 170, rank_col),
-                    (str(m.get("kos", 0)), 100, C_TEXT),
-                    (str(m.get("lines", 0)), 100, C_TEXT),
-                    (str(m.get("max_combo", 0)), 110, C_ORANGE),
-                    (f"{sec // 60}:{sec % 60:02d}", 110, (185, 200, 228)),
+                    (f"{len(recent) - idx}", 50, C_DIM),
+                    (diff_str, 90, C_ACCENT),
+                    (str(m.get("date", "-")), 150, (185, 200, 228)),
+                    (rank_str, 150, rank_col),
+                    (str(m.get("kos", 0)), 90, C_TEXT),
+                    (str(m.get("lines", 0)), 90, C_TEXT),
+                    (str(m.get("max_combo", 0)), 100, C_ORANGE),
+                    (f"{sec // 60}:{sec % 60:02d}", 100, (185, 200, 228)),
                 ]
                 cx = ix
                 for c_txt, c_w, c_col in cells:

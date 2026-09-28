@@ -82,6 +82,7 @@ class BlockEngine:
         # 쓰레기 라인(Garbage) 시스템
         self.incoming_garbage = 0       # 공격 대기 중인 줄 수
         self.garbage_to_send = 0        # 방금 라인 클리어로 발생한 공격력
+        self.attack_generated_total = 0  # 들어오는 쓰레기 상쇄 여부와 무관하게 누적된 총 생성 공격력 (APM 집계용)
 
         # 낙하 타이머 및 락 딜레이 (표준 낙하/락 딜레이)
         self.fall_speed = 0.8  # 초 단위 (생존자 수에 따라 배틀로얄에서 가속됨)
@@ -333,6 +334,8 @@ class BlockEngine:
             # 배지 증폭은 상쇄 이전에 적용 (증폭된 공격력으로 들어오는 쓰레기를 상쇄)
             if self.badge_rate > 0:
                 attack_lines += int(math.ceil(attack_lines * self.badge_rate))
+
+            self.attack_generated_total += attack_lines    # 상쇄로 사라지는 몫도 APM에는 그대로 반영 (수비만 하느라 APM이 0에 묶이지 않게)
 
             # 들어오는 쓰레기 줄 상쇄
             if self.incoming_garbage > 0:

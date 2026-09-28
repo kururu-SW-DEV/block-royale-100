@@ -162,6 +162,7 @@ class UIRenderer:
         self.pause_resume_btn = None
         self.pause_settings_btn = None
         self.pause_exit_btn = None
+        self.pause_focus = 0            # 일시정지 메뉴 키보드 포커스 (0=계속하기 1=환경설정 2=나가기)
 
     # ---------------------------------------------------------------- 공용 헬퍼
     def _check_ver(self):
@@ -706,9 +707,12 @@ class UIRenderer:
         self.pause_resume_btn = pygame.Rect(px + 40, py + 88, pw - 80, 44)
         self.pause_settings_btn = pygame.Rect(px + 40, py + 142, pw - 80, 44)
         self.pause_exit_btn = pygame.Rect(px + 40, py + 196, pw - 80, 44)
-        self._button(self.pause_resume_btn, "계속하기", "blue", self.pause_resume_btn.collidepoint(mx, my), "P")
-        self._button(self.pause_settings_btn, "환경 설정", "green", self.pause_settings_btn.collidepoint(mx, my))
-        self._button(self.pause_exit_btn, "메인 메뉴로 나가기", "red", self.pause_exit_btn.collidepoint(mx, my), "ESC")
+        self._button(self.pause_resume_btn, "계속하기", "blue",
+                     self.pause_resume_btn.collidepoint(mx, my) or self.pause_focus == 0, "P")
+        self._button(self.pause_settings_btn, "환경 설정", "green",
+                     self.pause_settings_btn.collidepoint(mx, my) or self.pause_focus == 1)
+        self._button(self.pause_exit_btn, "메인 메뉴로 나가기", "red",
+                     self.pause_exit_btn.collidepoint(mx, my) or self.pause_focus == 2, "ESC")
 
     # ---------------------------------------------------------------- 상단 HUD
     def _render_top_banner(self, match, ox=0, oy=0):
