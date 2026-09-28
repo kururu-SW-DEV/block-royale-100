@@ -4,8 +4,6 @@
 
 ![메인 메뉴 스크린샷](assets/screenshot_menu.png)
 
-![100인 배틀로얄 플레이 장면](assets/gameplay.gif)
-
 ---
 
 ## 🎮 게임 특징 및 화면 구성
