@@ -1,0 +1,27 @@
+# 파이썬 캐시/바이트코드
+__pycache__/
+*.pyc
+*.pyo
+
+# 빌드 산출물 (build_exe.bat 결과물, PyInstaller 임시 파일)
+/build_tmp/
+/release/
+
+# 개발 중 과거 소스 스냅샷 (devlog 롤백 지점 참고용, 리포에는 불필요)
+/backups/
+
+# 실행 중 생성되는 로컬 상태 (플레이어별 설정·전적, 사람마다 다름)
+/settings.json
+/stats.json
+/selftest.log
+
+# 개발 문서 (devlog·매뉴얼 등, 공개 리포에는 비공개)
+/docs/
+
+# 개발용 도구/튜닝 스크립트
+/tools/
+
+# OS 잡파일
+Thumbs.db
+desktop.ini
+.DS_Store

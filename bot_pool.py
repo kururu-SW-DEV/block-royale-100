@@ -1,0 +1,164 @@
+"""
+Block Royale 100 - 봇 계산 작업 프로세스 풀
+봇의 배치 탐색(bot_brain.plan_rows)을 별도 프로세스 여러 개에 나눠 맡겨 CPU 코어를 함께 씀.
+ - 요청/응답은 아주 작음(보드 20줄 + 블록 정보). 결과가 한두 프레임 늦어도 봇은 '생각 중' 상태로 기다림.
+ - 코어가 적거나 작업 프로세스가 죽으면 자동으로 꺼지고, 봇은 메인 프로세스에서 직접 계산(예전 방식)함.
+ - 시작은 비동기: 작업 프로세스가 준비되기 전까지는 직접 계산으로 진행.
+"""
+
+import multiprocessing
+import os
+import queue
+import time
+
+MAX_WORKERS = 6
+MAX_INFLIGHT_PER_WORKER = 3            # 작업자 한 명당 동시에 맡길 수 있는 요청 수
+
+_state = {"procs": [], "req": None, "res": None, "next": 1, "ready": {}, "pending": set(), "hello": 0,
+          "broken": False, "started": False, "workers": 0}
+
+
+def default_workers():
+    """코어 수에 맞춘 작업 프로세스 수 (BR_BOT_WORKERS 환경 변수로 지정 가능, 0이면 끔)"""
+    env = os.environ.get("BR_BOT_WORKERS")
+    if env is not None:
+        try:
+            return max(0, min(MAX_WORKERS, int(env)))
+        except ValueError:
+            return 0
+    cpus = os.cpu_count() or 1
+    return max(0, min(MAX_WORKERS, cpus // 2 - 1))
+
+
+def _worker_main(req_q, res_q):
+    import bot_brain
+    res_q.put((0, "hello"))
+    last_params = None
+    while True:
+        item = req_q.get()
+        if item is None:
+            break
+        rid, rows, cur, hold, qu, can_hold, combo, b2b, inc, depth, beam, atk, ts, params = item
+        if params != last_params:
+            bot_brain.PARAMS.update(params)
+            last_params = params
+        try:
+            res = bot_brain.plan_rows(rows, cur, hold, qu, can_hold, combo, b2b, inc, depth, beam, atk, ts)[:6]
+        except Exception:
+            res = []
+        res_q.put((rid, res))
+
+
+def start(workers=None):
+    """작업 프로세스를 띄움(이미 떠 있으면 무시). 준비는 비동기로 진행됨"""
+    st = _state
+    if st["started"] or st["broken"]:
+        return
+    n = default_workers() if workers is None else max(0, min(MAX_WORKERS, workers))
+    st["started"] = True
+    st["workers"] = n
+    if n <= 0:
+        return
+    try:
+        ctx = multiprocessing.get_context("spawn")
+        st["req"], st["res"] = ctx.Queue(), ctx.Queue()
+        for _ in range(n):
+            p = ctx.Process(target=_worker_main, args=(st["req"], st["res"]), daemon=True)
+            p.start()
+            st["procs"].append(p)
+    except Exception:
+        _mark_broken()
+
+
+def _mark_broken():
+    _state["broken"] = True
+    stop()
+
+
+def stop():
+    st = _state
+    for _ in st["procs"]:
+        try:
+            st["req"].put_nowait(None)
+        except Exception:
+            pass
+    for p in st["procs"]:
+        try:
+            p.join(timeout=0.3)
+            if p.is_alive():
+                p.terminate()
+        except Exception:
+            pass
+    st["procs"] = []
+    st["ready"].clear()
+    st["pending"].clear()
+    st["hello"] = 0
+    st["req"] = st["res"] = None
+
+
+def pump():
+    """도착한 결과를 모으고 작업 프로세스가 죽었는지 확인 (프레임마다 한 번 호출)"""
+    st = _state
+    if not st["procs"]:
+        return
+    try:
+        while True:
+            rid, res = st["res"].get_nowait()
+            if rid == 0:
+                st["hello"] += 1
+            elif rid in st["pending"]:
+                st["pending"].discard(rid)
+                st["ready"][rid] = res
+    except queue.Empty:
+        pass
+    except Exception:
+        _mark_broken()
+        return
+    if any(not p.is_alive() for p in st["procs"]):
+        _mark_broken()
+
+
+def enabled():
+    """준비를 마친 작업 프로세스가 있고 여유가 있는가"""
+    st = _state
+    return st["hello"] > 0 and not st["broken"] and len(st["pending"]) < st["hello"] * MAX_INFLIGHT_PER_WORKER
+
+
+def ready_workers():
+    return _state["hello"]
+
+
+def submit(rows, cur, hold, qu, can_hold, combo, b2b, inc, depth, beam, atk, ts, params):
+    """탐색 요청을 맡김. 요청 번호를 돌려줌(맡길 수 없으면 None)"""
+    st = _state
+    if not enabled():
+        return None
+    rid = st["next"]
+    st["next"] += 1
+    try:
+        st["req"].put((rid, rows, cur, hold, qu, can_hold, combo, b2b, inc, depth, beam, atk, ts, params))
+    except Exception:
+        _mark_broken()
+        return None
+    st["pending"].add(rid)
+    return rid
+
+
+def take(rid):
+    """결과가 왔으면 꺼내서 돌려주고(없으면 None), 요청을 정리함"""
+    return _state["ready"].pop(rid, None)
+
+
+def cancel(rid):
+    _state["pending"].discard(rid)
+    _state["ready"].pop(rid, None)
+
+
+def wait_ready(timeout=10.0):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        pump()
+        if _state["hello"] >= max(1, _state["workers"]):
+            return True
+        time.sleep(0.02)
+    return _state["hello"] > 0
