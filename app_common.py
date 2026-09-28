@@ -27,6 +27,7 @@ from ui_renderer import UIRenderer, _mix, C_PANEL_BORDER, C_TEXT, C_DIM, C_ACCEN
 from settings_manager import (
     SettingsManager,
     BOT_DIFFICULTY_LABELS, BOT_DIFFICULTY_DESCS,
+    BGM_STAGE_SET_LABELS, BGM_STAGE_SET_DESCS,
     ACTION_NAMES, RESOLUTION_OPTIONS
 )
 from stats_manager import StatsManager

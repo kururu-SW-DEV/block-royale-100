@@ -201,6 +201,7 @@ class CoreMixin:
         self.renderer.particles.particles.clear()
         self.renderer.particles.rings.clear()
         self.state = "GAME"
+        self.sound_mgr.roll_stage_set(self.settings.get("bgm_stage_set", "random"))
         self.sound_mgr.play_bgm(stage=1)
         print(f"[Game] Started match with {total_players} players! (Mode: {mode})")
 

@@ -6,6 +6,8 @@ BlockRoyaleApp(main.py)이 상속하는 믹스인. 모든 탭이 같은 '행' �
 
 from app_common import (
     ACTION_NAMES,
+    BGM_STAGE_SET_DESCS,
+    BGM_STAGE_SET_LABELS,
     BOT_DIFFICULTY_DESCS,
     BOT_DIFFICULTY_LABELS,
     CANVAS,
@@ -51,8 +53,8 @@ TAB_NAV = {
                 ("mini", "mini_detail", "mini_detail=detailed", "mini_detail=simple"),
                 ("color_mode", "color_mode", "color_mode=normal", "color_mode=colorblind"),
                 ("text_size", "text_size", "text_size=normal", "text_size=large")],
-    "audio": [("bgm", "bgm_toggle", "bgm_dec", "bgm_inc"), ("sfx", "sfx_toggle", "sfx_dec", "sfx_inc"),
-              ("sfx_test", "sfx_test", None, None)],
+    "audio": [("bgm", "bgm_toggle", "bgm_dec", "bgm_inc"), ("stage_bgm", None, "stage_bgm_prev", "stage_bgm_next"),
+              ("sfx", "sfx_toggle", "sfx_dec", "sfx_inc"), ("sfx_test", "sfx_test", None, None)],
 }
 KEY_CARDS = len(ACTION_NAMES)                 # 조작 탭: 0~8 = 키 카드, 9~11 = DAS/ARR/SDF, 12 = 프리셋
 HANDLING_ROWS = ("das", "arr", "sdf")
@@ -70,6 +72,7 @@ HELP = {
     "color_mode": "색약 보정은 블록 색을 밝기 차이가 큰 팔레트로 바꿉니다.",
     "text_size": "게임 화면의 작은 글씨를 키웁니다. (메뉴 글자는 그대로입니다)",
     "bgm": "배경음악 켜기/끄기와 음량. 생존자가 줄수록(100인 → 50인 → 20인) 곡이 더 긴박해집니다.",
+    "stage_bgm": "경기 중(1/2/3단계) 배경음 세트를 고릅니다. '랜덤'이면 경기를 시작할 때마다 5가지 중 하나가 무작위로 재생됩니다.",
     "sfx": "효과음 켜기/끄기와 음량. 음량을 바꾸면 바로 들어볼 수 있습니다.",
     "sfx_test": "현재 효과음 음량으로 대표 소리를 들어봅니다.",
     "preset": "조작키 묶음을 한 번에 바꿉니다. 아래 카드를 하나라도 바꾸면 '사용자 지정'이 됩니다.",
@@ -82,7 +85,7 @@ HELP = {
 TAB_DEFAULT_KEYS = {
     "match": ["target_player_count", "bot_difficulty", "game_mode"],
     "general": ["resolution", "mini_detail", "color_mode", "text_size"],
-    "audio": ["bgm_enabled", "bgm_volume", "sfx_enabled", "sfx_volume"],
+    "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume"],
     "keys": ["das_ms", "arr_ms", "sdf_ms"],
 }
 
@@ -293,6 +296,9 @@ class SettingsMixin:
         elif btn_id in ("bgm_dec", "bgm_inc"):
             self.sound_mgr.play('move')
             self.sound_mgr.set_bgm_volume(self.settings.adjust_bgm_volume(-10 if btn_id == "bgm_dec" else 10) / 100.0)
+        elif btn_id in ("stage_bgm_prev", "stage_bgm_next"):
+            self.sound_mgr.play('rotate')
+            self.settings.cycle_bgm_stage_set(-1 if btn_id == "stage_bgm_prev" else 1)
         elif btn_id == "sfx_toggle":
             self.sound_mgr.set_sfx_enabled(self.settings.toggle_sfx())
             self.sound_mgr.play('move')
@@ -534,6 +540,10 @@ class SettingsMixin:
         self._s_row("bgm", y, 64, "배경음악", "생존자가 줄수록 더 긴박해집니다")
         self._s_switch("bgm_toggle", bgm_on, RIGHT - 396, y + 32)
         self._s_slider("bgm", self.settings.get("bgm_volume", 60), C_ACCENT, RIGHT, y + 32, enabled=bgm_on)
+        y += 64
+        cur_set = self.settings.get("bgm_stage_set", "random")
+        self._s_row("stage_bgm", y, 64, "스테이지 배경음", BGM_STAGE_SET_DESCS.get(cur_set, ""))
+        self._s_cycler("stage_bgm_prev", "stage_bgm_next", BGM_STAGE_SET_LABELS.get(cur_set, "랜덤"), RIGHT, y + 32, color=C_GOLD)
         y += 64
         sfx_on = bool(self.settings.get("sfx_enabled", True))
         self._s_row("sfx", y, 64, "효과음", "블록 착지, 줄 삭제, 공격 소리")

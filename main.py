@@ -223,6 +223,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
 
             # 상태별 업데이트 및 렌더링
             if self.state == "MENU":
+                self.sound_mgr.play_bgm('menu')
                 self._update_menu(dt)
                 self._render_menu()
             elif self.state == "SETTINGS":
@@ -235,12 +236,15 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                 self._update_records(dt)
                 self._render_records()
             elif self.state == "HOST_LOBBY":
+                self.sound_mgr.play_bgm('lobby')
                 self._update_host_lobby(dt)
                 self._render_host_lobby()
             elif self.state == "JOIN_MENU":
+                self.sound_mgr.play_bgm('lobby')
                 self._update_join_menu(dt)
                 self._render_join_menu()
             elif self.state == "CLIENT_LOBBY":
+                self.sound_mgr.play_bgm('lobby')
                 self._update_client_lobby(dt)
                 self._render_client_lobby()
             elif self.state == "GAME":
@@ -392,6 +396,8 @@ def _selftest():
         app.renderer.key_hints = app._build_key_hints()
         app.renderer.render(app.match, app.sound_mgr)
     pool_note = _selftest_pool()
+    if app.sound_mgr._bgm_thread is not None:
+        app.sound_mgr._bgm_thread.join(timeout=15.0)     # BGM 합성이 끝난 뒤의 정확한 수를 남김 (빌드 검증용)
     from settings_manager import SETTINGS_FILE
     from stats_manager import STATS_FILE
     msg = ("SELFTEST OK | settings: %s | stats: %s | sounds: %d | bgm: %d | frozen: %s | botpool: %s"

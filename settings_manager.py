@@ -32,6 +32,25 @@ BOT_DIFFICULTY_DESCS = {
     "master": "인간의 한계를 넘나드는 초고속 연타와 2% 미만 오차율의 극강 AI입니다."
 }
 
+# 스테이지(인게임 전투) 배경음 세트: "random"이면 매 판 시작할 때마다 5세트 중 하나를 무작위로 고름
+BGM_STAGE_SET_OPTIONS = ["random", "0", "1", "2", "3", "4"]
+BGM_STAGE_SET_LABELS = {
+    "random": "랜덤 (매판 다른 곡)",
+    "0": "Cyber Rush (오리지널)",
+    "1": "Neon Circuit",
+    "2": "Pulse Overdrive",
+    "3": "Chrome Requiem",
+    "4": "Vector Surge",
+}
+BGM_STAGE_SET_DESCS = {
+    "random": "경기를 시작할 때마다 5가지 세트 중 하나가 무작위로 선택됩니다.",
+    "0": "오리지널 3부작: Cyber Rush -> Hyperdrive Override -> Apex Protocol",
+    "1": "Neon Circuit -> Circuit Breaker -> Overclock (Gm 계열, 질주감 있는 신스웨이브)",
+    "2": "Pulse Overdrive -> Redline -> Terminal Velocity (Cm 계열, 저돌적인 베이스라인)",
+    "3": "Chrome Requiem -> Ghost Protocol -> Blackout Surge (Bm 계열, 어둡고 웅장한 분위기)",
+    "4": "Vector Surge -> Quantum Drift -> Singularity (C#m 계열, 가장 빠르고 화려한 세트)",
+}
+
 # 기본 조작키 프리셋
 KEY_PRESETS = {
     "arcade": {
@@ -76,6 +95,7 @@ DEFAULT_SETTINGS = {
     "bot_difficulty": "mixed",
     "bgm_enabled": True,
     "bgm_volume": 60,      # 0 ~ 100
+    "bgm_stage_set": "random",   # 스테이지 배경음 세트: "random" 또는 "0"~"4"
     "sfx_enabled": True,
     "sfx_volume": 70,      # 0 ~ 100
     "target_player_count": 100,
@@ -146,6 +166,8 @@ def _valid_setting(key, value):
             return False, None
         if key == "bot_difficulty" and value not in BOT_DIFFICULTY_OPTIONS:
             return False, None
+        if key == "bgm_stage_set" and value not in BGM_STAGE_SET_OPTIONS:
+            return False, None
         if key == "game_mode" and value not in ("battle", "survival"):
             return False, None
         if key == "color_mode" and value not in ("normal", "colorblind"):
@@ -215,6 +237,16 @@ class SettingsManager:
         new_diff = BOT_DIFFICULTY_OPTIONS[new_idx]
         self.set("bot_difficulty", new_diff)
         return new_diff
+
+    def cycle_bgm_stage_set(self, step=1):
+        cur = self.get("bgm_stage_set", "random")
+        if cur not in BGM_STAGE_SET_OPTIONS:
+            cur = "random"
+        idx = BGM_STAGE_SET_OPTIONS.index(cur)
+        new_idx = (idx + step) % len(BGM_STAGE_SET_OPTIONS)
+        new_val = BGM_STAGE_SET_OPTIONS[new_idx]
+        self.set("bgm_stage_set", new_val)
+        return new_val
 
     def cycle_resolution(self, step=1, available=None):
         options = available or RESOLUTION_OPTIONS

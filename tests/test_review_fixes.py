@@ -237,6 +237,8 @@ def test_settings_keyboard_navigation():
     key(pygame.K_LEFT); key(pygame.K_LEFT)
     assert app.settings.get("bgm_volume") == 40
     key(pygame.K_DOWN)
+    assert app._settings_focus_id() == "stage_bgm", "볼륨 다음 행은 스테이지 배경음 세트 선택"
+    key(pygame.K_DOWN)
     assert app._settings_focus_id() == "sfx"
     app.settings.set("bgm_volume", 60); app.sound_mgr.set_bgm_volume(0.6)
     # 화면 탭: Enter는 항목을 실행할 뿐 설정을 닫지 않음
