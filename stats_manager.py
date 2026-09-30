@@ -88,7 +88,17 @@ class StatsManager:
     def record_match(self, rank, total_players, kos, lines, max_combo, survival_sec, mode="battle", difficulty="mixed"):
         """경기 완료 시 전적 기록 및 통계 갱신 (mode: "battle" 배틀로얄 / "survival" 서바이벌)"""
         d = self._bucket(mode)
-        d["total_games"] = d.get("total_games", 0) + 1
+        prev_games = d.get("total_games", 0)
+        prev_best, prev_ko, prev_combo = d.get("best_rank", 0), d.get("max_ko", 0), d.get("max_combo", 0)
+        records = []                                       # 이번 경기가 이전 최고 기록을 넘은 항목 (첫 경기는 비교할 기록이 없어 제외)
+        if prev_games > 0:
+            if prev_best > 0 and rank < prev_best:
+                records.append("rank")
+            if kos > prev_ko and kos > 0:
+                records.append("ko")
+            if max_combo > prev_combo and max_combo > 0:
+                records.append("combo")
+        d["total_games"] = prev_games + 1
         
         is_victory = (rank == 1)
         if is_victory:
@@ -129,6 +139,7 @@ class StatsManager:
         d["recent_matches"] = rec
         
         self.save()
+        return records
 
     def reset_stats(self):
         """전적 초기화"""

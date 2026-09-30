@@ -20,6 +20,12 @@ from config import (
 C_BG_TOP = (14, 17, 30)
 C_BG_BOTTOM = (8, 9, 16)
 
+def _ease_out(x):
+    """0~1 진행도를 처음엔 빠르게 끝에선 천천히 (연출용)"""
+    x = 0.0 if x < 0.0 else (1.0 if x > 1.0 else x)
+    return 1.0 - (1.0 - x) ** 3
+
+
 # 경기 단계별 테마 (1: 100~51인 · 2: 50인 이하 · 3: 최후의 결전). 배경 그라데이션 + 메인 보드 테두리 색
 STAGE_THEMES = {
     1: {"top": C_BG_TOP, "bottom": C_BG_BOTTOM, "border": (72, 92, 150)},
@@ -167,6 +173,8 @@ class UIRenderer:
         self.result_restart_btn = None
         self.result_spectate_btn = None
         self.result_focus_id = "return"     # 결과 화면 키보드 포커스 (restart/spectate/return)
+        self._result_match = None           # 결과 화면 연출 시작 시각 기준 (경기마다 한 번만 재생)
+        self._result_t0 = 0.0
         self.block_skin = "classic"         # 블록 모양 (settings의 block_skin, core.apply_visual_options가 갱신)
         self._bg_by_phase = {}
         self._theme_match_id = None
@@ -1349,6 +1357,10 @@ class UIRenderer:
 
             board_rect = pygame.Rect(int(bx), int(by), int(bw), int(bh))
             self.mini_board_rects[pid] = board_rect
+            # 블록은 틀(소수점을 버린 정수 Rect) 안쪽 1px 기준으로 그림. 소수 좌표로 그리면 화면 배율에 따라 반올림 차이로 블록이 틀 오른쪽/아래로 삐져나옴
+            ccp = min((board_rect.w - 2) / float(BOARD_WIDTH), (board_rect.h - 2) / float(BOARD_HEIGHT))
+            cbx = board_rect.x + 1 + ((board_rect.w - 2) - ccp * BOARD_WIDTH) / 2.0
+            cby = board_rect.bottom - 1 - ccp * BOARD_HEIGHT
 
             is_targeted = (local_target_id == pid)
             is_alive = p["is_alive"]
@@ -1450,8 +1462,8 @@ class UIRenderer:
             cg = p.get("cg")
             cgt = tuple(cg) if cg else None
             if is_alive and cg and len(cg) == BOARD_HEIGHT:
-                cp = cell_pixel
-                self._blit_mini_cells(pid, cgt, bx, by, bw, bh, cp)
+                cp = ccp
+                self._blit_mini_cells(pid, cgt, cbx, cby, ccp * BOARD_WIDTH, ccp * BOARD_HEIGHT, cp)
             cpiece = p.get("cpiece")
             if detailed and is_alive and cpiece and cg and len(cg) == BOARD_HEIGHT:
                 # 조작 중인 블록도 표시 (고정된 블록보다 밝게)
@@ -1475,20 +1487,20 @@ class UIRenderer:
                     while drop < BOARD_HEIGHT and not _hit(drop + 1):
                         drop += 1
                     self._mini_ghost[pid] = (gk, drop)
-                fast_small = self.mini_fast and cell_pixel < 9
+                fast_small = self.mini_fast and ccp < 9
                 if fast_small:
                     # 작은 칸: 칸 좌표(변환·반올림 결과)를 카드별로 한 번 계산해 두고 재사용 (CANVAS.rect_f와 같은 계산이라 픽셀은 동일)
-                    tkey = (bx, by, cell_pixel, CANVAS.S, CANVAS.ox, CANVAS.oy)
+                    tkey = (cbx, cby, ccp, CANVAS.S, CANVAS.ox, CANVAS.oy)
                     tab = self._mini_tabs.get(pid)
                     if tab is None or tab[0] != tkey:
-                        cw_ = max(1, cell_pixel - 0.6)
+                        cw_ = max(1, ccp - 0.6)
                         XL, XR, YT, YB = [], [], [], []
                         for i_ in range(BOARD_WIDTH):
-                            x_ = bx + i_ * cell_pixel
+                            x_ = cbx + i_ * ccp
                             XL.append(CANVAS.X(x_))
                             XR.append(CANVAS.X(x_ + cw_))
                         for i_ in range(BOARD_HEIGHT):
-                            y_ = by + i_ * cell_pixel
+                            y_ = cby + i_ * ccp
                             YT.append(CANVAS.Y(y_))
                             YB.append(CANVAS.Y(y_ + cw_))
                         tab = self._mini_tabs[pid] = (tkey, XL, XR, YT, YB)
@@ -1500,33 +1512,33 @@ class UIRenderer:
                     for gx_, gy_ in cells:
                         yy = gy_ + drop
                         if 0 <= yy < BOARD_HEIGHT:
-                            if cell_pixel >= 9:
-                                self.screen.blit(self._ghost_surface(ptype, int(cell_pixel)), (bx + gx_ * cell_pixel, by + yy * cell_pixel))
+                            if ccp >= 9:
+                                self.screen.blit(self._ghost_surface(ptype, int(ccp)), (cbx + gx_ * ccp, cby + yy * ccp))
                             elif fast_small and 0 <= gx_ < BOARD_WIDTH:
                                 rw_ = XR[gx_] - XL[gx_]
                                 rh_ = YB[yy] - YT[yy]
                                 _orig_rect(disp, gcol, (XL[gx_], YT[yy], rw_ if rw_ >= 1 else 1, rh_ if rh_ >= 1 else 1), gw_, border_radius=0)
                             else:
-                                pygame.draw.rect(self.screen, gcol, (bx + gx_ * cell_pixel, by + yy * cell_pixel, max(1, cell_pixel - 0.6), max(1, cell_pixel - 0.6)), 1)
-                cpp = cell_pixel
+                                pygame.draw.rect(self.screen, gcol, (cbx + gx_ * ccp, cby + yy * ccp, max(1, ccp - 0.6), max(1, ccp - 0.6)), 1)
+                cpp = ccp
                 pcol = self._pcol.get(ptype)
                 if pcol is None:
                     pcol = self._pcol[ptype] = _mix(PIECE_COLORS.get(ptype, (200, 200, 220)), (255, 255, 255), 0.25)
                 for gx, gy in cells:
                     if 0 <= gy < BOARD_HEIGHT and 0 <= gx < BOARD_WIDTH:
                         if cpp >= 9:
-                            self._draw_cell(bx + gx * cpp, by + gy * cpp, int(cpp), ptype)
+                            self._draw_cell(cbx + gx * cpp, cby + gy * cpp, int(cpp), ptype)
                         elif fast_small:                     # 작은 칸: 미리 계산한 좌표로 바로 채움
                             rw_ = XR[gx] - XL[gx]
                             rh_ = YB[gy] - YT[gy]
                             disp.fill(pcol, (XL[gx], YT[gy], rw_ if rw_ >= 1 else 1, rh_ if rh_ >= 1 else 1))
                         else:                                # 작은 칸: 좌표 변환 후 바로 채움 (그리기 래퍼 생략)
-                            CANVAS.display.fill(pcol, CANVAS.rect_f(bx + gx * cpp, by + gy * cpp, max(1, cpp - 0.6), max(1, cpp - 0.6)))
+                            CANVAS.display.fill(pcol, CANVAS.rect_f(cbx + gx * cpp, cby + gy * cpp, max(1, cpp - 0.6), max(1, cpp - 0.6)))
             if is_alive and cg and len(cg) == BOARD_HEIGHT:
                 pass
             elif is_alive:
                 block_col = (140, 240, 255) if is_human else ((255, 125, 125) if in_danger else (128, 158, 214))
-                cp = cell_pixel
+                cp = ccp
                 for y_idx, row_val in enumerate(p.get("compact_grid", [])):
                     if not row_val:
                         continue
@@ -1537,7 +1549,7 @@ class UIRenderer:
                             while x_idx < BOARD_WIDTH and (row_val >> (BOARD_WIDTH - 1 - x_idx)) & 1:
                                 x_idx += 1
                             pygame.draw.rect(self.screen, block_col,
-                                             (bx + start * cp, by + y_idx * cp, (x_idx - start) * cp - 0.6, max(1, cp - 0.6)))
+                                             (cbx + start * cp, cby + y_idx * cp, (x_idx - start) * cp - 0.6, max(1, cp - 0.6)))
                         else:
                             x_idx += 1
             else:
@@ -1554,9 +1566,9 @@ class UIRenderer:
             # 받을 공격(쓰레기) 게이지: 카드 왼쪽 안쪽의 얇은 막대 (많이 쌓일수록 주황 -> 빨강)
             ig = p.get("ig", 0)
             if is_alive and ig > 0:
-                gh = min(ig, 20) * cell_pixel
+                gh = min(ig, 20) * ccp
                 gw = 2 if bw < 46 else 3
-                CANVAS.display.fill((255, 84, 94) if ig >= 4 else (255, 165, 70), CANVAS.rect_f(bx + 1, by + bh - gh - 1, gw, gh))
+                CANVAS.display.fill((255, 84, 94) if ig >= 4 else (255, 165, 70), CANVAS.rect_f(cbx + 1, cby + ccp * BOARD_HEIGHT - gh - 1, gw, gh))
 
             if is_flashing:
                 a = max(0, min(255, int(220 * (1.0 - flash_age / 0.22))))
@@ -1924,7 +1936,11 @@ class UIRenderer:
 
         won = match.local_rank == 1
         accent = C_GOLD if won else C_DANGER
-        box_w, box_h = 660, 346
+        records = tuple(getattr(match, "new_records", ()) or ())
+        lh = self.font_small.get_height()
+        # 최고 기록 줄이 있으면 그 줄 + 배지 줄 + 버튼 발광(위로 8px)이 겹치지 않도록 패널을 그만큼 늘림 (글자 크기 옵션에도 맞춰짐)
+        extra = max(0, 178 + lh + 4 + lh + 12 - 226) if records else 0
+        box_w, box_h = 660, 346 + extra
         bx = (self.width - box_w) // 2
         by = (self.height - box_h) // 2
         self._panel((bx, by, box_w, box_h), border=accent, bg=(15, 19, 34), radius=18, alpha=248, border_w=2)
@@ -1939,30 +1955,56 @@ class UIRenderer:
                             bx + box_w // 2, by + 66, "midtop")
             rank_txt = f"#{match.local_rank}"
 
-        # 통계 카드
+        # 통계 카드: 왼쪽부터 차례로 미끄러져 들어오고, 숫자는 카운트업 (순위는 꼴찌에서 최종 순위까지 카운트다운)
+        if self._result_match is not match:
+            self._result_match = match
+            self._result_t0 = time.time()
+        t = time.time() - self._result_t0
         apm, lpm, time_str = match.get_combat_stats()
         tier, _, pct = match.get_badge_info()
+        rank_now = int(match.local_rank)
+        rank_shown = rank_now + int(round((match.total_players - rank_now) * (1.0 - _ease_out((t - 0.35) / 1.0))))
+        rec_t = 1.45                                                    # 카드가 다 나온 뒤 최고 기록 표시
         cards = [
-            ("순위", rank_txt, accent),
-            ("K.O.", str(match.local_ko_count), C_TEXT),
-            ("제거 라인", str(match.local_engine.lines_cleared_total), C_ACCENT),
-            ("최대 콤보", str(match.local_engine.max_combo), C_ORANGE),
-            ("APM", f"{apm:.1f}", C_GOLD),
-            ("생존 시간", time_str, C_GREEN),
+            ("순위", f"#{rank_shown}", accent, "rank", None),
+            ("K.O.", "{:d}", C_TEXT, "ko", match.local_ko_count),
+            ("제거 라인", "{:d}", C_ACCENT, None, match.local_engine.lines_cleared_total),
+            ("최대 콤보", "{:d}", C_ORANGE, "combo", match.local_engine.max_combo),
+            ("APM", "{:.1f}", C_GOLD, None, apm),
+            ("생존 시간", time_str, C_GREEN, None, None),
         ]
         cw, gap = 96, 10
         sx = bx + (box_w - (cw * len(cards) + gap * (len(cards) - 1))) // 2
-        for i, (lbl, val, col) in enumerate(cards):
-            r = pygame.Rect(sx + i * (cw + gap), by + 108, cw, 66)
+        for i, (lbl, val, col, rec_key, num) in enumerate(cards):
+            start = 0.20 + 0.09 * i
+            if t < start:
+                continue
+            k = _ease_out((t - start) / 0.35)
+            if num is not None:                                          # 등장한 뒤 0.6초 동안 0에서 목표 값까지 올라감
+                val = val.format(num * _ease_out((t - start - 0.15) / 0.6) if "f" in val else int(round(num * _ease_out((t - start - 0.15) / 0.6))))
+            r = pygame.Rect(sx + i * (cw + gap), by + 108 + int((1.0 - k) * 16), cw, 66)
             self._panel(r, border=(50, 62, 96), bg=(22, 27, 46), radius=10)
             self._draw_text(lbl, self.font_tiny, C_DIM, r.centerx, r.y + 9, "midtop")
             self._draw_text(val, self.font_big_num, col, r.centerx, r.y + 28, "midtop")
+            if rec_key in records and t >= rec_t:                        # 이번 경기에서 최고 기록을 넘은 카드: 금색 테두리 + NEW
+                pulse = 0.5 + 0.5 * math.sin(t * 6.0)
+                pygame.draw.rect(self.screen, _mix(C_GOLD, (255, 255, 255), 0.45 * pulse), r, 2, border_radius=10)
+                pill = pygame.Rect(r.right - 38, r.y - 8, 44, 17)
+                pygame.draw.rect(self.screen, C_GOLD, pill, border_radius=8)
+                self._draw_text("NEW", self.font_tiny, (24, 18, 4), pill.centerx, pill.centery, "center")
+        badge_y = by + 188
+        if records and t >= rec_t:
+            names = {"rank": "순위", "ko": "K.O.", "combo": "최대 콤보"}
+            self._draw_text("★ 최고 기록 갱신!  " + " · ".join(names[k] for k in records if k in names), self.font_small,
+                            C_GOLD, bx + box_w // 2, by + 178, "midtop")
+        if records:
+            badge_y = by + 178 + lh + 4
         badge_txt = f"최종 배지 Lv.{tier} (공격력 +{pct})" if tier > 0 else "최종 배지 Lv.0"
-        self._draw_text(badge_txt, self.font_small, C_DIM, bx + box_w // 2, by + 188, "midtop")
+        self._draw_text(badge_txt, self.font_small, C_DIM, bx + box_w // 2, badge_y, "midtop")
 
         mx, my = pygame.mouse.get_pos()
         can_spectate = (not match.match_finished and match.alive_count > 1 and not match.local_is_alive)
-        btn_y, btn_h = by + 226, 50
+        btn_y, btn_h = by + 226 + extra, 50
 
         self.result_restart_btn = self.result_spectate_btn = self.result_return_btn = None
         net_on = match.net_mgr is not None and match.net_mgr.mode != "NONE"

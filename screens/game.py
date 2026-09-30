@@ -411,7 +411,7 @@ class GameMixin:
             else:
                 final_rank = self.match.alive_count + 1
                 
-            self.stats_mgr.record_match(
+            self.match.new_records = self.stats_mgr.record_match(
                 rank=final_rank,
                 total_players=self.match.total_players,
                 kos=self.match.local_ko_count,

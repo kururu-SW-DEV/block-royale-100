@@ -1496,6 +1496,20 @@ def test_confirm_modals():
     print("  OK confirm modals")
 
 
+def test_new_record_flags():
+    """record_match가 이번 경기가 이전 최고 기록(순위/K.O./최대 콤보)을 넘었는지 돌려줌. 첫 경기와 동률은 기록 갱신이 아님"""
+    with tempfile.TemporaryDirectory() as d:
+        st = StatsManager(os.path.join(d, "s.json"))
+        kw = dict(total_players=100, lines=10, survival_sec=60)
+        assert st.record_match(rank=50, kos=2, max_combo=3, **kw) == [], "첫 경기는 비교할 기록이 없음"
+        assert st.record_match(rank=50, kos=2, max_combo=3, **kw) == [], "동률은 갱신이 아님"
+        assert st.record_match(rank=30, kos=1, max_combo=1, **kw) == ["rank"]
+        assert st.record_match(rank=60, kos=5, max_combo=6, **kw) == ["ko", "combo"]
+        assert st.record_match(rank=90, kos=0, max_combo=0, **kw) == [], "0은 기록이 아님"
+        assert st.record_match(rank=1, kos=0, max_combo=0, mode="survival", **kw) == [], "모드별로 따로 집계 (서바이벌 첫 경기)"
+    print("  OK new record flags")
+
+
 if __name__ == "__main__":
     pygame.init()
     keep = {}
