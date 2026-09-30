@@ -19,6 +19,8 @@ jobs:
       - run: .\build_exe.bat
       - uses: softprops/action-gh-release@v2
         with:
-          files: release/BlockRoyale100.exe
+          files: |
+            release/BlockRoyale100.exe
+            BLOCK_ROYALE_100_MANUAL.html
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
