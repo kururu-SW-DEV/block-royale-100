@@ -51,6 +51,11 @@ BGM_STAGE_SET_DESCS = {
     "4": "Vector Surge → Quantum Drift → Singularity",
 }
 
+TARGET_MODE_OPTIONS = ("AUTO", "KO", "ATTACKERS", "BADGES", "RANDOM")      # config.TARGET_MODES와 같아야 함 (테스트로 확인)
+SHAKE_OPTIONS = ("off", "low", "normal")
+SHAKE_SCALE = {"off": 0.0, "low": 0.4, "normal": 1.0}
+SHAKE_LABELS = {"off": "끔", "low": "약하게", "normal": "보통"}
+
 # 블록 스킨: 게임 화면의 블록 모양 (색은 색상 모드 설정을 따름)
 BLOCK_SKIN_OPTIONS = ["classic", "neon", "flat", "jelly"]
 BLOCK_SKIN_LABELS = {
@@ -125,6 +130,9 @@ DEFAULT_SETTINGS = {
     "color_mode": "normal",      # 블록 색상: "normal"(기본) / "colorblind"(색약 보정)
     "text_size": "normal",       # 게임 화면 글자 크기: "normal"(보통) / "large"(크게)
     "block_skin": "classic",     # 블록 모양: BLOCK_SKIN_OPTIONS 중 하나
+    "coach_done": False,         # 첫 경기 코치 마크(핵심 HUD 3곳 설명)를 이미 보여줬는지
+    "target_mode": "AUTO",       # 마지막으로 쓴 조준 모드 (다음 경기도 이어서 사용): TARGET_MODE_OPTIONS 중 하나
+    "screen_shake": "normal",    # 화면 흔들림: "off"(끔) / "low"(약하게) / "normal"(보통)
     "game_mode": "battle",       # 게임 모드: "battle"(배틀로얄: 공격을 주고받음) / "survival"(서바이벌: 공격 없이 각자 생존 경쟁)
     "mini_detail": "detailed",   # 미니 보드 표시: "detailed"(자세히) / "simple"(간략)
     "key_preset": "arcade",
@@ -191,6 +199,10 @@ def _valid_setting(key, value):
         if key == "text_size" and value not in ("normal", "large"):
             return False, None
         if key == "block_skin" and value not in BLOCK_SKIN_OPTIONS:
+            return False, None
+        if key == "target_mode" and value not in TARGET_MODE_OPTIONS:
+            return False, None
+        if key == "screen_shake" and value not in SHAKE_OPTIONS:
             return False, None
         return True, value
     if isinstance(default, list):
@@ -272,6 +284,14 @@ class SettingsManager:
             cur = "classic"
         new_val = BLOCK_SKIN_OPTIONS[(BLOCK_SKIN_OPTIONS.index(cur) + step) % len(BLOCK_SKIN_OPTIONS)]
         self.set("block_skin", new_val)
+        return new_val
+
+    def cycle_screen_shake(self, step=1):
+        cur = self.get("screen_shake", "normal")
+        if cur not in SHAKE_OPTIONS:
+            cur = "normal"
+        new_val = SHAKE_OPTIONS[(SHAKE_OPTIONS.index(cur) + step) % len(SHAKE_OPTIONS)]
+        self.set("screen_shake", new_val)
         return new_val
 
     def cycle_resolution(self, step=1, available=None):

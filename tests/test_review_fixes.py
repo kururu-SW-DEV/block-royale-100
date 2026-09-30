@@ -1368,7 +1368,7 @@ def test_survival_mode_has_no_attacks():
     m3.elapsed = 200.0
     calls = []
     orig_qg = BlockEngine.queue_garbage
-    BlockEngine.queue_garbage = lambda self_, n: (calls.append(n), orig_qg(self_, n))[1]
+    BlockEngine.queue_garbage = lambda self_, n, *a, **k: (calls.append(n), orig_qg(self_, n, *a, **k))[1]
     try:
         for _ in range(20 * 40):
             m3.update(1 / 20)
@@ -1494,6 +1494,323 @@ def test_confirm_modals():
     app._modal_choose("stay")
     assert app.settings.get("bgm_volume") == 30
     print("  OK confirm modals")
+
+
+def test_gameplay_rule_fixes():
+    """조준 모드 기본값/기억, K.O. 조준 위험도, K.O. 인정 최근성, 봇 배지, 화면 흔들림 배율, 새 설정 키 검증"""
+    import json as _json
+    import config as _cfg
+    from settings_manager import TARGET_MODE_OPTIONS, SHAKE_OPTIONS, SHAKE_SCALE
+    assert tuple(_cfg.TARGET_MODES) == TARGET_MODE_OPTIONS, "설정 검증 목록과 config.TARGET_MODES가 어긋남"
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "s.json")
+        _json.dump({"target_mode": "bogus", "screen_shake": "wild"}, open(f, "w"))
+        st = SettingsManager(f)
+        assert st.get("target_mode") == _cfg.DEFAULT_TARGET_MODE and st.get("screen_shake") == "normal", "잘못된 값은 기본값으로 복구"
+        assert [st.cycle_screen_shake(1) for _ in range(3)] == ["off", "low", "normal"] and set(SHAKE_SCALE) == set(SHAKE_OPTIONS)
+    from battle_royale import BattleRoyaleMatch
+    m = BattleRoyaleMatch(total_players=8, local_player_id="ME", local_player_name="Me", bot_difficulty="normal")
+    assert m.local_target_mode == _cfg.DEFAULT_TARGET_MODE, "경기 기본 조준 모드는 config 기본값을 따라야 함"
+    bots = [pid for pid in m.players if pid != "ME"]
+    a, b, c = bots[0], bots[1], bots[2]
+    # K.O./AUTO 조준: 쌓인 높이가 조금 낮아도 곧 올라올 쓰레기까지 더한 위험도가 더 큰 상대를 고름
+    for pid in bots:
+        m.players[pid]["highest_y"], m.players[pid]["ig"] = 12, 0
+    m.players[a]["highest_y"], m.players[b]["highest_y"] = 9, 13
+    m.players[b]["ig"] = 10
+    assert m._most_endangered([a, b, c]) == b, "받을 공격(ig)까지 더한 위험도로 K.O. 직전 상대를 골라야 함"
+    # K.O. 인정: 오래전에 한 번 공격한 봇에게는 인정하지 않고, 최근 공격자에게만 인정
+    m.elapsed = 200.0
+    m.players[b]["last_attacker"], m.players[b]["last_attack_t"] = a, m.elapsed - 100.0
+    m._eliminate_player(b)
+    assert m.players[a]["ko_count"] == 0, "100초 전 공격은 K.O. 인정 대상이 아님"
+    m.players[c]["last_attacker"], m.players[c]["last_attack_t"] = a, m.elapsed - 2.0
+    m._eliminate_player(c)
+    assert m.players[a]["ko_count"] == 1, "최근 공격자에게는 K.O. 인정"
+    # 봇 배지: K.O.를 쌓은 봇은 공격력이 오르되 상한(+50%)을 넘지 않음
+    m.players[a]["ko_count"] = 8
+    m.update(1 / 60)
+    assert m.players[a]["is_alive"] and m.players[a]["bot"].engine.badge_rate == BattleRoyaleMatch.BOT_BADGE_CAP
+    # 화면 흔들림 배율
+    m.screen_shake = 0.0
+    m.shake_scale = 0.0
+    m.trigger_screen_shake(10.0)
+    assert m.screen_shake == 0.0
+    m.shake_scale = 0.4
+    m.trigger_screen_shake(10.0)
+    assert abs(m.screen_shake - 4.0) < 1e-9
+    print("  OK gameplay rule fixes")
+
+
+def test_clutch_save_bonus():
+    """위험 높이에서 1초 넘게 버티다 줄을 지워 내려오면 작은 공격 보너스, 20초 쿨다운, 위기가 아니었다면 없음"""
+    from battle_royale import BattleRoyaleMatch
+    from config import BOARD_HEIGHT
+
+    def fill(m, height):
+        g = m.local_engine.grid
+        for y in range(BOARD_HEIGHT):
+            g[y] = ['G'] * 9 + [None] if y >= BOARD_HEIGHT - height else [None] * 10
+    m = BattleRoyaleMatch(total_players=4, local_player_id="ME", local_player_name="Me", bot_difficulty="easy")
+    fill(m, 17)
+    m._track_danger()
+    m.elapsed += 2.0
+    fill(m, 9)
+    m.local_engine.garbage_to_send = 0
+    m.on_lines_cleared(1)
+    assert m.local_engine.garbage_to_send == BattleRoyaleMatch.CLUTCH_BONUS, "위기 탈출 보너스"
+    fill(m, 17)                                        # 바로 또 위기 → 쿨다운 안이라 보너스 없음
+    m._track_danger()
+    m.elapsed += 2.0
+    fill(m, 9)
+    m.local_engine.garbage_to_send = 0
+    m.on_lines_cleared(1)
+    assert m.local_engine.garbage_to_send == 0, "쿨다운 중에는 보너스 없음"
+    m2 = BattleRoyaleMatch(total_players=4, local_player_id="ME", local_player_name="Me", bot_difficulty="easy")
+    fill(m2, 9)                                        # 위기가 아니었다면 보너스 없음
+    m2._track_danger()
+    m2.elapsed += 2.0
+    m2.local_engine.garbage_to_send = 0
+    m2.on_lines_cleared(1)
+    assert m2.local_engine.garbage_to_send == 0
+    m3 = BattleRoyaleMatch(total_players=4, local_player_id="ME", local_player_name="Me", bot_difficulty="easy")
+    fill(m3, 17)
+    m3._track_danger()
+    m3.elapsed += 0.3                                  # 위기를 1초도 못 버텼으면 보너스 없음
+    fill(m3, 9)
+    m3.local_engine.garbage_to_send = 0
+    m3.on_lines_cleared(1)
+    assert m3.local_engine.garbage_to_send == 0
+    print("  OK clutch save bonus")
+
+
+def test_stats_size_buckets_filter_and_goal():
+    """전적: 최고 순위/기록 갱신은 인원 규모별로 따로 비교, 필터 요약, 다음 목표 문구, 예전 전적 파일 호환"""
+    import json as _json
+    from stats_manager import size_bucket, next_goal_text, SIZE_BUCKET_IDS
+    assert [size_bucket(n) for n in (2, 10, 11, 49, 50, 100)] == ["small", "small", "mid", "mid", "large", "large"]
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "s.json")
+        st = StatsManager(f)
+        kw = dict(kos=0, lines=5, max_combo=0, survival_sec=30)
+        assert st.record_match(rank=50, total_players=100, difficulty="hard", **kw) == []
+        assert st.record_match(rank=3, total_players=6, difficulty="easy", **kw) == [], "다른 규모의 첫 경기는 순위 기록 갱신이 아님"
+        assert st.record_match(rank=20, total_players=100, difficulty="hard", **kw) == ["rank"], "같은 규모(대)에서 50위 -> 20위"
+        assert st.record_match(rank=90, total_players=100, difficulty="master", **kw) == []
+        assert st.record_match(rank=2, total_players=6, difficulty="easy", **kw) == ["rank"], "소규모에서 3위 -> 2위"
+        assert st.best_in_size("battle", 100) == 20 and st.best_in_size("battle", 6) == 2 and st.best_in_size("battle", 30) == 0
+        full = st.get_summary("battle")
+        assert full["filtered"] is False and full["total_games"] == 5
+        big = st.get_summary("battle", size="large")
+        assert big["filtered"] and big["total_games"] == 3 and big["best_rank"] == 20
+        hard = st.get_summary("battle", difficulty="hard")
+        assert hard["total_games"] == 2 and hard["best_rank"] == 20
+        both = st.get_summary("battle", size="small", difficulty="hard")
+        assert both["total_games"] == 0 and both["best_rank_str"] == "-"
+        st2 = StatsManager(f)                                          # 저장/재로드 후에도 규모별 기록 유지
+        assert st2.best_in_size("battle", 100) == 20
+        # 예전 전적 파일(best_by_size 없음)은 최근 경기 목록으로 채움
+        old = {"total_games": 2, "best_rank": 7, "recent_matches": [
+            {"rank": 30, "total_players": 100}, {"rank": 7, "total_players": 100}]}
+        _json.dump(old, open(f, "w"))
+        st3 = StatsManager(f)
+        assert st3.best_in_size("battle", 100) == 7
+        assert st3.record_match(rank=5, total_players=100, **kw) == ["rank"]
+    assert SIZE_BUCKET_IDS == ("small", "mid", "large")
+    # 난이도 사다리: 배틀로얄 50인 이상에서 10위 안이면 그 난이도 클리어 (혼합/서바이벌/소규모는 제외), 목표 문구
+    from stats_manager import LADDER
+    with tempfile.TemporaryDirectory() as d2:
+        f2 = os.path.join(d2, "l.json")
+        sl = StatsManager(f2)
+        kw2 = dict(kos=0, lines=5, max_combo=0, survival_sec=30)
+        sl.record_match(rank=8, total_players=100, difficulty="mixed", **kw2)
+        assert sl.last_ladder_clear is None and sl.ladder_cleared() == []
+        sl.record_match(rank=8, total_players=20, difficulty="easy", **kw2)
+        assert sl.last_ladder_clear is None, "50인 미만은 사다리 대상 아님"
+        sl.record_match(rank=8, total_players=100, difficulty="easy", mode="survival", **kw2)
+        assert sl.ladder_cleared() == [], "서바이벌은 사다리 대상 아님"
+        sl.record_match(rank=11, total_players=100, difficulty="easy", **kw2)
+        assert sl.ladder_cleared() == []
+        sl.record_match(rank=10, total_players=100, difficulty="easy", **kw2)
+        assert sl.last_ladder_clear == "easy" and sl.ladder_cleared() == ["easy"]
+        sl.record_match(rank=3, total_players=100, difficulty="easy", **kw2)
+        assert sl.last_ladder_clear is None, "이미 클리어한 난이도는 다시 알리지 않음"
+        assert StatsManager(f2).ladder_cleared() == ["easy"], "저장/재로드 유지"
+        _json.dump({"ladder": ["master", "bogus", "easy"]}, open(f2, "w"))
+        assert StatsManager(f2).ladder_cleared() == ["easy", "master"], "알려진 난이도만, 쉬움->마스터 순"
+    assert next_goal_text(8, 3, 100, 8, difficulty="easy", cleared=["easy"], ladder_clear="easy") == "쉬움 클리어! 다음은 보통에 도전"
+    assert next_goal_text(8, 3, 100, 8, difficulty="master", cleared=list(LADDER), ladder_clear="master") == "마스터 클리어! 모든 난이도 클리어"
+    assert next_goal_text(37, 5, 100, 12, difficulty="hard", cleared=[]) == "어려움 클리어까지 27계단 (10위 안)"
+    assert next_goal_text(37, 5, 100, 12, difficulty="hard", cleared=["hard"]) == "최고 순위 #12까지 25계단"
+    assert next_goal_text(37, 5, 20, 12, difficulty="hard", cleared=[]) == "최고 순위 #12까지 25계단", "50인 미만은 난이도 목표 없음"
+    # 다음 목표 문구 (배지 다음 단계가 2 K.O. 이내면 그것을, 아니면 순위 목표)
+    assert next_goal_text(51, 1, 100, 28) == "배지 Lv.1까지 1 K.O."
+    assert next_goal_text(51, 5, 100, 28) == "최고 순위 #28까지 23계단"
+    assert next_goal_text(8, 5, 100, 8) == "5위 안 진입"
+    assert next_goal_text(20, 5, 100, 20) == "10위 안 진입"
+    assert next_goal_text(3, 5, 100, 3) == "우승"
+    assert next_goal_text(1, 20, 100, 1) == "우승 연속 도전"
+    print("  OK stats size buckets / filter / next goal")
+
+
+def test_late_game_relayout_coach_orbs_and_heartbeat():
+    """후반 미니 보드 재배치(단계가 오를 때만, 살아남은 사람만), 첫 경기 코치 마크 1회, K.O. 구슬, 위기 박동음"""
+    import main as M
+    from gfx import CANVAS
+    app = M.BlockRoyaleApp()
+    CANVAS.attach(pygame.Surface((1366, 768)))
+    app.screen = CANVAS
+    app.renderer.screen = CANVAS
+    app.settings.data["coach_done"] = False
+    app.start_game(mode="SOLO", total_players=100)
+    m = app.match
+    assert m.coach_until > time.time() and app.settings.get("coach_done") is True, "첫 경기에만 코치 마크"
+    app._handle_game_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN, mod=0))
+    assert m.coach_until == 0.0, "Enter로 코치 마크를 닫을 수 있음"
+    m.coach_until = time.time() + 15
+    app._handle_game_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(600, 400)))
+    assert m.coach_until == 0.0, "클릭으로도 닫힘"
+    app.start_game(mode="SOLO", total_players=100)
+    assert getattr(app.match, "coach_until", 0.0) == 0.0 or app.match.coach_until < time.time(), "두 번째 경기부터는 코치 마크 없음"
+    m = app.match
+    others = [p for p in m.players if p != m.local_player_id]
+
+    def kill_to(target):
+        alive = [p for p in others if m.players[p]["is_alive"]]
+        for pid in alive[:max(0, len(alive) - target)]:
+            m._eliminate_player(pid)
+    for _ in range(3):
+        app._tick_game(1 / 60)
+    assert len(app.renderer.mini_board_rects) == 99
+    kill_to(60)
+    app._tick_game(1 / 60)
+    assert len(app.renderer.mini_board_rects) == 99 and getattr(m, "layout_stage", 0) == 0, "단계 전에는 자리 유지(죽은 카드도 그대로)"
+    kill_to(20)
+    app._tick_game(1 / 60)
+    assert getattr(m, "layout_stage", 0) == 1 and len(app.renderer.mini_board_rects) == 20, "20명 이하: 생존자만 다시 배치"
+    ids = set(app.renderer.mini_board_rects)
+    kill_to(18)                                        # 같은 단계 안에서 죽어도 카드는 그 자리에 남음 (다음 단계까지 재배치 안 함)
+    app._tick_game(1 / 60)
+    assert set(app.renderer.mini_board_rects) == ids
+    kill_to(10)
+    app._tick_game(1 / 60)
+    assert m.layout_stage == 2 and len(app.renderer.mini_board_rects) == 10
+    # K.O. 구슬: 내가 K.O.를 내면 생기고, 시간이 지나면 정리됨
+    victim = [p for p in others if m.players[p]["is_alive"]][0]
+    m._eliminate_player(victim, killer_id=m.local_player_id)
+    assert len(m.ko_orbs) == 1
+    m.ko_orbs[0]["t0"] -= 5.0
+    app.renderer.render(m, app.sound_mgr)
+    assert m.ko_orbs == []
+    # 위기 박동음: 스택이 높으면 재생, 간격 안에서는 다시 재생하지 않음
+    class FakeSound:
+        def __init__(self):
+            self.played = []
+
+        def play(self, name, *a, **k):
+            self.played.append(name)
+    fs = FakeSound()
+    m2 = __import__("battle_royale").BattleRoyaleMatch(total_players=4, local_player_id="ME", local_player_name="Me", sound_mgr=fs, bot_difficulty="easy")
+    for y in range(2, 20):                             # 18줄
+        m2.local_engine.grid[y] = ['G'] * 9 + [None]
+    m2._track_danger()
+    m2._track_danger()
+    assert fs.played.count("heartbeat") == 1
+    m2.elapsed += 0.9
+    m2._track_danger()
+    assert fs.played.count("heartbeat") == 2, "18줄 이상이면 0.8초 간격"
+    print("  OK late-game relayout / coach marks / K.O. orbs / heartbeat")
+
+
+def test_killer_spectate_and_timeline():
+    """나를 탈락시킨 상대 기록 + 관전은 그 상대부터, 경기 타임라인은 1초마다 기록되고 탈락 순간에 마지막 점을 남김"""
+    from battle_royale import BattleRoyaleMatch
+    m = BattleRoyaleMatch(total_players=6, local_player_id="ME", local_player_name="Me", bot_difficulty="easy")
+    bots = [pid for pid in m.players if pid != "ME"]
+    for _ in range(95):
+        m.update(1 / 30)
+    assert len(m.timeline) >= 2 and all(len(pt) == 4 for pt in m.timeline)
+    n0 = len(m.timeline)
+    killer = bots[3]
+    m.players["ME"]["last_attacker"], m.players["ME"]["last_attack_t"] = killer, m.elapsed - 1.0
+    m._eliminate_player("ME")
+    assert m.local_killer_id == killer and len(m.timeline) == n0 + 1
+    assert m.cycle_spectate_target(0) == killer, "관전은 나를 탈락시킨 상대부터"
+    m.players[killer]["is_alive"] = False
+    m.spectate_target_id = None
+    assert m.cycle_spectate_target(0) != killer, "그 상대가 이미 탈락했으면 다른 생존자"
+    m2 = BattleRoyaleMatch(total_players=4, local_player_id="ME", local_player_name="Me", bot_difficulty="easy")
+    m2._eliminate_player("ME")                         # 공격받은 적이 없으면 킬러 없음
+    assert m2.local_killer_id is None
+    print("  OK killer spectate / timeline")
+
+
+def test_bot_names_and_traits():
+    """봇 이름은 100개까지 서로 다르고(경기/로비 공통 함수), 모든 봇은 성향을 가지며, 성향에 맞게 조준이 달라짐"""
+    import config as _cfg
+    from battle_royale import BattleRoyaleMatch
+    names = [_cfg.bot_display_name(i) for i in range(1, 121)]
+    assert len(set(names)) == 120 and all(2 <= len(n) <= 6 for n in names[:100])
+    m = BattleRoyaleMatch(total_players=30, local_player_id="ME", local_player_name="Me", bot_difficulty="master")
+    bots = [p for pid, p in m.players.items() if pid != "ME"]
+    assert len(bots) == 29 and len({b["name"] for b in bots}) == 29
+    assert all(b["trait"] in _cfg.BOT_TRAITS for b in bots) and m.players["ME"]["trait"] == ""
+    assert {b["trait"] for b in bots} >= {"균형형"}
+    # 성향별 조준 확률: 반격형은 자주 되갚고, 저격형은 되갚지 않으며 위험도 조준을 더 자주 씀 (확률 자체를 검사: 무작위 대전 결과로는 불안정)
+    R, D = BattleRoyaleMatch.RETALIATE_CHANCE, BattleRoyaleMatch.RETALIATE_DEFAULT
+    assert R["반격형"] > D > R["저격형"] == 0.0
+    S, SD = BattleRoyaleMatch.SMART_TARGET_CHANCE, BattleRoyaleMatch.SMART_TARGET_DEFAULT
+    assert S["저격형"] > SD
+    assert set(R) | set(S) <= set(_cfg.BOT_TRAITS)
+    print("  OK bot names and traits")
+
+
+def test_practice_and_daily_challenge():
+    """연습 모드(죽어도 판 초기화, 전적 미기록, 쓰레기 주입) / 오늘의 도전(같은 날 같은 블록 순서·같은 상대 구성, 날짜별 최고 순위)"""
+    import main as M
+    from gfx import CANVAS
+    from battle_royale import BattleRoyaleMatch
+    app = M.BlockRoyaleApp()
+    CANVAS.attach(pygame.Surface((1366, 768)))
+    app.screen = CANVAS
+    app.renderer.screen = CANVAS
+    games_before = app.stats_mgr.get_summary("battle")["total_games"]
+    app.start_game(mode="SOLO", practice=True)
+    m = app.match
+    assert m.practice and m.total_players == 2 and not m.attacks_enabled and getattr(m, "coach_until", 0.0) < time.time() + 1
+    m.practice_inject_garbage(6)
+    assert m.local_engine.incoming_garbage == 6
+    for y in range(20):                                   # 끝까지 쌓이면 판이 초기화 (경기 종료/탈락 아님)
+        m.local_engine.grid[y] = ['G'] * 10
+    m.local_engine.game_over = True
+    old_engine = m.local_engine
+    for _ in range(5):
+        app._tick_game(1 / 60)
+    assert m.local_is_alive and m.local_engine is not old_engine and not m.local_engine.game_over and not m.match_finished
+    assert m.local_engine.incoming_garbage == 0
+    assert app.stats_mgr.get_summary("battle")["total_games"] == games_before, "연습은 전적에 기록되지 않음"
+    m.practice_reset(announce=False)
+    assert m.local_engine.incoming_garbage == 0
+    # 오늘의 도전: 같은 날짜 시드 -> 같은 블록 순서와 상대 구성
+    a = BattleRoyaleMatch(total_players=30, local_player_id="ME", local_player_name="Me", bot_difficulty="mixed", seed=20260930, daily="20260930")
+    b = BattleRoyaleMatch(total_players=30, local_player_id="ME", local_player_name="Me", bot_difficulty="mixed", seed=20260930, daily="20260930")
+    c = BattleRoyaleMatch(total_players=30, local_player_id="ME", local_player_name="Me", bot_difficulty="mixed", seed=20260929, daily="20260929")
+    assert list(a.local_engine.next_queue) == list(b.local_engine.next_queue) and a.local_engine.current_piece == b.local_engine.current_piece
+    roster = lambda mm: [(pid, p["name"], p["trait"], p["bot"].difficulty) for pid, p in mm.players.items() if p["bot"]]
+    assert roster(a) == roster(b) and roster(a) != roster(c), "같은 날은 같은 상대 구성, 다른 날은 다른 구성"
+    with tempfile.TemporaryDirectory() as d:
+        st = StatsManager(os.path.join(d, "s.json"))
+        kw = dict(total_players=100, kos=0, lines=5, max_combo=0, survival_sec=30)
+        assert st.daily_best("20260930") == 0
+        st.record_match(rank=40, daily="20260930", **kw)
+        st.record_match(rank=25, daily="20260930", **kw)
+        st.record_match(rank=60, daily="20260930", **kw)
+        assert st.daily_best("20260930") == 25
+        for day in range(1, 40):                          # 최근 30일만 유지
+            st.record_match(rank=50, daily=f"202608{day:02d}" if day < 32 else f"202609{day - 31:02d}", **kw)
+        assert len(st.data["daily"]) <= 30
+        assert StatsManager(os.path.join(d, "s.json")).daily_best("20260930") == 25 or "20260930" not in st.data["daily"]
+    print("  OK practice and daily challenge")
 
 
 def test_new_record_flags():

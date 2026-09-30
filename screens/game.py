@@ -3,6 +3,7 @@ Block Royale 100 - 게임 화면: 입력 처리, 프레임 갱신, 렌더링, �
 BlockRoyaleApp(main.py)이 상속하는 믹스인: 메서드 본문은 원래 main.py에 있던 그대로이며 self로 앱 상태를 공유함
 """
 
+from stats_manager import next_goal_text
 from app_common import (
     ACTION_NAMES,
     TARGET_MODES,
@@ -35,6 +36,20 @@ class GameMixin:
             if event.key == pygame.K_t and self.text_focus is None and not any(
                     pygame.K_t in self.settings.get_action_keys(a) for a, _n in ACTION_NAMES):
                 self._open_settings_from_game()
+                return
+            # 첫 경기 코치 마크: Enter로 바로 닫기 (조작키로 쓰고 있지 않을 때만)
+            if (event.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and getattr(self.match, "coach_until", 0.0) > time.time()
+                    and self.text_focus is None and not any(event.key in self.settings.get_action_keys(a) for a, _n in ACTION_NAMES)):
+                self.match.coach_until = 0.0
+                return
+            # 연습 모드: G = 쓰레기 줄 받기(Shift+G는 8줄), B = 보드 초기화. 조작키로 쓰고 있는 키는 조작키가 우선
+            if (self.match.practice and event.key in (pygame.K_g, pygame.K_b) and self.text_focus is None
+                    and not any(event.key in self.settings.get_action_keys(a) for a, _n in ACTION_NAMES)):
+                if event.key == pygame.K_b:
+                    self.match.practice_reset()
+                else:
+                    self.match.practice_inject_garbage(8 if (event.mod & pygame.KMOD_SHIFT) else 4)
+                    self.sound_mgr.play('warning')
                 return
             # 탈락 또는 게임 종료 시 처리
             if self.match.match_finished:
@@ -80,6 +95,8 @@ class GameMixin:
                             self.return_to_menu()
                         return
                 else:
+                    if event.key in (pygame.K_r, pygame.K_s) and time.time() < self.result_lock_until:
+                        return                                    # 탈락 직후 습관적인 키(WASD 프리셋의 S 소프트 드롭 등)로 재도전/관전이 바로 실행되지 않게
                     if event.key == pygame.K_r:
                         self.sound_mgr.play('move')
                         self._restart_after_match()
@@ -163,10 +180,11 @@ class GameMixin:
                     self.sound_mgr.unpause_bgm()
             elif self.settings.is_action_key(event.key, "target_cycle"):
                 mode = self.match.cycle_target_mode()
+                self.settings.set("target_mode", mode, autosave=False)          # 조작 중에는 디스크에 쓰지 않음 (메뉴로 나갈 때/종료할 때 저장)
                 self.sound_mgr.play('rotate')
             elif event.key in self.TARGET_NUM_KEYS and not any(
                     event.key in self.settings.get_action_keys(a) for a, _n in ACTION_NAMES):
-                self.match.set_target_mode(TARGET_MODES[self.TARGET_NUM_KEYS[event.key]])      # 1~5: 자동/K.O./반격/배지/랜덤 바로 선택
+                self.settings.set("target_mode", self.match.set_target_mode(TARGET_MODES[self.TARGET_NUM_KEYS[event.key]]), autosave=False)      # 1~5: 자동/K.O./반격/배지/랜덤 바로 선택 (다음 경기에도 유지)
                 self.sound_mgr.play('rotate')
             elif event.key == pygame.K_ESCAPE:
                 if self.net_mgr.mode == "NONE" and not self.is_paused and not self.match.match_finished and self.match.local_is_alive:
@@ -200,6 +218,8 @@ class GameMixin:
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mx, my = event.pos
+            if getattr(self.match, "coach_until", 0.0) > time.time():
+                self.match.coach_until = 0.0                    # 첫 경기 코치 마크는 클릭으로도 닫힘 (클릭은 그대로 다른 동작에도 전달)
             
             # 1. 일시정지 중 팝업 버튼 인터랙션
             if self.is_paused:
@@ -401,7 +421,7 @@ class GameMixin:
             self.sound_mgr.play_victory()
             
         # 경기 종료/탈락 시 전적 통계 자동 갱신 (1회)
-        if not self.match_recorded and (self.match.match_finished or not self.match.local_is_alive):
+        if not self.match_recorded and not self.match.practice and (self.match.match_finished or not self.match.local_is_alive):
             self.match_recorded = True
             survival_sec = self.match.survival_seconds()   # 탈락 순간의 시간 (일시정지 시간 제외)
             if self.match.match_finished and self.match.local_rank == 1:
@@ -419,8 +439,15 @@ class GameMixin:
                 max_combo=getattr(self.match.local_engine, 'max_combo', 0),
                 survival_sec=survival_sec,
                 mode="battle" if self.match.attacks_enabled else "survival",
-                difficulty=self.match.bot_difficulty
+                difficulty=self.match.bot_difficulty,
+                daily=self.match.daily
             )
+            _mode = "battle" if self.match.attacks_enabled else "survival"
+            self.match.ladder_clear = self.stats_mgr.last_ladder_clear
+            self.match.next_goal = (f"오늘의 도전 최고 #{self.stats_mgr.daily_best(self.match.daily)}위" if self.match.daily and not self.match.ladder_clear else None) or next_goal_text(final_rank, self.match.local_ko_count, self.match.total_players,
+                                                  self.stats_mgr.best_in_size(_mode, self.match.total_players),
+                                                  difficulty=self.match.bot_difficulty if _mode == "battle" else None,
+                                                  cleared=self.stats_mgr.ladder_cleared(_mode), ladder_clear=self.match.ladder_clear)
             
         # 주기적 네트워크 패킷 동기화 (15Hz)
         now = time.time()

@@ -5,6 +5,7 @@ BlockRoyaleApp(main.py)이 상속하는 믹스인.
 포커스는 키보드/마우스가 하나의 기준(self.menu_focus)을 공유하고, 호버/포커스 강조는 색 보간으로 부드럽게 전환됨(도형만 그림, 프레임마다 Surface 생성 없음)
 """
 
+import datetime
 import time
 
 from app_common import (
@@ -15,13 +16,16 @@ from app_common import (
 CARD_BG = (22, 28, 48)
 COL_SUB = (160, 172, 205)          # 보조 글자 (배경 대비 충분한 밝기)
 COL_HINT = (140, 152, 185)         # 가장 어두운 글자의 하한
-UTIL_ROW = ["records", "settings", "toggle_sound", "toggle_fs"]
+PILL_GAP = 10                       # 오른쪽 위 알약 사이 간격 (모두 같게)
+UTIL_ROW = ["practice", "daily", "records", "settings", "toggle_sound", "toggle_fs"]
 
 DESCRIPTIONS = {
     "quick_play": "봇과 바로 대전합니다.  ← → 로 인원, D 로 봇 난이도를 바꿀 수 있어요.",
     "host_room": "방을 열고 친구를 초대합니다. 부족한 인원은 봇이 채웁니다.",
     "join_room": "LAN에서 열린 방을 자동으로 찾거나, 호스트 IP 주소로 직접 접속합니다.",
     "match_summary": "이름, 참가 인원, 봇 난이도를 바꾸려면 Enter — 설정 화면으로 이동합니다.",
+    "practice": "혼자 연습합니다. G 키로 쓰레기 줄을 받아 보고 B 키로 보드를 초기화합니다. 전적에는 기록되지 않아요.",
+    "daily": "오늘의 도전: 하루에 한 번 정해지는 같은 블록 순서·같은 상대(100인, 혼합 난이도)로 내 순위를 겨룹니다.",
     "records": "지난 경기 기록과 통계를 봅니다.",
     "settings": "화면, 소리, 조작키, 게임 설정을 바꿉니다.",
     "toggle_sound": "소리를 켜고 끕니다.",
@@ -32,7 +36,7 @@ DESCRIPTIONS = {
 
 class MenuMixin:
     MENU_FOCUS_ORDER = ["quick_play", "host_room", "join_room", "match_summary",
-                        "records", "settings", "toggle_sound", "toggle_fs", "quit_game"]
+                        "practice", "daily", "records", "settings", "toggle_sound", "toggle_fs", "quit_game"]
 
     # ------------------------------------------------------------------ 상태 갱신
     def _menu_focus_id(self):
@@ -80,6 +84,10 @@ class MenuMixin:
                 self.state = "HOST_LOBBY"
         elif btn_id == "join_room":
             self._enter_join_menu()
+        elif btn_id == "practice":
+            self.start_game(mode="SOLO", practice=True)
+        elif btn_id == "daily":
+            self.start_game(mode="SOLO", daily=datetime.date.today().strftime("%Y%m%d"))
         elif btn_id == "records":
             self.records_mode = "survival" if self.settings.get("game_mode") == "survival" else "battle"   # 현재 게임 모드의 전적을 먼저 보여줌
             self.records_scroll = 0
@@ -114,6 +122,10 @@ class MenuMixin:
                 self._menu_activate("settings")
             elif k in (pygame.K_r, pygame.K_KP5):
                 self._menu_activate("records")
+            elif k == pygame.K_p:
+                self._menu_activate("practice")
+            elif k == pygame.K_c:
+                self._menu_activate("daily")
             elif k == pygame.K_UP or (k == pygame.K_TAB and shift):
                 self.menu_focus = (self.menu_focus - 1) % n
                 self.sound_mgr.play('move')
@@ -302,14 +314,18 @@ class MenuMixin:
         self._menu_profile_chip()
         snd_on = self.sound_mgr.enabled
         x = SCREEN_WIDTH - 24
-        x = self._menu_pill("toggle_fs", x, 18, "창 모드" if self.is_fullscreen else "전체 화면", "F11", C_ACCENT) - 8
+        x = self._menu_pill("toggle_fs", x, 18, "창 모드" if self.is_fullscreen else "전체 화면", "F11", C_ACCENT) - PILL_GAP
         x = self._menu_pill("toggle_sound", x, 18, "소리 켜짐" if snd_on else "소리 꺼짐", "M",
-                            C_GREEN if snd_on else C_DANGER, dot=C_GREEN if snd_on else (110, 120, 150)) - 22
-        x = self._menu_pill("settings", x, 18, "설정", "S", C_ACCENT) - 8
-        self._menu_pill("records", x, 18, "전적", "R", C_GOLD)
+                            C_GREEN if snd_on else C_DANGER, dot=C_GREEN if snd_on else (110, 120, 150)) - PILL_GAP
+        x = self._menu_pill("settings", x, 18, "설정", "S", C_ACCENT) - PILL_GAP
+        x = self._menu_pill("records", x, 18, "전적", "R", C_GOLD) - PILL_GAP
+        today = datetime.date.today().strftime("%Y%m%d")
+        done = self.stats_mgr.daily_best(today) > 0                                  # 오늘의 도전을 이미 했으면 점 없음, 아직이면 초록 점
+        x = self._menu_pill("daily", x, 18, "오늘의 도전", "C", C_GREEN, dot=None if done else C_GREEN) - PILL_GAP
+        self._menu_pill("practice", x, 18, "연습", "P", C_ACCENT)
 
         # 2. 로고 + 한 줄 소개
-        logo_top = 70
+        logo_top = 100
         logo_h = self.logo.draw(self.screen, cx, logo_top)
         self._t("100인 배틀로얄  ·  AI 봇 대전  ·  LAN 멀티", self.font_info, (165, 178, 212), cx, logo_top + logo_h + 2, "midtop")
 

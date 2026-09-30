@@ -10,7 +10,7 @@ from block_engine import BlockEngine
 from ai_bot import AIBot
 import bot_brain
 import bot_pool
-from config import TARGET_MODES, BOARD_HEIGHT, ATTACKER_BONUS, BADGE_TIERS, MULTI_TARGET_MAX, MAX_INCOMING_GARBAGE
+from config import bot_display_name, BOT_TRAITS, BOT_TRAIT_WEIGHTS, TARGET_MODES, DEFAULT_TARGET_MODE, BOARD_HEIGHT, ATTACKER_BONUS, BADGE_TIERS, MULTI_TARGET_MAX, MAX_INCOMING_GARBAGE
 
 def get_badge_info(ko_count):
     """K.O. 수 -> (배지 단계, 공격력 보너스 배율, 표시 문자열). 단계별 기준은 config.BADGE_TIERS"""
@@ -41,8 +41,13 @@ BOT_SEARCH_BUDGET = 0.008      # 프레임당 봇 전원의 탐색 시간 상한
 
 
 class BattleRoyaleMatch:
-    def __init__(self, total_players=100, local_player_id="P1", local_player_name="Player", net_mgr=None, initial_players=None, sound_mgr=None, bot_difficulty="mixed", attacks_enabled=True):
-        self.attacks_enabled = bool(attacks_enabled)   # False: 서바이벌 모드 (서로 공격/쓰레기 줄/K.O. 없이 각자 끝까지 생존)
+    def __init__(self, total_players=100, local_player_id="P1", local_player_name="Player", net_mgr=None, initial_players=None, sound_mgr=None, bot_difficulty="mixed", attacks_enabled=True,
+                 practice=False, seed=None, daily=None):
+        self.practice = bool(practice)                 # 연습 모드: 봇 없이 혼자 (쓰레기 줄을 직접 넣어 보며 연습), 전적에 기록 안 함, 죽으면 판이 초기화
+        self.daily = daily                             # 오늘의 도전 날짜 키("YYYYMMDD") 또는 None. 같은 날은 같은 블록 순서와 상대 구성
+        if seed is not None:
+            random.seed(seed)                          # 봇 구성/난이도 선택이 같은 날 같게
+        self.attacks_enabled = bool(attacks_enabled) and not self.practice   # False: 서바이벌 모드 (서로 공격/쓰레기 줄/K.O. 없이 각자 끝까지 생존)
         self.total_players = max(2, min(100, total_players))
         self.local_player_id = local_player_id
         self.local_player_name = local_player_name
@@ -52,9 +57,9 @@ class BattleRoyaleMatch:
         self.bot_difficulty = bot_difficulty
         
         # 로컬 플레이어 블록 엔진
-        self.local_engine = BlockEngine()
+        self.local_engine = BlockEngine(seed=seed)
         self.local_color = 0           # 내 이름 색 번호 (main에서 설정)
-        self.local_target_mode = "RANDOM"
+        self.local_target_mode = DEFAULT_TARGET_MODE
         self.local_manual_target_id = None
         self.local_ko_count = 0
         self.local_is_alive = True
@@ -87,8 +92,17 @@ class BattleRoyaleMatch:
         self.total_attacks_sent = 0
         self.phase = 1
         
+        # 위기 탈출(마지막 버티기) 보상 추적
+        self._danger_since = None         # 스택이 위험 높이 이상이 된 경기 시각 (아니면 None)
+        self._last_clutch = -1e9          # 마지막으로 보상을 준 경기 시각
+        self._last_beat = -1e9            # 마지막 위기 박동음 재생 시각
+        self.local_killer_id = None       # 나를 탈락시킨 상대 (없으면 None: 자멸/시간 압박 등)
+        self.timeline = []                # 1초마다 (경기 시각, 생존자 수, 내 스택 높이, 받을 공격) — 결과 화면 그래프용
+        self._tl_t = 0.0
+
         # 시각 연출: 화면 흔들림 및 팝업 텍스트
         self.screen_shake = 0.0
+        self.ko_orbs = []         # K.O. 연출: 처치한 상대 카드에서 K.O. 칸으로 날아가는 빛 구슬 [{"victim": id, "t0": 시각}]
         self.floating_texts = []  # dict: text, color, birth, duration, size
         self.commentary = []      # 전광판 중계 기록: dict(text, color, birth)
         
@@ -140,8 +154,10 @@ class BattleRoyaleMatch:
     def _short_name(self, pid, n=9):
         return str(self.players.get(pid, {}).get("name", "?"))[:n]
 
+    shake_scale = 1.0                  # 설정의 화면 흔들림 배율 (0=끔, 0.4=약하게, 1.0=보통). 앱이 경기 시작 때 지정
+
     def trigger_screen_shake(self, amount=8.0):
-        self.screen_shake = max(self.screen_shake, amount)
+        self.screen_shake = max(self.screen_shake, amount * self.shake_scale)
 
     # 배틀로얄 후반 공격력 증폭: 강한 봇끼리 오래 버티는 교착을 막기 위해, 이 시간(초)이 지나면 1분마다 공격 줄 수가 20%씩 늘어남 (최대 3배). None이면 끔
     BATTLE_PRESSURE_START = 540.0     # 배틀로얄 후반 시간 압박 시작(초)
@@ -177,11 +193,11 @@ class BattleRoyaleMatch:
         ramp_end = start + (20.0 - self.SURVIVAL_PRESSURE_MIN_INTERVAL) * self.SURVIVAL_PRESSURE_RAMP
         rows = min(10, 1 + int(max(0.0, self.elapsed - ramp_end) / 15.0))
         if self.local_is_alive:
-            self.local_engine.queue_garbage(rows)
+            self.local_engine.queue_garbage(rows, source="PRESSURE", instant=True)      # 시간 압박은 공격이 아니므로 차징 없이 바로 올라올 수 있음
         for p in self.players.values():
             if p["is_alive"] and p.get("bot"):
                 eng = p["bot"].engine
-                eng.queue_garbage(rows)
+                eng.queue_garbage(rows, source="PRESSURE", instant=True)
                 # 만약 대기열이 이미 24줄 상한까지 차 있다면 시간 압박 시 대기 쓰레기를 직접 보드로 밀어올려 확실한 서든데스 유도
                 if eng.incoming_garbage >= MAX_INCOMING_GARBAGE:
                     push = min(eng.incoming_garbage, rows)
@@ -207,7 +223,9 @@ class BattleRoyaleMatch:
             "ko_count": 0,
             "rank": 0,
             "target_id": None,
+            "trait": "",                    # 봇 성향 (반격형/저격형/균형형, 사람은 빈 문자열)
             "last_attacker": None,
+            "last_attack_t": -1e9,          # 마지막으로 공격받은 경기 시각 (K.O. 인정은 최근 공격자에게만)
             "attacks": 0,
             "survival": None,
             "score": 0,
@@ -235,6 +253,8 @@ class BattleRoyaleMatch:
                 is_ai = pinfo.get("is_ai", False)
                 bot = AIBot(bot_id=pid, name=pname, difficulty=random.choice(diff_choices)) if (is_host and is_ai) else None
                 self.players[pid] = self._new_player(pid, pname, is_ai, bot, self.local_engine.get_compact_grid() if is_me else (bot.engine.get_compact_grid() if bot else [0] * BOARD_HEIGHT))
+                if bot:
+                    self.players[pid]["trait"] = random.choices(BOT_TRAITS, weights=BOT_TRAIT_WEIGHTS)[0]
             self.total_players = len(self.players)
             self.alive_count = self.total_players
             self.next_rank_to_assign = self.total_players
@@ -260,10 +280,11 @@ class BattleRoyaleMatch:
 
         while registered_count < self.total_players:
             bid = f"BOT_{bot_idx:02d}"
-            bname = f"CPU_{bot_idx:02d}"
+            bname = bot_display_name(bot_idx)
             diff = random.choice(diff_choices)
             bot = AIBot(bot_id=bid, name=bname, difficulty=diff)
             self.players[bid] = self._new_player(bid, bname, True, bot, bot.engine.get_compact_grid())
+            self.players[bid]["trait"] = random.choices(BOT_TRAITS, weights=BOT_TRAIT_WEIGHTS)[0]
             bot_idx += 1
             registered_count += 1
 
@@ -275,7 +296,7 @@ class BattleRoyaleMatch:
         return self.local_target_mode
 
     def cycle_target_mode(self):
-        """타겟팅 모드 순환 (RANDOM -> KO -> ATTACKERS -> BADGES)"""
+        """타겟팅 모드 순환 (config.TARGET_MODES 순서: AUTO -> KO -> ATTACKERS -> BADGES -> RANDOM -> AUTO)"""
         idx = TARGET_MODES.index(self.local_target_mode)
         self.local_target_mode = TARGET_MODES[(idx + 1) % len(TARGET_MODES)]
         self.local_manual_target_id = None
@@ -412,7 +433,8 @@ class BattleRoyaleMatch:
             idx = alive_ids.index(self.spectate_target_id)
             self.spectate_target_id = alive_ids[(idx + direction) % len(alive_ids)]
         else:
-            self.spectate_target_id = alive_ids[0]
+            killer = self.local_killer_id
+            self.spectate_target_id = killer if killer in alive_ids else alive_ids[0]      # 관전은 나를 탈락시킨 상대부터
         return self.spectate_target_id
 
     def get_target_for(self, attacker_id, strategy=None):
@@ -439,12 +461,12 @@ class BattleRoyaleMatch:
             ]
             if other_humans:
                 # 살아있는 인간 상대 중 가장 위협적인(블록이 높은) 사람 자동 타겟팅
-                return min(other_humans, key=lambda pid: self.players[pid].get("highest_y", 20))
+                return self._most_endangered(other_humans)
             # 인간 상대가 모두 탈락했거나 솔로일 때: K.O. 직전(가장 높이 쌓인) 적 자동 타겟팅
-            return min(alive_candidates, key=lambda pid: self.players[pid].get("highest_y", 20))
+            return self._most_endangered(alive_candidates)
             
         elif strat == "KO":
-            return min(alive_candidates, key=lambda pid: self.players[pid].get("highest_y", 20))
+            return self._most_endangered(alive_candidates)
         elif strat == "ATTACKERS":
             attackers = [pid for pid in alive_candidates if self.players[pid].get("target_id") == attacker_id]
             if attackers:
@@ -452,7 +474,7 @@ class BattleRoyaleMatch:
                 if cur in attackers:
                     return cur                                   # 이미 겨누던 공격자가 계속 나를 노리면 유지 (조준선이 프레임마다 흔들리지 않게)
                 return random.choice(attackers)
-            return min(alive_candidates, key=lambda pid: self.players[pid].get("highest_y", 20))
+            return self._most_endangered(alive_candidates)
         elif strat == "BADGES":
             return max(alive_candidates, key=lambda pid: self.players[pid].get("ko_count", 0))
         elif strat == "RANDOM":
@@ -465,12 +487,22 @@ class BattleRoyaleMatch:
 
     # 봇 조준 분산: 한 명에게 봇이 몰려 일점 타격이 되면 사람이 도저히 못 버티므로, 이미 노리는 봇이 많은 대상은 점수를 깎고 상한을 둠
     FOCUS_CAP = 3                    # 한 플레이어를 동시에 노릴 수 있는 봇 수의 기본 상한
+    RETALIATE_CHANCE = {"반격형": 0.6, "저격형": 0.0}       # 강한 봇이 조준을 다시 뽑을 때 나를 노리는 상대에게 되갚는 확률 (성향별)
+    RETALIATE_DEFAULT = 0.25
+    SMART_TARGET_CHANCE = {"저격형": 0.85}                 # 보통 난이도 봇이 위험도 기반 조준을 쓰는 확률 (성향별)
+    SMART_TARGET_DEFAULT = 0.5
+    BOT_BADGE_CAP = 0.5              # 봇에게 적용하는 배지 공격력 증폭 상한 (+50%)
+    KO_CREDIT_WINDOW = 15.0          # 마지막 공격 후 이 시간(초) 안에 탈락해야 그 공격자에게 K.O.를 인정
     HUMAN_FOCUS_CAP = 2              # 사람 플레이어에게는 더 낮은 상한 (봇보다 상쇄 능력이 낮아 같은 압박이 훨씬 무겁기 때문)
     KILL_EXTRA = 2                   # 탈락시킬 수 있는 마무리 공격은 상한을 이만큼까지만 초과 허용
     FOCUS_PENALTY = 2.5              # 이미 노리는 봇 1명당 조준 점수 감점
 
     def _focus_cap(self, p):
         return self.FOCUS_CAP if p.get("is_ai") else self.HUMAN_FOCUS_CAP
+
+    def _most_endangered(self, pids):
+        """K.O. 직전에 가장 가까운 후보: 쌓인 높이 + 곧 올라올 쓰레기가 가장 큰 상대 (봇의 위험도 계산과 같은 기준)"""
+        return max(pids, key=lambda pid: self._danger(self.players[pid]))
 
     @staticmethod
     def _danger(p):
@@ -543,6 +575,7 @@ class BattleRoyaleMatch:
             return                                                     # 이미 탈락한 대상에게는 공격/이펙트를 보내지 않음 (죽은 카드가 번쩍이며 흔들리는 것 방지)
         if to_id in self.players:
             self.players[to_id]["last_attacker"] = from_id
+            self.players[to_id]["last_attack_t"] = self.elapsed
         if from_id in self.players:
             self.players[from_id]["attacks"] += lines          # 플레이어별 공격력 합계 (APM 계산용)
             
@@ -566,7 +599,7 @@ class BattleRoyaleMatch:
 
         # 1. 로컬 플레이어가 피격 대상인 경우
         if to_id == self.local_player_id and self.local_is_alive:
-            self.local_engine.queue_garbage(lines)
+            self.local_engine.queue_garbage(lines, source=from_id)
             self.trigger_screen_shake(min(14.0, 5.0 + lines * 2.2))
             if self.sound_mgr:
                 self.sound_mgr.play('garbage')
@@ -578,7 +611,7 @@ class BattleRoyaleMatch:
         elif to_id in self.players:
             p = self.players[to_id]
             if p["is_ai"] and p["bot"] and p["is_alive"]:
-                p["bot"].engine.queue_garbage(lines)
+                p["bot"].engine.queue_garbage(lines, source=from_id)
                 
         # 3. 네트워크 모드일 경우 원격 클라이언트에 패킷 전송
         if self.net_mgr and self.net_mgr.running:
@@ -589,10 +622,12 @@ class BattleRoyaleMatch:
         """플레이어 탈락 처리"""
         if victim_id not in self.players or not self.players[victim_id]["is_alive"]:
             return
-        # 킬러 미지정 시 마지막으로 이 플레이어를 공격한 생존자에게 K.O. 부여
+        # 킬러 미지정 시 최근(KO_CREDIT_WINDOW초 안)에 이 플레이어를 마지막으로 공격한 생존자에게 K.O. 부여
+        # (오래전에 한 번 공격했을 뿐인 봇이 후반 압박/자멸로 끝난 상대의 K.O.를 가져가지 않게)
         if killer_id is None:
             last = self.players[victim_id].get("last_attacker")
-            if last and last != victim_id and self.players.get(last, {}).get("is_alive"):
+            recent = self.elapsed - self.players[victim_id].get("last_attack_t", -1e9) <= self.KO_CREDIT_WINDOW
+            if last and recent and last != victim_id and self.players.get(last, {}).get("is_alive"):
                 killer_id = last
             
         self.players[victim_id]["is_alive"] = False
@@ -610,6 +645,8 @@ class BattleRoyaleMatch:
             self.add_commentary("결승전!  최후의 2인" if self.alive_count == 2 else f"생존자 {self.alive_count}명!  접전", (255, 215, 90), prio=1)
 
         if victim_id == self.local_player_id:
+            self.local_killer_id = killer_id if (killer_id in self.players and killer_id != victim_id) else None
+            self._record_timeline(final=True)
             self.freeze_local_stats()
             self.local_is_alive = False
             self.local_rank = self.players[victim_id]["rank"]
@@ -621,6 +658,7 @@ class BattleRoyaleMatch:
             self.players[killer_id]["ko_count"] += 1
             if killer_id == self.local_player_id:
                 self.local_ko_count += 1
+                self.ko_orbs.append({"victim": victim_id, "t0": time.time()})
                 new_lvl, _, new_pct = get_badge_info(self.local_ko_count)
                 self.trigger_screen_shake(10.0)
                 victim_name = self.players.get(victim_id, {}).get("name", "상대")
@@ -646,10 +684,69 @@ class BattleRoyaleMatch:
                         self.add_floating_text("★ 1위 최종 우승 로열 빅토리! ★", (255, 230, 80), duration=3.5, size=34, category="action")
                     break
 
+    # 위기 탈출: 스택이 CLUTCH_DANGER_H줄 이상인 채로 CLUTCH_MIN_SECS초 넘게 버티다가 줄을 지워 CLUTCH_SAFE_H줄 이하로 내려오면 작은 보상 (일부러 위기를 만들어 반복하지 못하게 쿨다운)
+    CLUTCH_DANGER_H = 16
+    CLUTCH_SAFE_H = 13
+    CLUTCH_MIN_SECS = 1.0
+    CLUTCH_COOLDOWN = 20.0
+    CLUTCH_BONUS = 2
+
+    def practice_inject_garbage(self, lines):
+        """연습 모드: 쓰레기 줄을 직접 받아 보기 (실제 공격처럼 차징 후 올라옴)"""
+        if self.practice and self.local_is_alive:
+            self.local_engine.queue_garbage(lines, source="연습")
+
+    def practice_reset(self, announce=True):
+        """연습 모드: 보드를 새로 시작 (직접 초기화하거나 블록이 끝까지 쌓였을 때)"""
+        self.local_engine = BlockEngine()
+        self._danger_since = None
+        if announce:
+            self.add_floating_text("연습 보드를 새로 시작했습니다", (140, 230, 255), duration=1.8, size=24, category="action")
+
+    def _record_timeline(self, final=False):
+        """1초마다 한 점 (경기 시각, 생존자 수, 내 스택 높이, 받을 공격). 최대 1800점(30분)"""
+        if len(self.timeline) >= 1800 and not final:
+            return
+        self.timeline.append((round(self.elapsed, 1), self.alive_count, self._local_stack_height(), self.local_engine.incoming_garbage))
+
+    def _local_stack_height(self):
+        return BOARD_HEIGHT - self.local_engine.get_highest_block_row()
+
+    DANGER_BEAT_H = 15                # 스택이 이 높이 이상이면 위기 박동음 재생 (18줄 이상이면 더 빠르게)
+
+    def _track_danger(self):
+        """매 프레임: 내 스택이 위험 높이에 들어온 시각을 기록하고, 위험하게 높으면 박동음을 울림"""
+        h = self._local_stack_height()
+        if self.sound_mgr and h >= self.DANGER_BEAT_H:
+            if self.elapsed - self._last_beat >= (0.8 if h >= 18 else 1.3):
+                self._last_beat = self.elapsed
+                self.sound_mgr.play('heartbeat')
+        if h >= self.CLUTCH_DANGER_H:
+            if self._danger_since is None:
+                self._danger_since = self.elapsed
+        elif h <= self.CLUTCH_SAFE_H:
+            self._danger_since = None
+
+    def _check_clutch_save(self):
+        h = self._local_stack_height()
+        if (self._danger_since is None or h > self.CLUTCH_SAFE_H
+                or self.elapsed - self._danger_since < self.CLUTCH_MIN_SECS
+                or self.elapsed - self._last_clutch < self.CLUTCH_COOLDOWN):
+            return
+        self._last_clutch = self.elapsed
+        self._danger_since = None
+        if self.attacks_enabled:
+            self.local_engine.garbage_to_send += self.CLUTCH_BONUS
+        bonus = f" +{self.CLUTCH_BONUS}줄" if self.attacks_enabled else ""
+        self.add_floating_text(f"★ 위기 탈출!{bonus} ★", (255, 215, 0), duration=2.2, size=30, category="action")
+        self.add_commentary(f"{self._short_name(self.local_player_id)}  위기 탈출!", (255, 215, 0))
+        self.trigger_screen_shake(8.0)
+
     def on_lines_cleared(self, cleared):
         """라인 클리어 공통 핸들러 (하드 드롭, 소프트 드롭, 자연 낙하 공통 처리)"""
         if cleared <= 0:
             return
+        self._check_clutch_save()
             
         info = getattr(self.local_engine, 'last_clear_info', None) or {}
         is_tspin = info.get('is_tspin', False)
@@ -731,13 +828,20 @@ class BattleRoyaleMatch:
             cleared = self.local_engine.update(dt)
             if cleared > 0:
                 self.on_lines_cleared(cleared)
+            self._track_danger()
+            if self.elapsed - self._tl_t >= 1.0:
+                self._tl_t = self.elapsed
+                self._record_timeline()
 
         # 2. 로컬 플레이어 타겟 갱신
         self.players[self.local_player_id]["target_id"] = self.get_target_for(self.local_player_id, self.local_target_mode)
         
         # 3. 로컬 플레이어 게임 오버 검사
         if self.local_is_alive and self.local_engine.game_over:
-            self._eliminate_player(self.local_player_id)
+            if self.practice:
+                self.practice_reset()
+            else:
+                self._eliminate_player(self.local_player_id)
             
         # 4. 로컬 플레이어 공격 발생 처리 (오토매틱 공격 + 배지 증폭 + 카운터 보너스)
         if self.local_engine.garbage_to_send > 0:
@@ -745,7 +849,6 @@ class BattleRoyaleMatch:
             if target:
                 target_p = self.players.get(target, {})
                 target_name = target_p.get("name", target)
-                is_target_human = not target_p.get("is_ai", False)
                 
                 # 배지 증폭은 엔진에서 상쇄 이전에 이미 적용됨
                 base_garbage = self.local_engine.garbage_to_send
@@ -773,7 +876,7 @@ class BattleRoyaleMatch:
                     self.add_commentary(f"{self._short_name(self.local_player_id)}  {len(targets)}명에게 동시 포격! {total_attack}줄", (255, 170, 90))
                     self.trigger_screen_shake(10.0)
                 
-                lbl = "[자동 반격]" if is_target_human else "[공격 발송]"
+                lbl = "[자동 반격]" if (self.local_target_mode == "ATTACKERS" and target_p.get("target_id") == self.local_player_id) else "[공격 발송]"
                 bonus_str = ""
                 if badge_lvl > 0 and attacker_bonus > 0:
                     bonus_str = f" (배지 Lv.{badge_lvl}, 카운터+{attacker_bonus})"
@@ -803,7 +906,7 @@ class BattleRoyaleMatch:
         self.players[self.local_player_id]["attacks"] = self.total_attacks_sent
 
         # 서바이벌 모드: 공격이 없어 경기가 끝나지 않을 수 있으므로, 일정 시간 뒤부터 모두에게 주기적으로 쓰레기 줄이 올라옴 (상대의 공격이 아니라 시간 압박)
-        if not self.attacks_enabled and not self.match_finished:
+        if not self.attacks_enabled and not self.match_finished and not self.practice:
             self._survival_pressure(dt)
         elif self.attacks_enabled and not self.match_finished and self.elapsed >= self.BATTLE_PRESSURE_START:
             self._survival_pressure(dt, self.BATTLE_PRESSURE_START, "후반 압박")      # 배틀로얄도 9분이 지나면 시간 압박: 소수의 봇이 서로 끝내지 못해도 경기가 반드시 끝남
@@ -841,23 +944,30 @@ class BattleRoyaleMatch:
         for pid, p in items:
             if self.match_finished:
                 break                                  # 승자가 정해졌으면 남은 봇을 더 처리하지 않음
-            if not p["is_alive"] or not p["is_ai"] or not p["bot"]:
-                continue
+            if not p["is_alive"] or not p["is_ai"] or not p["bot"] or self.practice:
+                continue                               # 연습 모드: 상대 자리는 움직이지 않는 빈 보드 (경기가 끝나지 않게)
                 
             # 봇 난이도 가속도 인원 비율 기준 (100인 대전 기준으로 환산)
             p["bot"].adjust_for_alive_count(int(round(self.alive_count / max(1, self.total_players) * 100)))
                 
             # AI 타겟팅
             if not p["target_id"] or random.random() < 0.03:
+                trait = p.get("trait", "")
                 if p["bot"].difficulty in ("hard", "master"):
-                    # 강한 봇: 가끔은 나를 노리는 상대에게 반격, 대부분은 위험도(높이+들어올 쓰레기)가 높은 상대를 골라 마무리
-                    attackers = [q for q, pp in self.players.items() if pp["is_alive"] and q != pid and pp.get("target_id") == pid] if random.random() < 0.25 else []
+                    # 강한 봇: 가끔은 나를 노리는 상대에게 반격(반격형은 자주, 저격형은 안 함), 대부분은 위험도(높이+들어올 쓰레기)가 높은 상대를 골라 마무리
+                    retaliate = self.RETALIATE_CHANCE.get(trait, self.RETALIATE_DEFAULT)
+                    attackers = [q for q, pp in self.players.items() if pp["is_alive"] and q != pid and pp.get("target_id") == pid] if random.random() < retaliate else []
                     p["target_id"] = random.choice(attackers) if attackers else self._smart_target(pid)
-                elif p["bot"].difficulty == "normal" and random.random() < 0.5:
+                elif p["bot"].difficulty == "normal" and random.random() < self.SMART_TARGET_CHANCE.get(trait, self.SMART_TARGET_DEFAULT):
                     p["target_id"] = self._smart_target(pid)
                 else:
                     p["target_id"] = self._spread_random_target(pid)
                 
+            # 봇도 K.O.를 쌓으면 배지로 공격력이 오름 (BADGES 조준 모드가 봇 상대로도 의미가 있도록). 봇 상한은 BOT_BADGE_CAP
+            if p.get("_badge_ko") != p.get("ko_count", 0):                      # K.O. 수가 바뀔 때만 다시 계산 (프레임마다 100번 부르지 않게)
+                p["_badge_ko"] = p.get("ko_count", 0)
+                p["_badge_rate"] = min(self.BOT_BADGE_CAP, get_badge_info(p["_badge_ko"])[1]) if self.attacks_enabled else 0.0
+            p["bot"].engine.badge_rate = p.get("_badge_rate", 0.0)
             # AI 틱
             att = p["bot"].update(dt)
             if att > 0 and not self.attacks_enabled:

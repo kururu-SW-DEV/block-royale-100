@@ -251,6 +251,13 @@ class SoundManager:
         beep2 = np.sin(2 * np.pi * 1174.66 * (t8 - 0.15)) * np.exp(-(t8 - 0.15) * 14.0) * (t8 >= 0.15)
         self.sounds['warning'] = self._pack_sound((beep1 + beep2) * 0.65)
         
+        # 8-1. Heartbeat: 스택이 위험하게 높을 때 반복 재생되는 낮은 박동음 ("쿵-쿵")
+        t_h = np.arange(int(sr * 0.5)) / sr
+        def _thump(t0, amp):
+            tt = np.clip(t_h - t0, 0.0, None)
+            return np.sin(2 * np.pi * (48.0 + 40.0 * np.exp(-tt * 30.0)) * tt) * np.exp(-tt * 16.0) * (t_h >= t0) * amp
+        self.sounds['heartbeat'] = self._pack_sound(_thump(0.0, 0.9) + _thump(0.17, 0.6))
+
         # 9. KO (적 격파): 시원한 파쇄 임팩트 + 승리 타격
         t9 = np.arange(int(sr * 0.45)) / sr
         ko_thud = np.sin(2 * np.pi * 70.0 * np.exp(-t9 * 4.0) * t9) * np.exp(-t9 * 6.0) * 0.8

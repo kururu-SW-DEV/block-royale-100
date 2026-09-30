@@ -8,6 +8,7 @@ from app_common import (
     SCREEN_HEIGHT, SCREEN_WIDTH, pygame, short_key_name, socket, time
 )
 import bot_pool
+from config import bot_display_name
 
 
 class CoreMixin:
@@ -18,6 +19,12 @@ class CoreMixin:
         self.renderer.block_skin = self.settings.get("block_skin")
         self.renderer.set_text_boost(2 if self.settings.get("text_size") == "large" else 0)
         self.renderer.clear_visual_caches()                     # 색이 바뀐 블록/패널 캐시를 비워 새 색으로 다시 만들게 함
+
+    def apply_gameplay_options(self):
+        """진행 중인 경기에 설정(화면 흔들림 배율)을 반영. 조준 모드는 경기 시작 때와 모드를 바꿀 때만 저장/복원"""
+        from app_common import SHAKE_SCALE
+        if self.match is not None:
+            self.match.shake_scale = SHAKE_SCALE.get(self.settings.get("screen_shake"), 1.0)
 
     def apply_handling(self):
         """설정의 DAS/ARR/소프트드롭(ms)을 실제 입력 처리에 반영"""
@@ -40,7 +47,7 @@ class CoreMixin:
         bot_num = 1
         while len(players_summary) < self.target_player_count:
             bid = f"BOT_{bot_num:02d}"
-            bname = f"CPU_{bot_num:02d}"
+            bname = bot_display_name(bot_num)
             players_summary.append({"id": bid, "name": bname, "is_ai": True})
             bot_num += 1
             
@@ -108,6 +115,7 @@ class CoreMixin:
         self.sound_mgr.toggle_sound()
 
     def return_to_menu(self):
+        self.settings.save()                     # 경기 중 바꾼 조준 모드 등 (조작 중에는 저장하지 않고 여기서 한 번에)
         self.victory_played = False
         self.gameover_played = False
         self.key_left_down = False
@@ -143,6 +151,8 @@ class CoreMixin:
         ]
         if self.match is not None and not self.match.attacks_enabled:
             hints = [h for h in hints if h[1] not in ("조준", "조준모드")]      # 서바이벌: 조준 개념 없음
+        if self.match is not None and self.match.practice:
+            hints += [("G/Shift+G", "쓰레기 4/8줄"), ("B", "초기화")]        # 항목이 10개를 넘으면 안내 바가 3줄이 되어 화면 아래로 잘림
         if self.net_mgr.mode == "NONE":
             hints.append((keys("pause", 1), "일시정지"))
         hints.append(("T", "설정"))
@@ -158,7 +168,8 @@ class CoreMixin:
         except Exception:
             return "127.0.0.1"
 
-    def start_game(self, mode="SOLO", total_players=100, initial_players=None):
+    def start_game(self, mode="SOLO", total_players=100, initial_players=None, practice=False, daily=None):
+        """practice=True: 연습 모드(혼자, 전적 없음). daily="YYYYMMDD": 오늘의 도전(같은 날은 같은 블록 순서/상대 구성, 100인 혼합 난이도 배틀로얄)"""
         self._end_text(commit=False)
         self.renderer.reset_standings()
         self._finish_lock_set = False
@@ -184,18 +195,25 @@ class CoreMixin:
         self.das_timer = 0.0
         self.arr_timer = 0.0
         self.soft_drop_timer = 0.0
+        seed = int(daily) if daily else None
         self.match = BattleRoyaleMatch(
-            total_players=total_players,
+            total_players=2 if practice else (100 if daily else total_players),
             local_player_id=my_id,
             local_player_name=self.player_name,
             net_mgr=self.net_mgr if mode in ["HOST", "CLIENT"] else None,
             initial_players=initial_players,
             sound_mgr=self.sound_mgr,
-            bot_difficulty=self.bot_difficulty,
-            # 게임 모드: 참가자는 호스트가 정한 값을 따르고, 그 외에는 내 설정을 씀
-            attacks_enabled=(self.net_mgr.match_attacks if mode == "CLIENT" else self.settings.get("game_mode") != "survival")
+            bot_difficulty="mixed" if daily else self.bot_difficulty,
+            # 게임 모드: 참가자는 호스트가 정한 값을 따르고, 그 외에는 내 설정을 씀 (오늘의 도전은 항상 배틀로얄)
+            attacks_enabled=True if daily else (self.net_mgr.match_attacks if mode == "CLIENT" else self.settings.get("game_mode") != "survival"),
+            practice=practice, seed=seed, daily=daily
         )
         self.match.local_color = self.name_color
+        self.match.set_target_mode(self.settings.get("target_mode"))        # 마지막으로 쓴 조준 모드를 이어서 사용
+        if not practice and not self.settings.get("coach_done"):                             # 처음 하는 경기: HUD 핵심 3곳을 15초 동안 설명 (한 번만)
+            self.match.coach_until = time.time() + 15.0
+            self.settings.set("coach_done", True)
+        self.apply_gameplay_options()
         if getattr(self, "use_bot_pool", False) and mode != "CLIENT":
             bot_pool.start()                       # 봇 계산을 여러 CPU 코어에 나눠 맡김 (준비될 때까지는 직접 계산)
         self.renderer.last_cleared_count = 0

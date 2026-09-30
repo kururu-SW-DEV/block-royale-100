@@ -8,7 +8,7 @@ import random
 from config import (
     BOARD_WIDTH, BOARD_HEIGHT, TETROMINOES,
     GARBAGE_ATTACK_TABLE, COMBO_BONUS, TSPIN_ATTACK_TABLE, TSPIN_MINI_ATTACK_TABLE,
-    MAX_GARBAGE_PER_LOCK, PERFECT_CLEAR_ATTACK, MAX_INCOMING_GARBAGE
+    MAX_GARBAGE_PER_LOCK, PERFECT_CLEAR_ATTACK, MAX_INCOMING_GARBAGE, GARBAGE_CHARGE_DELAY, GARBAGE_MESSINESS
 )
 
 # SRS 기본 오프셋 킥 데이터 (JLSTZ용)
@@ -80,7 +80,10 @@ class BlockEngine:
         self.last_locked_piece = None   # 마지막으로 고정된 피스 종류 (효과음 음높이용)
 
         # 쓰레기 라인(Garbage) 시스템
-        self.incoming_garbage = 0       # 공격 대기 중인 줄 수
+        self._ig_total = 0              # incoming_garbage 합계 캐시 (묶음이 바뀔 때 갱신: 프레임마다 100개 엔진이 다시 합산하지 않게)
+        self._garbage = []              # 대기 중인 쓰레기 묶음 [[줄 수, 도착(준비) 시각, 보낸 사람], ...] (오래된 것부터). incoming_garbage는 그 합계
+        self._clock = 0.0               # 엔진 시계(초): update(dt)로 흐르며 쓰레기 묶음의 차징 시간을 잼
+        self.garbage_delay = GARBAGE_CHARGE_DELAY
         self.garbage_to_send = 0        # 방금 라인 클리어로 발생한 공격력
         self.attack_generated_total = 0  # 들어오는 쓰레기 상쇄 여부와 무관하게 누적된 총 생성 공격력 (APM 집계용)
 
@@ -362,10 +365,12 @@ class BlockEngine:
 
         # 라인을 지우지 못했고 대기 중인 쓰레기 줄이 있다면 보드 아래로 밀어올림
         # (한 번에 올라오는 줄 수는 제한하고, 초과분은 다음 락다운까지 대기열에 유지)
-        if cleared_lines == 0 and self.incoming_garbage > 0 and not self.game_over:
-            push = min(self.incoming_garbage, MAX_GARBAGE_PER_LOCK)
-            self.incoming_garbage -= push
-            self._push_garbage(push)
+        # (차징이 끝난 묶음만 올라옴. 묶음마다 구멍 위치가 따로 정해짐)
+        if cleared_lines == 0 and self._garbage and not self.game_over:
+            for group in self._take_garbage(MAX_GARBAGE_PER_LOCK, ready_only=True):
+                self._push_garbage(group)
+                if self.game_over:
+                    break
 
         # 다음 피스 스폰
         self.spawn_piece()
@@ -395,7 +400,9 @@ class BlockEngine:
         """보드 하단에 구멍 1개가 뚫린 쓰레기 줄을 밀어 올림"""
         hole_x = self.garbage_rng.randint(0, self.width - 1)
         self.garbage_pushed_total += count
-        for _ in range(count):
+        for i in range(count):
+            if i > 0 and self.garbage_rng.random() < GARBAGE_MESSINESS:      # 한 묶음 안에서도 가끔 구멍이 옮겨져 한 번에 복구되지 않음
+                hole_x = (hole_x + self.garbage_rng.randint(1, self.width - 1)) % self.width
             # 맨 위 줄이 비어있지 않으면 밀려 올라가면서 게임오버
             if any(self.grid[0]):
                 self.game_over = True
@@ -412,14 +419,62 @@ class BlockEngine:
             if self._check_collision(self.current_x, self.current_y, self.current_rot):
                 self.game_over = True
 
-    def queue_garbage(self, count):
-        """상대방에게 공격받아 쓰레기 라인 대기열에 추가됨 (대기열 상한 MAX_INCOMING_GARBAGE: 넘치는 분량은 버림)"""
-        self.incoming_garbage = min(MAX_INCOMING_GARBAGE, self.incoming_garbage + count)
+    @property
+    def incoming_garbage(self):
+        """공격 대기 중인 총 줄 수 (차징 중인 것 포함). AI/UI/네트워크는 이 값을 그대로 씀"""
+        return self._ig_total
+
+    @incoming_garbage.setter
+    def incoming_garbage(self, value):
+        """총 대기 줄 수를 직접 바꿈: 줄이면 오래된 묶음부터 차감 (상쇄/강제 밀어올림), 늘리면 바로 올라올 수 있는 묶음으로 추가 (스냅샷 복원 등)"""
+        value = max(0, int(value))
+        cur = self.incoming_garbage
+        if value < cur:
+            self._take_garbage(cur - value, ready_only=False)
+        elif value > cur:
+            self._garbage.append([value - cur, self._clock, None])
+            self._ig_total = sum(b[0] for b in self._garbage)
+
+    @property
+    def ready_garbage(self):
+        """차징이 끝나 다음 락다운(줄을 못 지웠을 때)에 올라올 수 있는 줄 수"""
+        return sum(b[0] for b in self._garbage if b[1] <= self._clock)
+
+    def garbage_segments(self):
+        """경고 게이지용: [(줄 수, 올라올 준비 완료 여부, 보낸 사람), ...] (오래된 것부터 = 아래쪽부터)"""
+        return [(b[0], b[1] <= self._clock, b[2]) for b in self._garbage]
+
+    def _take_garbage(self, limit, ready_only):
+        """대기 쓰레기를 오래된 묶음부터 최대 limit줄 꺼냄. 반환: 묶음별 줄 수 목록 (같은 묶음은 같은 구멍을 씀)"""
+        taken, groups = 0, []
+        for b in list(self._garbage):
+            if ready_only and b[1] > self._clock:
+                break
+            n = min(b[0], limit - taken)
+            if n <= 0:
+                break
+            b[0] -= n
+            taken += n
+            groups.append(n)
+            if b[0] <= 0:
+                self._garbage.remove(b)
+        self._ig_total = sum(b[0] for b in self._garbage)
+        return groups
+
+    def queue_garbage(self, count, source=None, instant=False):
+        """상대방에게 공격받아 쓰레기 라인 대기열에 추가됨 (대기열 상한 MAX_INCOMING_GARBAGE: 넘치는 분량은 버림).
+        보통은 garbage_delay초 동안 차징한 뒤에야 올라올 수 있음. instant=True(시간 압박 등 공격이 아닌 것)는 바로 올라올 수 있음"""
+        count = min(int(count), MAX_INCOMING_GARBAGE - self.incoming_garbage)
+        if count > 0:
+            delay = 0.0 if instant else self.garbage_delay
+            self._garbage.append([count, self._clock + delay, source])
+            self._ig_total += count
 
     def update(self, dt):
         """프레임 틱 업데이트 (dt 기반 자연 낙하 및 락 딜레이)"""
         if self.game_over:
             return 0
+        self._clock += dt
 
         # 바닥에 닿았는지 체크
         if self._is_touching_ground():

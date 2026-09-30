@@ -3,11 +3,36 @@ Block Royale 100 - 전적 기록실 화면
 BlockRoyaleApp(main.py)이 상속하는 믹스인: 메서드 본문은 원래 main.py에 있던 그대로이며 self로 앱 상태를 공유함
 """
 
+from stats_manager import SIZE_BUCKETS, SIZE_BUCKET_IDS
 from app_common import BOT_DIFFICULTY_LABELS, C_ACCENT, C_DIM, C_GOLD, C_GREEN, C_ORANGE, C_TEXT, SCREEN_WIDTH, _mix, pygame
 
 
+RECORDS_DIFF_OPTIONS = (None, "mixed", "easy", "normal", "hard", "master")
+RECORDS_SIZE_KEYS = {pygame.K_1: None, pygame.K_2: "small", pygame.K_3: "mid", pygame.K_4: "large",
+                     pygame.K_KP1: None, pygame.K_KP2: "small", pygame.K_KP3: "mid", pygame.K_KP4: "large"}
+
+
 class RecordsMixin:
+    def _records_set_filter(self, size=..., diff=...):
+        """전적 필터 변경 (인원 규모 / 난이도). ...은 '바꾸지 않음'"""
+        new_size = self.records_size if size is ... else size
+        new_diff = self.records_diff if diff is ... else diff
+        if (new_size, new_diff) != (self.records_size, self.records_diff):
+            self.sound_mgr.play('move')
+            self.records_size, self.records_diff = new_size, new_diff
+            self.records_scroll = 0
+
+    def _records_cycle_diff(self):
+        i = RECORDS_DIFF_OPTIONS.index(self.records_diff) if self.records_diff in RECORDS_DIFF_OPTIONS else 0
+        self._records_set_filter(diff=RECORDS_DIFF_OPTIONS[(i + 1) % len(RECORDS_DIFF_OPTIONS)])
+
     def _handle_records_event(self, event):
+        if event.type == pygame.KEYDOWN and event.key in RECORDS_SIZE_KEYS:
+            self._records_set_filter(size=RECORDS_SIZE_KEYS[event.key])
+            return
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_f:
+            self._records_cycle_diff()
+            return
         if event.type == pygame.MOUSEWHEEL:
             self.records_scroll = max(0, min(self.records_max_scroll, self.records_scroll - event.y * 2))
             return
@@ -32,6 +57,10 @@ class RecordsMixin:
                 if rect.collidepoint(mx, my):
                     if btn_id in ("mode_battle", "mode_survival"):
                         self._records_set_mode(btn_id[5:])
+                    elif btn_id.startswith("size_"):
+                        self._records_set_filter(size=None if btn_id == "size_all" else btn_id[5:])
+                    elif btn_id == "diff_cycle":
+                        self._records_cycle_diff()
                     elif btn_id == "back_to_menu":
                         self.sound_mgr.play('move')
                         self.state = "MENU"
@@ -70,10 +99,32 @@ class RecordsMixin:
             pygame.draw.rect(self.screen, _mix((16, 20, 34), col, 0.30 if on else (0.14 if hov else 0.05)), r, border_radius=8)
             pygame.draw.rect(self.screen, col if on else (60, 72, 104), r, 2 if on else 1, border_radius=8)
             self._t(label, self.font_small, col if on else C_DIM, r.centerx, r.centery, "center")
-        self._t("← → / Tab 으로 전환", self.font_tiny, C_DIM, box_x + box_w, tab_y + 15, "midright")
+        self._t("← → 모드 · 1~4 규모 · F 난이도", self.font_tiny, C_DIM, box_x + box_w, tab_y + 15, "midright")
+        # 필터 칩: 인원 규모(1~4) / 난이도(F). 필터를 걸면 전체 누적이 아니라 최근 100경기 중 조건에 맞는 경기로 다시 집계
+        chip_x = box_x + 310
+        size_chips = [("size_all", "전체", None)] + [("size_" + b[0], f"{b[3].split(' ')[0][0]} {b[1]}~{b[2]}", b[0]) for b in SIZE_BUCKETS]
+        for cid, label, val in size_chips:
+            w = 52 if val is None else 92
+            r = pygame.Rect(chip_x, tab_y, w, 30)
+            self.records_buttons[cid] = r
+            on = self.records_size == val
+            hov = r.collidepoint(mx, my)
+            pygame.draw.rect(self.screen, _mix((16, 20, 34), C_ACCENT, 0.28 if on else (0.14 if hov else 0.04)), r, border_radius=8)
+            pygame.draw.rect(self.screen, C_ACCENT if on else (60, 72, 104), r, 2 if on else 1, border_radius=8)
+            self._t(label, self.font_tiny, C_ACCENT if on else C_DIM, r.centerx, r.centery, "center")
+            chip_x += w + 6
+        r = pygame.Rect(chip_x + 8, tab_y, 132, 30)
+        self.records_buttons["diff_cycle"] = r
+        on = self.records_diff is not None
+        pygame.draw.rect(self.screen, _mix((16, 20, 34), C_ORANGE, 0.28 if on else (0.14 if r.collidepoint(mx, my) else 0.04)), r, border_radius=8)
+        pygame.draw.rect(self.screen, C_ORANGE if on else (60, 72, 104), r, 2 if on else 1, border_radius=8)
+        diff_txt = "난이도: 전체" if self.records_diff is None else "난이도: " + BOT_DIFFICULTY_LABELS.get(self.records_diff, "-").split(" (")[0]
+        self._t(diff_txt, self.font_tiny, C_ORANGE if on else C_DIM, r.centerx, r.centery, "center")
 
         # 3. 상단 4대 통계 요약 카드 (Summary Cards)
-        sm = self.stats_mgr.get_summary(self.records_mode)
+        sm = self.stats_mgr.get_summary(self.records_mode, size=self.records_size, difficulty=self.records_diff)
+        if sm.get("filtered"):
+            self._t("필터 적용 중 · 최근 100경기 중 조건에 맞는 경기만 집계합니다", self.font_tiny, C_ORANGE, box_x + 25, box_y + 4)
         card_w = (box_w - 75) // 4
         card_h = 95
         card_y = box_y + 20
@@ -109,7 +160,7 @@ class RecordsMixin:
         columns = [("#", 50), ("난이도", 90), ("일시", 150), ("최종 순위", 150), ("K.O.", 90),
                    ("제거 줄", 90), ("최대 콤보", 100), ("생존 시간", 100), ("결과", 170)]
 
-        self._t("최근 경기", self.font_mid, C_TEXT, ix, tbl_y)
+        self._t("최근 경기" if not sm.get("filtered") else f"최근 경기 ({len(sm['recent_matches'])}경기)", self.font_mid, C_TEXT, ix, tbl_y)
         self._t("최근 100경기 · 휠 / ↑↓ 로 스크롤", self.font_tiny, C_DIM, ix + tbl_w, tbl_y + 4, "topright")
 
         head_y = tbl_y + 32
@@ -127,8 +178,12 @@ class RecordsMixin:
             empty = pygame.Rect(ix, start_ry + 20, tbl_w, 150)
             pygame.draw.rect(self.screen, (18, 23, 40), empty, border_radius=12)
             pygame.draw.rect(self.screen, (40, 52, 84), empty, 1, border_radius=12)
-            self._t("아직 완료된 경기가 없습니다" if self.records_mode == "battle" else "아직 서바이벌 경기가 없습니다", self.font_menu, C_TEXT, empty.centerx, empty.y + 42, "midtop")
-            self._t("배틀로얄에 참가해 첫 승리에 도전해 보세요" if self.records_mode == "battle" else "설정 > 게임 > 게임 모드에서 서바이벌을 골라 도전해 보세요", self.font_small, C_DIM, empty.centerx, empty.y + 82, "midtop")
+            if sm.get("filtered"):
+                self._t("조건에 맞는 경기가 없습니다", self.font_menu, C_TEXT, empty.centerx, empty.y + 42, "midtop")
+                self._t("위의 규모/난이도 필터를 바꿔 보세요 (1~4 / F)", self.font_small, C_DIM, empty.centerx, empty.y + 82, "midtop")
+            else:
+                self._t("아직 완료된 경기가 없습니다" if self.records_mode == "battle" else "아직 서바이벌 경기가 없습니다", self.font_menu, C_TEXT, empty.centerx, empty.y + 42, "midtop")
+                self._t("배틀로얄에 참가해 첫 승리에 도전해 보세요" if self.records_mode == "battle" else "설정 > 게임 > 게임 모드에서 서바이벌을 골라 도전해 보세요", self.font_small, C_DIM, empty.centerx, empty.y + 82, "midtop")
         else:
             visible = 8
             self.records_max_scroll = max(0, len(recent) - visible)

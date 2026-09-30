@@ -124,6 +124,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         self._pending_quit = False
         self.records_scroll = 0          # 전적 기록실 목록 스크롤 (행 단위)
         self.records_mode = "battle"     # 전적 기록실에서 보는 모드: battle(배틀로얄) / survival(서바이벌)
+        self.records_size = None         # 전적 기록실 필터: 인원 규모 (None=전체 / "small" / "mid" / "large")
+        self.records_diff = None         # 전적 기록실 필터: 봇 난이도 (None=전체 / "mixed" / "easy" / ...)
         self.records_max_scroll = 0
         self._hard_drop_pending = False
         self._last_lock_events = 0
@@ -254,6 +256,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                 self._render_modal()
             pygame.display.flip()
             
+        self.settings.save()
         self.net_mgr.stop()
         bot_pool.stop()
         pygame.quit()

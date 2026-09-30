@@ -10,6 +10,7 @@ from app_common import (
     BGM_STAGE_SET_LABELS,
     BLOCK_SKIN_DESCS,
     BLOCK_SKIN_LABELS,
+    SHAKE_LABELS,
     BOT_DIFFICULTY_DESCS,
     BOT_DIFFICULTY_LABELS,
     CANVAS,
@@ -50,7 +51,8 @@ TAB_ORDER = [t[0] for t in TABS]
 TAB_NAV = {
     "match": [("players", None, "dec_1", "inc_1"), ("diff", None, "diff_prev", "diff_next"),
               ("attack", "attack_toggle", "attack=on", "attack=off"),
-              ("name", "name_edit", None, None), ("color", None, "color_prev", "color_next")],
+              ("name", "name_edit", None, None), ("color", None, "color_prev", "color_next"),
+              ("shake", None, "shake_prev", "shake_next")],
     "general": [("fs", "toggle_fs", "fs=window", "fs=full"), ("res", "res_next", "res_prev", "res_next"),
                 ("mini", "mini_detail", "mini_detail=detailed", "mini_detail=simple"),
                 ("block_skin", None, "skin_prev", "skin_next"),
@@ -68,6 +70,7 @@ HELP = {
     "attack": "배틀로얄: 줄을 지워 상대에게 쓰레기 줄을 보내 서로 공격하는 모드 · 서바이벌: 서로 공격하지 않고 각자 끝까지 버티는 모드(K.O.·배지 없음, 3분 뒤부터 쓰레기 줄이 주기적으로 올라옴). 방을 열면 호스트의 설정이 모두에게 적용됩니다.",
     "name": "채팅, 대기실 명단, 미니 보드에 표시되는 이름입니다. 클릭하거나 Enter로 수정 (최대 16자).",
     "color": "이름 색: 채팅과 대기실 명단, 미니 보드의 내 이름에 쓰입니다.",
+    "shake": "공격을 받거나 K.O.가 났을 때 화면이 흔들리는 정도입니다. 멀미가 나면 '약하게'나 '끔'을 고르세요.",
     "fs": "창 모드와 전체 화면을 바꿉니다. F11 키로 언제든 전환할 수 있습니다.",
     "res": "창 크기를 고릅니다. 모니터에 들어가는 크기만 보이며 창 가장자리를 끌어서도 조절할 수 있습니다.",
     "res_off": "전체 화면에서는 모니터 해상도에 맞춰 자동으로 확대됩니다.",
@@ -87,7 +90,7 @@ HELP = {
 
 # 탭별 '기본값으로' 대상 설정 키
 TAB_DEFAULT_KEYS = {
-    "match": ["target_player_count", "bot_difficulty", "game_mode"],
+    "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake"],
     "general": ["resolution", "mini_detail", "color_mode", "text_size", "block_skin"],
     "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume"],
     "keys": ["das_ms", "arr_ms", "sdf_ms"],
@@ -281,6 +284,10 @@ class SettingsMixin:
                     self.renderer.mini_detailed = (new != "simple")
                 else:
                     self.apply_visual_options()
+        elif btn_id in ("shake_prev", "shake_next"):
+            self.sound_mgr.play('rotate')
+            self.settings.cycle_screen_shake(-1 if btn_id == "shake_prev" else 1)
+            self.apply_gameplay_options()
         elif btn_id in ("skin_prev", "skin_next"):
             self.sound_mgr.play('rotate')
             self.settings.cycle_block_skin(-1 if btn_id == "skin_prev" else 1)
@@ -334,6 +341,7 @@ class SettingsMixin:
         if tab == "match":
             self.target_player_count = self.settings.get("target_player_count")
             self.bot_difficulty = self.settings.get("bot_difficulty")
+            self.apply_gameplay_options()
         elif tab == "general":
             self.renderer.mini_detailed = self.settings.get("mini_detail") != "simple"
             self.apply_visual_options()
@@ -488,8 +496,10 @@ class SettingsMixin:
         # 봇 난이도 (설명은 현재 난이도에 따라 바뀌는 값이라 보조 줄로 유지)
         cur = self.settings.get("bot_difficulty", "mixed")
         dc = {"easy": C_GREEN, "normal": C_ACCENT, "hard": C_ORANGE, "master": C_DANGER, "mixed": C_GOLD}.get(cur, C_TEXT)
-        self._s_row("diff", y, 64, "AI 봇 난이도", BOT_DIFFICULTY_DESCS.get(cur, ""))
-        self._s_cycler("diff_prev", "diff_next", BOT_DIFFICULTY_LABELS.get(cur, "혼합"), RIGHT, y + 32, color=dc)
+        cleared = self.stats_mgr.ladder_cleared("battle")            # 100인급 대전에서 10위 안에 들어 클리어한 난이도는 ★ 표시
+        star = "  ★ 클리어" if cur in cleared else ""
+        self._s_row("diff", y, 64, "AI 봇 난이도", BOT_DIFFICULTY_DESCS.get(cur, "") if not star else BOT_DIFFICULTY_DESCS.get(cur, "")[:40])
+        self._s_cycler("diff_prev", "diff_next", BOT_DIFFICULTY_LABELS.get(cur, "혼합") + star, RIGHT, y + 32, color=dc)
         y += 64
         # 게임 모드: 배틀로얄(공격을 주고받음) / 서바이벌(공격 없이 각자 생존 경쟁)
         atk_on = self.settings.get("game_mode") != "survival"
@@ -514,6 +524,10 @@ class SettingsMixin:
         self._s_row("color", y, 56, "이름 색")
         size, gap = 26, 8
         self.color_rects = self._draw_color_swatches(RIGHT - (size * len(NAME_COLORS) + gap * (len(NAME_COLORS) - 1)), y + 15, size=size, gap=gap)
+        y += 56
+        shake = self.settings.get("screen_shake", "normal")
+        self._s_row("shake", y, 56, "화면 흔들림", "공격을 받거나 K.O.가 났을 때")
+        self._s_cycler("shake_prev", "shake_next", SHAKE_LABELS.get(shake, "보통"), RIGHT, y + 28)
 
     def _render_tab_general(self):
         y = TOP

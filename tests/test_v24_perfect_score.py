@@ -16,6 +16,8 @@ from ai_bot import AIBot
 
 print("=== 1. Testing Tournament DAS / ARR & Soft Drop ===")
 app = BlockRoyaleApp()
+app.settings.data.update(das_ms=135, arr_ms=33, sdf_ms=35)       # 이 테스트는 기본 조작 설정을 가정함 (사용자가 설정에서 DAS 등을 바꿔도 결과가 흔들리지 않게 고정)
+app.apply_handling()
 app.start_game(mode="SOLO", total_players=10)
 
 # Simulate pressing and holding LEFT

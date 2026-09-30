@@ -10,6 +10,7 @@ import random
 import pygame
 from gfx import CANVAS, HiFont, mix_color as _mix
 from config import NAME_COLORS
+from stats_manager import LADDER_NAMES
 from config import (
     SCREEN_WIDTH, SCREEN_HEIGHT,
     BOARD_WIDTH, BOARD_HEIGHT,
@@ -27,6 +28,14 @@ def _ease_out(x):
 
 
 # 경기 단계별 테마 (1: 100~51인 · 2: 50인 이하 · 3: 최후의 결전). 배경 그라데이션 + 메인 보드 테두리 색
+TARGET_MODE_HELP = {
+    "AUTO": "자동: 사람 상대가 있으면 사람 우선, 아니면 탈락 직전(쌓인 블록+받을 공격이 가장 큰) 상대를 노립니다.",
+    "KO": "K.O.: 쌓인 블록과 받을 공격이 가장 큰, 탈락 직전인 상대를 노립니다.",
+    "ATTACKERS": "반격: 나를 노리는 상대에게 되돌려줍니다. 둘 이상이면 전원에게 동시 포격합니다.",
+    "BADGES": "배지: K.O.를 가장 많이 쌓은(공격력이 오른) 상대를 노립니다.",
+    "RANDOM": "랜덤: 생존자 중 무작위 1명을 노리고, 그 상대가 살아 있는 동안 유지합니다.",
+}
+
 STAGE_THEMES = {
     1: {"top": C_BG_TOP, "bottom": C_BG_BOTTOM, "border": (72, 92, 150)},
     2: {"top": (30, 20, 38), "bottom": (16, 9, 20), "border": (176, 118, 210)},
@@ -177,6 +186,8 @@ class UIRenderer:
         self._result_t0 = 0.0
         self.block_skin = "classic"         # 블록 모양 (settings의 block_skin, core.apply_visual_options가 갱신)
         self._bg_by_phase = {}
+        self._hud_tip = None                # 프레임 끝에 그릴 HUD 툴팁 (문구, 기준 사각형)
+        self._hud_rects = {}                # 코치 마크가 가리킬 HUD 사각형 (survivors / aim / incoming)
         self._theme_match_id = None
         self._theme_from = self._theme_to = 1
         self._theme_t0 = -10.0
@@ -443,6 +454,9 @@ class UIRenderer:
             self._render_key_hints(ox, oy)
         self._render_scoreboard(match)
         self._render_chat_overlay()
+        self._render_ko_orbs(match)
+        self._draw_hud_tooltip()
+        self._draw_coach_marks(match)
         if getattr(match, 'is_paused', False):
             self._render_pause_overlay()
 
@@ -770,6 +784,83 @@ class UIRenderer:
         self._button(self.pause_exit_btn, "메인 메뉴로 나가기", "red", self.pause_focus == 2, "ESC")
 
     # ---------------------------------------------------------------- 상단 HUD
+    KO_ORB_FLIGHT = 0.7      # 처치한 상대 카드에서 K.O. 칸까지 날아가는 시간(초)
+
+    def _render_ko_orbs(self, match):
+        """내가 K.O.를 낼 때 처치한 상대 카드에서 K.O. 칸으로 빛 구슬이 날아가 도착하면 칸이 번쩍임 (배지 진행이 몸으로 느껴지게)"""
+        orbs = getattr(match, "ko_orbs", None)
+        dest_rect = self._hud_rects.get("ko")
+        if not orbs or dest_rect is None:
+            return
+        now = time.time()
+        dest = dest_rect.center
+        fly = self.KO_ORB_FLIGHT
+        match.ko_orbs = orbs = [o for o in orbs if now - o["t0"] < fly + 0.35]
+        for o in orbs:
+            age = now - o["t0"]
+            src_rect = self.mini_board_rects.get(o["victim"])
+            src = src_rect.center if src_rect is not None else (self.main_board_x + self.main_board_w // 2, self.main_board_y + self.main_board_h // 2)
+            if age < fly:
+                def pos(a):
+                    k = _ease_out(a / fly)
+                    x = src[0] + (dest[0] - src[0]) * k
+                    y = src[1] + (dest[1] - src[1]) * k - math.sin(k * math.pi) * 60      # 위로 살짝 휘어 날아감
+                    return x, y
+                for j in range(6, 0, -1):                                              # 꼬리
+                    tx, ty = pos(max(0.0, age - j * 0.03))
+                    pygame.draw.circle(self.screen, _mix((255, 210, 80), (255, 120, 40), j / 6.0), (int(tx), int(ty)), max(2, 8 - j))
+                x, y = pos(age)
+                pygame.draw.circle(self.screen, (255, 240, 170), (int(x), int(y)), 9)
+                pygame.draw.circle(self.screen, (255, 255, 255), (int(x), int(y)), 5)
+            else:
+                k = (age - fly) / 0.35                                                 # 도착: K.O. 칸이 번쩍임
+                pygame.draw.rect(self.screen, _mix((255, 230, 120), (255, 255, 255), 1.0 - k), dest_rect.inflate(int(10 * k), int(10 * k)), 3, border_radius=10)
+                pygame.draw.circle(self.screen, (255, 240, 170), dest, int(14 + 30 * k), max(1, int(4 * (1.0 - k))))
+
+    def _draw_coach_marks(self, match):
+        """첫 경기 한 번만: 핵심 HUD 3곳(생존자 / 조준 모드 / 받을 공격) 말풍선. 끝나기 2초 전부터 사라짐"""
+        left = getattr(match, "coach_until", 0.0) - time.time()
+        if left <= 0 or not getattr(match, "local_is_alive", True) or getattr(match, "is_spectating", False):
+            return
+        rects = self._hud_rects
+        specs = [("survivors", "① 남은 생존자 수입니다. 마지막 1명이 우승!  (Enter 또는 클릭으로 닫기)", "below-left"),
+                 ("aim", "② 조준 모드: 내 공격이 누구에게 갈지 정합니다 (TAB / 1~5). 칩에 마우스를 올리면 설명이 나와요.", "below-left"),
+                 ("incoming", "③ 받을 공격: 초록→빨강으로 차오르면 위험! 줄을 지우면 막을 수 있어요.", "below-right")]
+        y_top = None
+        alpha = 255 if left > 2.0 else int(255 * left / 2.0)
+        for key, text, place in specs:
+            anchor = rects.get(key)
+            if anchor is None:
+                continue
+            surf = self._text(text, self.font_small, (250, 240, 200))
+            w, h = surf.get_width() + 22, surf.get_height() + 14
+            if place == "below-right":
+                r = pygame.Rect(max(8, anchor.right - w), anchor.bottom + 10, w, h)
+            else:
+                r = pygame.Rect(max(8, min(self.width - w - 8, anchor.x)), (y_top if y_top is not None else anchor.bottom + 10), w, h)
+                y_top = r.bottom + 8
+            layer = pygame.Surface((w, h), pygame.SRCALPHA)
+            pygame.draw.rect(layer, (34, 30, 12, 235), (0, 0, w, h), border_radius=9)
+            pygame.draw.rect(layer, (*C_GOLD, 255), (0, 0, w, h), 2, border_radius=9)
+            layer.blit(surf, (11, 7))
+            layer.set_alpha(alpha)
+            pygame.draw.line(self.screen, C_GOLD, (anchor.centerx if place == "below-right" else min(anchor.right - 10, max(anchor.x + 10, r.x + 20)), anchor.bottom),
+                             (r.x + 20 if place != "below-right" else r.right - 20, r.y), 2)
+            self.screen.blit(layer, r.topleft)
+
+    def _draw_hud_tooltip(self):
+        tip, self._hud_tip = self._hud_tip, None
+        if not tip or not tip[0]:
+            return
+        text, anchor = tip
+        surf = self._text(text, self.font_small, (225, 232, 250))
+        w, h = surf.get_width() + 20, surf.get_height() + 12
+        x = max(8, min(self.width - w - 8, anchor.x - 8))
+        r = pygame.Rect(x, anchor.bottom + 10, w, h)
+        pygame.draw.rect(self.screen, (14, 18, 32), r, border_radius=8)
+        pygame.draw.rect(self.screen, C_ACCENT, r, 1, border_radius=8)
+        self.screen.blit(surf, (r.x + 10, r.y + 6))
+
     def _render_top_banner(self, match, ox=0, oy=0):
         """상단 3분할 HUD: 생존자 / 조준(모드 칩 + 대상) / 배지·K.O."""
         w1, w2, w3, gap, h = 170, 400, 170, 10, 58
@@ -779,9 +870,11 @@ class UIRenderer:
 
         # 1. 생존자
         r1 = pygame.Rect(int(sx), int(by), w1, h)
+        self._hud_rects["survivors"] = r1
         self._panel(r1, border=C_GOLD)
-        self._draw_text("생존자", self.font_tiny, C_GOLD, r1.centerx, r1.y + 5, "midtop")
-        self._draw_text(f"{match.alive_count} / {match.total_players}", self.font_num, C_TEXT, r1.centerx, r1.y + 16, "midtop")
+        practice = getattr(match, "practice", False)
+        self._draw_text("연습" if practice else "생존자", self.font_tiny, C_GOLD, r1.centerx, r1.y + 5, "midtop")
+        self._draw_text("연습 중" if practice else f"{match.alive_count} / {match.total_players}", self.font_num, C_TEXT, r1.centerx, r1.y + 16, "midtop")
         ratio = match.alive_count / max(1, match.total_players)
         self._draw_bar((r1.x + 14, r1.bottom - 9, w1 - 28, 3), ratio, C_GOLD)
 
@@ -793,6 +886,7 @@ class UIRenderer:
         is_human = bool(target_p) and not target_p.get("is_ai", False)
         accent = C_GREEN if is_human else C_ACCENT
         self._panel(r2, border=accent)
+        self._hud_rects["aim"] = r2
 
         chip_gap = 4
         chip_w = (w2 - 20 - chip_gap * (len(TARGET_MODES) - 1)) // len(TARGET_MODES)
@@ -807,6 +901,8 @@ class UIRenderer:
                 pygame.draw.rect(self.screen, (28, 34, 56), cr, border_radius=9)
                 col = C_DIM
             self._draw_text(TARGET_MODE_LABELS.get(mode, mode), self.font_tiny, col, cr.centerx, cr.centery, "center")
+            if cr.collidepoint(pygame.mouse.get_pos()):                # 칩에 마우스를 올리면 설명 (다른 그림 위에 그리려고 프레임 끝에서 표시)
+                self._hud_tip = (TARGET_MODE_HELP.get(mode, ""), cr)
 
         name = target_p.get("name", "탐색 중...")[:12]
         tag = "수동 지정" if manual else "TAB으로 변경"
@@ -814,10 +910,10 @@ class UIRenderer:
             self._draw_text(f"● {name}" + ("  (사람)" if is_human else ""), self.font_hud,
                             C_GREEN if is_human else C_TEXT, r2.x + 12, r2.y + 31)
         else:
-            self._draw_text("공격 없이 끝까지 생존", self.font_hud, C_TEXT, r2.centerx, r2.y + 10, "midtop")
+            self._draw_text("연습 모드" if getattr(match, "practice", False) else "공격 없이 끝까지 생존", self.font_hud, C_TEXT, r2.centerx, r2.y + 10, "midtop")
         att_count = match.get_attackers_count_for(match.local_player_id)
         if not getattr(match, "attacks_enabled", True):
-            self._draw_text("서바이벌 모드", self.font_small, C_GREEN, r2.centerx, r2.y + 36, "midtop")
+            self._draw_text("G 쓰레기 · B 초기화" if getattr(match, "practice", False) else "서바이벌 모드", self.font_small, C_GREEN, r2.centerx, r2.y + 36, "midtop")
         elif att_count >= 2:
             self._draw_text(f"피조준 {att_count}명  반격 +{match.get_attacker_bonus(att_count)}", self.font_small,
                             C_DANGER, r2.right - 12, r2.y + 34, "topright")
@@ -830,6 +926,7 @@ class UIRenderer:
             return                                                  # 서바이벌: 배지/K.O. 칸 없음
         # 3. 배지 / K.O.
         r3 = pygame.Rect(int(sx + w1 + w2 + gap * 2), int(by), w3, h)
+        self._hud_rects["ko"] = r3
         tier, _, pct = match.get_badge_info()
         # 0킬일 때는 위험 신호처럼 보이지 않도록 차분한 색, 처치가 생기면 붉은색, 배지가 있으면 금색
         border3 = C_GOLD if tier > 0 else ((255, 120, 120) if match.local_ko_count > 0 else (74, 88, 128))
@@ -936,6 +1033,32 @@ class UIRenderer:
         self._ghost_cache[key] = surf
         return surf
 
+    @staticmethod
+    def _garbage_level_color(i):
+        """받을 공격 게이지 i번째 줄(0=맨 아래)의 색: 적을 땐 초록, 쌓일수록 노랑 -> 빨강 (8줄 이상이면 빨강)"""
+        t = min(1.0, i / 7.0)
+        if t < 0.5:
+            return _mix((90, 225, 130), (255, 222, 90), t * 2.0)
+        return _mix((255, 222, 90), (255, 84, 94), (t - 0.5) * 2.0)
+
+    def _draw_garbage_bar(self, engine, incoming, bar_x, by, bh, cs):
+        """받을 공격 게이지: 1줄 = 1칸, 아래쪽이 먼저 올라올 것. 색은 쌓인 양(초록 -> 빨강), 공격을 받은 묶음 사이는 한 칸 틈으로 구분.
+        차징 중(아직 안 올라옴)은 어둡게, 다음 락다운에 올라올 수 있는 것은 밝게"""
+        segs_fn = getattr(engine, "garbage_segments", None)
+        segs = segs_fn() if callable(segs_fn) else [(incoming, True, None)]
+        bg = (16, 19, 32)
+        i = 0
+        for lines, ready, _source in segs:
+            for k in range(lines):
+                if i >= BOARD_HEIGHT:
+                    break
+                base = self._garbage_level_color(i)
+                col = base if ready else _mix(base, bg, 0.6)
+                cy0 = by + bh - (i + 1) * cs
+                top_gap = 2 if (k == lines - 1 and i < incoming - 1) else 1      # 묶음의 맨 위 칸은 위쪽 틈을 넓혀 묶음 경계를 보이게
+                pygame.draw.rect(self.screen, col, (bar_x + 1, cy0 + top_gap, 6, cs - 1 - top_gap), border_radius=2)
+                i += 1
+
     def _draw_cell(self, x, y, size, piece_type):
         self.screen.blit(self._cell_surface(piece_type, int(size)), (int(x), int(y)))
 
@@ -984,15 +1107,10 @@ class UIRenderer:
             return
 
         # 2. 쓰레기 경고 게이지 (보드 좌측)
-        bar_x = bx - 14
-        pygame.draw.rect(self.screen, (16, 19, 32), (bar_x, by, 8, bh), border_radius=4)
+        bar_x = bx - 14                                                # 게이지는 배경/테두리 없이 칸만 그림 (복잡해 보이지 않게)
         incoming = engine.incoming_garbage
         if incoming > 0:
-            seg = min(BOARD_HEIGHT, incoming)
-            color = C_DANGER if incoming >= 4 else C_ORANGE
-            for i in range(seg):                                       # 받을 공격 1줄 = 1칸 (몇 줄인지 바로 셀 수 있게)
-                cy0 = by + bh - (i + 1) * cs
-                pygame.draw.rect(self.screen, color, (bar_x + 1, cy0 + 1, 6, cs - 2), border_radius=2)
+            self._draw_garbage_bar(engine, incoming, bar_x, by, bh, cs)
 
         # 3. 고정된 블록
         for y in range(BOARD_HEIGHT):
@@ -1145,6 +1263,7 @@ class UIRenderer:
 
     def _render_incoming_box(self, engine, ox=0, oy=0):
         rect = pygame.Rect(self._right_x(ox), self.main_board_y + 276 + oy, 108, 92)
+        self._hud_rects["incoming"] = rect
         n = engine.incoming_garbage
         danger = n >= 4
         border = C_DANGER if danger else (C_ORANGE if n > 0 else C_PANEL_BORDER)
@@ -1157,9 +1276,13 @@ class UIRenderer:
         gap = 6
         total = num.get_width() + gap + unit.get_width()
         x0 = rect.centerx - total // 2
-        cy = rect.y + 58
+        cy = rect.y + (48 if n > 0 else 58)                          # 받을 공격이 있으면 아래에 차징 상태 줄이 들어갈 자리를 남김
         self.screen.blit(num, (x0, cy - num.get_height() // 2))
         self.screen.blit(unit, (x0 + num.get_width() + gap, cy + num.get_height() // 2 - unit.get_height() - 3))
+        if n > 0:                                                    # 차징 상태: 다음 락다운에 올라올 수 있는 줄 수 / 아직 차징 중
+            ready = getattr(engine, "ready_garbage", n)
+            txt, tcol = (f"곧 {ready}줄 도착", col) if ready > 0 else ("차징 중 · 상쇄 가능", C_DIM)
+            self._draw_text(txt, self.font_tiny, tcol, rect.centerx, rect.bottom - 3, "midbottom")
 
     def _render_preview_piece(self, piece_type, center_x, center_y, scale=16, dim=False):
         shape = TETROMINOES[piece_type][0]
@@ -1174,9 +1297,25 @@ class UIRenderer:
             self.screen.blit(surf, (int(start_x + (bx - min_x) * scale), int(start_y + (by - min_y) * scale)))
 
     # ---------------------------------------------------------------- 미니 보드
+    LAYOUT_STAGES = (20, 10, 5)      # 상대 생존자가 이 수 이하로 처음 내려갈 때마다 살아남은 사람만 다시 배치해 미니 보드를 키움
+
     def _render_mini_boards(self, match, ox=0, oy=0):
         self.mini_board_rects.clear()
+        if getattr(match, "practice", False):
+            return                                          # 연습 모드: 상대 자리는 빈 보드라 그리지 않음
         others = [(pid, p) for pid, p in match.players.items() if pid != match.local_player_id]
+        # 후반 재배치: 단계가 오를 때만 (죽을 때마다가 아님) 그 시점의 생존자만 다시 배치. 다음 단계까지는 자리를 유지해 특정 상대를 계속 눈으로 따라갈 수 있고,
+        # 그 사이 탈락한 카드는 지금처럼 탈락 표시로 남음. 경기마다 한 번씩만 단계가 올라감 (단계는 내려가지 않음)
+        alive_n = sum(1 for _pid, p in others if p["is_alive"])
+        stage = sum(1 for t in self.LAYOUT_STAGES if alive_n <= t)
+        if getattr(match, "layout_stage", 0) < stage and len(others) > alive_n:
+            match.layout_stage = stage
+            match.layout_ids = [pid for pid, p in others if p["is_alive"]]
+        elif getattr(match, "layout_stage", 0) < stage:
+            match.layout_stage = stage                      # 이미 전원이 살아 있으면 자리 그대로 (재배치할 것이 없음)
+        ids = getattr(match, "layout_ids", None)
+        if ids and getattr(match, "layout_stage", 0) > 0:
+            others = [(pid, match.players[pid]) for pid in ids if pid in match.players]
         n = len(others)
         if n == 0:
             return
@@ -1389,7 +1528,7 @@ class UIRenderer:
                 self._blit_overlay(("mini_danger", dw, dh), (dw, dh), lambda surf, dw=dw, dh=dh: self._build_mini_danger(surf, dw, dh),
                                    (board_rect.x, board_rect.y), alpha=max(0, min(255, pulse_a)))
             if is_alive and pid in attackers_of_me and not is_targeted:
-                CANVAS.display.fill((232, 84, 94), CANVAS.rect_f(board_rect.x + 2, board_rect.y + 1, board_rect.w - 4, 2))   # 나를 노리는 상대: 카드 위쪽 붉은 줄 (변환된 실제 좌표에 직접 채움)
+                CANVAS.display.fill((240, 78, 88), CANVAS.rect_f(board_rect.x + 2, board_rect.y + 1, board_rect.w - 4, 3))   # 나를 노리는 상대: 카드 위쪽 붉은 줄 (변환된 실제 좌표에 직접 채움)
             if is_spec or is_targeted:                       # 락온 코너 브래킷: 관전 대상은 금색(맥박), 조준 대상은 붉은색
                 pl = 0.5 + 0.5 * math.sin(now * (5.0 if is_spec else 8.0))
                 bcol = _mix((255, 200, 80), (255, 255, 255), 0.55 * pl) if is_spec else _mix((255, 84, 96), (255, 190, 190), 0.5 * pl)
@@ -1594,7 +1733,8 @@ class UIRenderer:
                     cy_ = board_rect.y
                     for lab, piece, scale, box_h in slots:
                         if lab and bw >= 60:
-                            self.screen.blit(self._text(lab, label_font, C_GOLD if (lab == "HOLD" and hold_piece) else (120, 134, 170)), (sx, cy_ - 1))
+                            shown = lab if label_font.size(lab)[0] <= strip_w + 2 else lab[0]      # 칸보다 넓으면 첫 글자만 (옆 카드의 이름표와 겹치지 않게)
+                            self.screen.blit(self._text(shown, label_font, C_GOLD if (lab == "HOLD" and hold_piece) else (120, 134, 170)), (sx, cy_ - 1))
                             cy_ += label_font.get_height() + 1
                         box = pygame.Rect(int(sx), int(cy_), int(strip_w), box_h)
                         bcol = (C_GOLD if hold_piece else (60, 74, 110)) if lab == "HOLD" else (34, 42, 66)
@@ -1630,7 +1770,7 @@ class UIRenderer:
             for pid, p in match.players.items():
                 if p["is_alive"] and p.get("target_id") == match.local_player_id and pid in self.mini_board_rects:
                     self._draw_targeting_laser(self.mini_board_rects[pid].center, main_center,
-                                               color=(200, 62, 70), pulse_speed=-220.0, is_incoming=False)
+                                               color=(240, 78, 88), pulse_speed=-220.0, is_incoming=True)      # 나를 노리는 상대: 굵고 밝은 붉은 점선(2px)이 나를 향해 흐름
                     shown += 1
                     if shown >= 6:   # 다수에게 조준당해도 화면이 붉은 선으로 뒤덮이지 않도록 제한
                         break
@@ -1931,15 +2071,37 @@ class UIRenderer:
         """스크롤로 새로 보이게 된 행은 등장 애니메이션 없이 바로 표시"""
         return True
 
+    def _draw_timeline_graph(self, match, rect, legend_right, legend_y):
+        """경기 흐름 미니 그래프: 주황=내 스택 높이(0~20줄), 파랑=생존자 비율. 점이 5개 미만이면 그리지 않음"""
+        tl = getattr(match, "timeline", None)
+        if not tl or len(tl) < 5:
+            return
+        pygame.draw.rect(self.screen, (18, 23, 40), rect, border_radius=8)
+        pygame.draw.rect(self.screen, (44, 56, 92), rect, 1, border_radius=8)
+        inner = rect.inflate(-10, -10)
+        n = len(tl)
+        total = max(1, match.total_players)
+        def pts(fn):
+            return [(inner.x + inner.w * i / max(1, n - 1), inner.bottom - inner.h * min(1.0, max(0.0, fn(t))))
+                    for i, t in enumerate(tl)]
+        pygame.draw.lines(self.screen, (90, 170, 255), False, pts(lambda t: t[1] / total), 2)          # 생존자 비율
+        stack = pts(lambda t: t[2] / float(BOARD_HEIGHT))
+        pygame.draw.lines(self.screen, (255, 165, 70), False, stack, 2)                                  # 내 스택 높이
+        pygame.draw.circle(self.screen, (255, 90, 90), (int(stack[-1][0]), int(stack[-1][1])), 3)        # 탈락 지점
+        # 범례는 오른쪽 위에 (그래프 아래에 두면 길어진 '최종 순위 … 에게 탈락' 줄과 겹침)
+        self._draw_text("━ 내 스택 높이", self.font_tiny, (255, 165, 70), legend_right, legend_y, "topright")
+        self._draw_text("━ 생존자 비율", self.font_tiny, (90, 170, 255), legend_right, legend_y + 16, "topright")
+
     def _render_result_overlay(self, match):
         CANVAS.overlay((4, 6, 12, 200))
 
         won = match.local_rank == 1
         accent = C_GOLD if won else C_DANGER
         records = tuple(getattr(match, "new_records", ()) or ())
+        ladder_clear = getattr(match, "ladder_clear", None)
         lh = self.font_small.get_height()
         # 최고 기록 줄이 있으면 그 줄 + 배지 줄 + 버튼 발광(위로 8px)이 겹치지 않도록 패널을 그만큼 늘림 (글자 크기 옵션에도 맞춰짐)
-        extra = max(0, 178 + lh + 4 + lh + 12 - 226) if records else 0
+        extra = max(0, 178 + lh + 4 + lh + 12 - 226) if (records or ladder_clear) else 0
         box_w, box_h = 660, 346 + extra
         bx = (self.width - box_w) // 2
         by = (self.height - box_h) // 2
@@ -1951,8 +2113,14 @@ class UIRenderer:
             rank_txt = "#1"
         else:
             self._draw_text("K.O.  경기 탈락", self.font_title, C_DANGER, bx + box_w // 2, by + 22, "midtop", shadow=True)
-            self._draw_text(f"최종 순위  {match.local_rank}위 / {match.total_players}명", self.font_mid, C_TEXT,
+            killer = getattr(match, "local_killer_id", None)
+            killer_txt = ""
+            if killer and killer in match.players:
+                kp = match.players[killer]
+                killer_txt = f"  ·  {kp.get('name', '?')[:12]}" + (f"({kp['trait']})" if kp.get("trait") else "") + "에게 탈락"          # 나를 K.O.한 상대
+            self._draw_text(f"최종 순위  {match.local_rank}위 / {match.total_players}명" + killer_txt, self.font_mid, C_TEXT,
                             bx + box_w // 2, by + 66, "midtop")
+            self._draw_timeline_graph(match, pygame.Rect(bx + 22, by + 14, 140, 42), bx + box_w - 22, by + 16)
             rank_txt = f"#{match.local_rank}"
 
         # 통계 카드: 왼쪽부터 차례로 미끄러져 들어오고, 숫자는 카운트업 (순위는 꼴찌에서 최종 순위까지 카운트다운)
@@ -1993,13 +2161,20 @@ class UIRenderer:
                 pygame.draw.rect(self.screen, C_GOLD, pill, border_radius=8)
                 self._draw_text("NEW", self.font_tiny, (24, 18, 4), pill.centerx, pill.centery, "center")
         badge_y = by + 188
-        if records and t >= rec_t:
+        if (records or ladder_clear) and t >= rec_t:
             names = {"rank": "순위", "ko": "K.O.", "combo": "최대 콤보"}
-            self._draw_text("★ 최고 기록 갱신!  " + " · ".join(names[k] for k in records if k in names), self.font_small,
-                            C_GOLD, bx + box_w // 2, by + 178, "midtop")
-        if records:
+            parts = []
+            if records:
+                parts.append("최고 기록 갱신!  " + " · ".join(names[k] for k in records if k in names))
+            if ladder_clear:
+                parts.append(f"난이도 클리어!  {LADDER_NAMES.get(ladder_clear, ladder_clear)}")
+            self._draw_text("★ " + "   ★ ".join(parts), self.font_small, C_GOLD, bx + box_w // 2, by + 178, "midtop")
+        if records or ladder_clear:
             badge_y = by + 178 + lh + 4
         badge_txt = f"최종 배지 Lv.{tier} (공격력 +{pct})" if tier > 0 else "최종 배지 Lv.0"
+        goal = getattr(match, "next_goal", None)
+        if goal and t >= 1.2:                                            # 다음 목표: 재도전 동기를 주는 한 줄 (카드 연출이 끝난 뒤 표시)
+            badge_txt += f"   ·   다음 목표: {goal}"
         self._draw_text(badge_txt, self.font_small, C_DIM, bx + box_w // 2, badge_y, "midtop")
 
         mx, my = pygame.mouse.get_pos()
@@ -2056,7 +2231,7 @@ class UIRenderer:
         """관전 바: 미니 보드 영역(좌우)을 가리지 않도록 보드 아래 중앙 빈 공간에 2줄로 표시"""
         target_p = match.players.get(match.spectate_target_id, {})
         name = target_p.get("name", "생존자 탐색 중")
-        who = "봇" if target_p.get("is_ai", False) else "사람"
+        who = (f"{target_p['trait']} 봇" if target_p.get("trait") else "봇") if target_p.get("is_ai", False) else "사람"
         ko = target_p.get("ko_count", 0)
 
         bar_w, bar_h = 580, 60

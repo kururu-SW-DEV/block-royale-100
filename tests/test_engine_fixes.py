@@ -53,10 +53,55 @@ def test_soft_drop_and_gravity_score():
 
 def test_garbage_cap_keeps_leftover():
     e = _empty_engine('O')
+    e.garbage_delay = 0.0                        # 차징 없이 바로 올라오는 경우의 한 번에 올라오는 상한만 확인
     e.queue_garbage(MAX_GARBAGE_PER_LOCK + 5)
     e.hard_drop()
     assert e.incoming_garbage == 5
     assert sum(1 for row in e.grid if 'G' in row) == MAX_GARBAGE_PER_LOCK
+
+
+def test_garbage_charging():
+    """공격을 받으면 garbage_delay초 동안 차징: 그 사이 락다운에서는 올라오지 않고, 차징이 끝나면 올라옴. 시간 압박(instant)은 바로 올라옴"""
+    e = _empty_engine('O')
+    e.queue_garbage(3, source="A")
+    assert e.incoming_garbage == 3 and e.ready_garbage == 0
+    assert e.garbage_segments() == [(3, False, "A")]
+    e.hard_drop()                                 # 차징 중: 줄을 못 지워도 올라오지 않음
+    assert e.incoming_garbage == 3 and not any('G' in row for row in e.grid)
+    e.update(e.garbage_delay + 0.05)              # 차징 끝
+    assert e.ready_garbage == 3 and e.garbage_segments()[0][1] is True
+    e.hard_drop()
+    assert e.incoming_garbage == 0 and sum(1 for row in e.grid if 'G' in row) == 3
+    e2 = _empty_engine('O')
+    e2.queue_garbage(2, source="PRESSURE", instant=True)
+    assert e2.ready_garbage == 2
+    e2.hard_drop()
+    assert sum(1 for row in e2.grid if 'G' in row) == 2
+    e3 = _empty_engine('O')                       # 총합을 직접 늘리는 경로(스냅샷 복원 등)는 바로 올라올 수 있는 묶음, 줄이는 경로는 오래된 묶음부터
+    e3.queue_garbage(2, source="A")
+    e3.queue_garbage(3, source="B")
+    e3.incoming_garbage = 4
+    assert e3.garbage_segments() == [(1, False, "B")] or sum(s[0] for s in e3.garbage_segments()) == 4
+    e3.incoming_garbage = 7
+    assert e3.incoming_garbage == 7 and e3.ready_garbage == 3
+    print("  OK garbage charging")
+
+
+def test_garbage_hole_variation():
+    """쓰레기 줄은 항상 구멍이 정확히 1개이고, 여러 줄이 한 번에 올라올 때 가끔 구멍 위치가 옮겨짐(전부 같은 열이 아님)"""
+    moved = 0
+    for seed in range(30):
+        e = _empty_engine('O')
+        e.garbage_delay = 0.0
+        e.garbage_rng.seed(seed)
+        e.queue_garbage(8)
+        e.hard_drop()
+        rows = [row for row in e.grid if 'G' in row]
+        assert len(rows) == 8 and all(sum(1 for c in row if c is None) == 1 for row in rows)
+        holes = {row.index(None) for row in rows}
+        moved += len(holes) > 1
+    assert moved >= 20, moved                     # 25%/줄 확률이라 8줄이면 거의 항상 한 번은 옮겨짐
+    print("  OK garbage hole variation")
 
 
 def test_badge_applies_before_cancel():

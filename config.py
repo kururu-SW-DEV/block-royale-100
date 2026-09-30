@@ -2,7 +2,7 @@
 Block Royale 100 - Configuration & Constants
 """
 
-APP_VERSION = "1.0.7"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
+APP_VERSION = "1.0.8"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
 
 # 화면 해상도 설정
 SCREEN_WIDTH = 1366
@@ -164,6 +164,12 @@ TSPIN_MINI_ATTACK_TABLE = {
 # 락다운 1회당 보드에 올라오는 쓰레기 줄 최대 수 (초과분은 대기열 유지)
 MAX_GARBAGE_PER_LOCK = 8
 
+# 공격을 받으면 쓰레기 줄이 이 시간(초) 동안 "차징" 중이라 보드에 올라오지 않음 (그 사이에 줄을 지워 상쇄할 수 있음). 0이면 끔
+GARBAGE_CHARGE_DELAY = 0.8
+
+# 쓰레기 줄의 구멍 위치: 한 번에 올라오는 묶음 안에서 다음 줄로 넘어갈 때 구멍이 다른 칸으로 옮겨질 확률
+GARBAGE_MESSINESS = 0.25
+
 # 한 플레이어에게 쌓여 있을 수 있는 대기 쓰레기 줄 수의 상한 (블록 3번 고정분). 이미 탈락이 확정된 상대에게 100줄씩 쌓이는 것을 막음: 초과분은 버려짐
 MAX_INCOMING_GARBAGE = 24
 
@@ -178,6 +184,32 @@ BADGE_TIERS = [
     (8, 0.75),   # 3단계 (8 K.O.): +75% 공격력 증가
     (16, 1.00),  # 4단계 (16 K.O.): +100% 공격력 증가 (공격력 2배)
 ]
+
+# 봇 이름: "번개여우"처럼 형용+동물 2글자씩 100개 조합을 한 번 섞어 둔 고정 목록 (같은 번호 봇은 로비/경기/멀티플레이에서 같은 이름)
+BOT_NAME_ADJ = ("번개", "새벽", "노을", "폭풍", "안개", "달빛", "별빛", "바람", "얼음", "불꽃")
+BOT_NAME_NOUN = ("여우", "늑대", "고래", "까치", "수달", "사자", "거북", "참새", "매미", "토끼")
+
+
+def _build_bot_names():
+    import random as _r
+    names = [a + n for a in BOT_NAME_ADJ for n in BOT_NAME_NOUN]
+    _r.Random(2026).shuffle(names)
+    return tuple(names)
+
+
+BOT_NAMES = _build_bot_names()
+
+
+def bot_display_name(idx):
+    """봇 번호(1부터)에 대응하는 표시 이름. 100개가 넘어가면 번호를 덧붙여 중복을 막음"""
+    n = len(BOT_NAMES)
+    base = BOT_NAMES[(idx - 1) % n]
+    return base if idx <= n else f"{base}{(idx - 1) // n + 1}"
+
+
+# 봇 성향: 조준 방식만 달라짐 (평가/탐색은 그대로라 CPU 부담 없음). 반격형은 나를 노리는 상대에게 자주 되갚고, 저격형은 되갚지 않고 탈락 직전 상대를 노림
+BOT_TRAITS = ("반격형", "저격형", "균형형")
+BOT_TRAIT_WEIGHTS = (2, 2, 4)
 
 # 다수 공격자(Attacker) 타겟팅 방어/반격 보너스
 ATTACKER_BONUS = {
