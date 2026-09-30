@@ -601,8 +601,7 @@ class BattleRoyaleMatch:
         if to_id == self.local_player_id and self.local_is_alive:
             self.local_engine.queue_garbage(lines, source=from_id)
             self.trigger_screen_shake(min(14.0, 5.0 + lines * 2.2))
-            if self.sound_mgr:
-                self.sound_mgr.play('garbage')
+            self._play_hit_alarm(lines)
             attacker_p = self.players.get(from_id, {})
             attacker_name = attacker_p.get("name", "적 플레이어")
             self.add_floating_text(f"[피격 경고] +{lines}줄 공격 받음 (보낸이: {attacker_name})", (255, 75, 75), duration=2.4, size=22, category="alert")
@@ -690,6 +689,24 @@ class BattleRoyaleMatch:
     CLUTCH_MIN_SECS = 1.0
     CLUTCH_COOLDOWN = 20.0
     CLUTCH_BONUS = 2
+
+    HIT_ALARM_MIN_GAP = 0.22          # 피격 경고음 사이 최소 간격(초): 여러 명에게 동시에 맞아도 소리가 뭉개지지 않게 (더 센 경고는 간격 무시)
+
+    @staticmethod
+    def hit_alarm_tier(lines):
+        """받은 공격 줄 수 -> 경고음 단계 (1: 1~2줄, 2: 3~5줄, 3: 6줄 이상)"""
+        return 3 if lines >= 6 else (2 if lines >= 3 else 1)
+
+    def _play_hit_alarm(self, lines):
+        if not self.sound_mgr:
+            return
+        tier = self.hit_alarm_tier(lines)
+        now = time.time()
+        if tier > getattr(self, "_last_hit_tier", 0) or now - getattr(self, "_last_hit_t", 0.0) >= self.HIT_ALARM_MIN_GAP:
+            self._last_hit_t, self._last_hit_tier = now, tier
+            self.sound_mgr.play(f"hit_{tier}")
+        elif now - getattr(self, "_last_hit_t", 0.0) > 1.0:
+            self._last_hit_tier = 0
 
     def practice_inject_garbage(self, lines):
         """연습 모드: 쓰레기 줄을 직접 받아 보기 (실제 공격처럼 차징 후 올라옴)"""

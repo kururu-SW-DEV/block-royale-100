@@ -1813,6 +1813,32 @@ def test_practice_and_daily_challenge():
     print("  OK practice and daily challenge")
 
 
+def test_hit_alarm_sounds():
+    """피격 경고음: 3단계 소리가 실제로 등록되어 있고(예전엔 없는 'garbage' 소리를 불러 아무 소리도 안 났음), 줄 수에 따라 단계가 오르며, 연속 피격은 뭉개지지 않게 간격 제한"""
+    from sound_fx import SoundManager
+    from battle_royale import BattleRoyaleMatch
+    sm = SoundManager()
+    assert all(f"hit_{i}" in sm.sounds for i in (1, 2, 3)) and "warning" in sm.sounds
+    assert [BattleRoyaleMatch.hit_alarm_tier(n) for n in (1, 2, 3, 5, 6, 12)] == [1, 1, 2, 2, 3, 3]
+
+    class Fake:
+        def __init__(self):
+            self.played = []
+
+        def play(self, name, *a, **k):
+            self.played.append(name)
+    fs = Fake()
+    m = BattleRoyaleMatch(total_players=4, local_player_id="ME", local_player_name="Me", sound_mgr=fs, bot_difficulty="easy")
+    m.apply_attack("BOT_01", "ME", 2)
+    assert fs.played[-1] == "hit_1" and "garbage" not in fs.played
+    n = len(fs.played)
+    m.apply_attack("BOT_02", "ME", 1)                    # 바로 이어진 같은 단계 피격은 소리를 겹치지 않음
+    assert len([p for p in fs.played[n:] if p.startswith("hit_")]) == 0
+    m.apply_attack("BOT_02", "ME", 7)                    # 더 센 공격은 간격과 무관하게 바로 울림
+    assert fs.played[-1] == "hit_3"
+    print("  OK hit alarm sounds")
+
+
 def test_new_record_flags():
     """record_match가 이번 경기가 이전 최고 기록(순위/K.O./최대 콤보)을 넘었는지 돌려줌. 첫 경기와 동률은 기록 갱신이 아님"""
     with tempfile.TemporaryDirectory() as d:

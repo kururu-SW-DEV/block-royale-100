@@ -49,7 +49,7 @@ class GameMixin:
                     self.match.practice_reset()
                 else:
                     self.match.practice_inject_garbage(8 if (event.mod & pygame.KMOD_SHIFT) else 4)
-                    self.sound_mgr.play('warning')
+                    self.match._play_hit_alarm(8 if (event.mod & pygame.KMOD_SHIFT) else 4)
                 return
             # 탈락 또는 게임 종료 시 처리
             if self.match.match_finished:

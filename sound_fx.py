@@ -251,6 +251,22 @@ class SoundManager:
         beep2 = np.sin(2 * np.pi * 1174.66 * (t8 - 0.15)) * np.exp(-(t8 - 0.15) * 14.0) * (t8 >= 0.15)
         self.sounds['warning'] = self._pack_sound((beep1 + beep2) * 0.65)
         
+        # 8-0. 피격 경고음 3단계 (받은 공격 줄 수에 따라): 가볍게 1번 -> 다급한 2번 -> 사이렌+묵직한 충격
+        def _hit_alarm(beeps, freq_a, freq_b, thud_amp, noise_amp, length):
+            th = np.arange(int(sr * length)) / sr
+            out = np.zeros_like(th)
+            for i in range(beeps):
+                t0 = i * 0.13
+                tt = np.clip(th - t0, 0.0, None)
+                f = freq_a + (freq_b - freq_a) * np.clip(tt / 0.11, 0.0, 1.0)            # 음이 살짝 올라가는 경고 톤
+                out += np.sin(2 * np.pi * np.cumsum(f) / sr) * np.exp(-tt * 16.0) * (th >= t0) * (tt < 0.12) * 0.55
+            out += np.sin(2 * np.pi * (60.0 + 70.0 * np.exp(-th * 25.0)) * th) * np.exp(-th * 14.0) * thud_amp    # 묵직한 충격
+            out += (np.random.rand(len(th)) * 2 - 1) * np.exp(-th * 45.0) * noise_amp
+            return out
+        self.sounds['hit_1'] = self._pack_sound(_hit_alarm(1, 620.0, 700.0, 0.55, 0.10, 0.30))
+        self.sounds['hit_2'] = self._pack_sound(_hit_alarm(2, 700.0, 880.0, 0.75, 0.16, 0.42))
+        self.sounds['hit_3'] = self._pack_sound(_hit_alarm(3, 780.0, 1100.0, 1.00, 0.25, 0.55))
+
         # 8-1. Heartbeat: 스택이 위험하게 높을 때 반복 재생되는 낮은 박동음 ("쿵-쿵")
         t_h = np.arange(int(sr * 0.5)) / sr
         def _thump(t0, amp):
