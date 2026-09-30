@@ -10,3 +10,5 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt pyflakes
       - run: python run_all_tests.py
+        env:
+          PYTHONUTF8: "1"

@@ -26,6 +26,8 @@ def _restore(snap):
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # 한글 결과 줄이 cp1252 같은 콘솔(GitHub Actions Windows 등)에서도 출력되도록
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy", PYTHONIOENCODING="utf-8", PYTHONPATH=HERE)  # 프로젝트 루트를 import 경로에 추가(tests/ 안에서 실행돼도 block_engine 등을 찾도록)
     snap = _snapshot()
     results = []
