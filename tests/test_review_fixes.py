@@ -961,6 +961,7 @@ def test_mini_cards_fast_path_pixel_identical():
             app.screen = CANVAS
             app.renderer.screen = CANVAS
             app.settings.data["mini_detail"] = "detailed" if detailed else "simple"
+            app.settings.data["block_skin"] = "classic"      # 반투명 광택이 있는 스킨(젤리)은 레이어 합성 순서에 따라 1단계 오차가 생기므로 고정
             app.apply_visual_options()
             app.bot_difficulty = "master"
             _r.seed(3)

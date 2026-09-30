@@ -8,6 +8,8 @@ from app_common import (
     ACTION_NAMES,
     BGM_STAGE_SET_DESCS,
     BGM_STAGE_SET_LABELS,
+    BLOCK_SKIN_DESCS,
+    BLOCK_SKIN_LABELS,
     BOT_DIFFICULTY_DESCS,
     BOT_DIFFICULTY_LABELS,
     CANVAS,
@@ -51,6 +53,7 @@ TAB_NAV = {
               ("name", "name_edit", None, None), ("color", None, "color_prev", "color_next")],
     "general": [("fs", "toggle_fs", "fs=window", "fs=full"), ("res", "res_next", "res_prev", "res_next"),
                 ("mini", "mini_detail", "mini_detail=detailed", "mini_detail=simple"),
+                ("block_skin", None, "skin_prev", "skin_next"),
                 ("color_mode", "color_mode", "color_mode=normal", "color_mode=colorblind"),
                 ("text_size", "text_size", "text_size=normal", "text_size=large")],
     "audio": [("bgm", "bgm_toggle", "bgm_dec", "bgm_inc"), ("stage_bgm", None, "stage_bgm_prev", "stage_bgm_next"),
@@ -71,6 +74,7 @@ HELP = {
     "mini": "자세히: 조작 중인 블록, 착지 위치, 홀드/다음 블록까지 표시 · 간략: 쌓인 블록만 표시해 더 깔끔하고 가볍습니다.",
     "color_mode": "색약 보정은 블록 색을 밝기 차이가 큰 팔레트로 바꿉니다.",
     "text_size": "게임 화면의 작은 글씨를 키웁니다. (메뉴 글자는 그대로입니다)",
+    "block_skin": "게임 화면 블록의 모양을 바꿉니다. 색은 위의 '블록 색상' 설정을 따르며, 로고와 미니 보드는 그대로입니다.",
     "bgm": "배경음악 켜기/끄기와 음량. 생존자가 줄수록(100인 → 50인 → 20인) 곡이 더 긴박해집니다.",
     "stage_bgm": "경기 중(1/2/3단계) 배경음 세트를 고릅니다. '랜덤'이면 경기를 시작할 때마다 5가지 중 하나가 무작위로 재생됩니다.",
     "sfx": "효과음 켜기/끄기와 음량. 음량을 바꾸면 바로 들어볼 수 있습니다.",
@@ -84,7 +88,7 @@ HELP = {
 # 탭별 '기본값으로' 대상 설정 키
 TAB_DEFAULT_KEYS = {
     "match": ["target_player_count", "bot_difficulty", "game_mode"],
-    "general": ["resolution", "mini_detail", "color_mode", "text_size"],
+    "general": ["resolution", "mini_detail", "color_mode", "text_size", "block_skin"],
     "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume"],
     "keys": ["das_ms", "arr_ms", "sdf_ms"],
 }
@@ -277,6 +281,10 @@ class SettingsMixin:
                     self.renderer.mini_detailed = (new != "simple")
                 else:
                     self.apply_visual_options()
+        elif btn_id in ("skin_prev", "skin_next"):
+            self.sound_mgr.play('rotate')
+            self.settings.cycle_block_skin(-1 if btn_id == "skin_prev" else 1)
+            self.apply_visual_options()
         # 게임 탭
         elif btn_id in ("attack=on", "attack=off", "attack_toggle"):
             cur = "battle" if self.settings.get("game_mode") != "survival" else "survival"
@@ -523,6 +531,13 @@ class SettingsMixin:
         self._s_row("mini", y, 56, "미니 보드", "상대 보드에 표시할 정보의 양")
         self._s_seg([("mini_detail=detailed", "자세히"), ("mini_detail=simple", "간략")],
                     "mini_detail=simple" if self.settings.get("mini_detail") == "simple" else "mini_detail=detailed", RIGHT, y + 28)
+        y += 56
+        skin = self.settings.get("block_skin", "classic")
+        self._s_row("block_skin", y, 56, "블록 스킨", BLOCK_SKIN_DESCS.get(skin, ""))
+        self._s_cycler("skin_prev", "skin_next", BLOCK_SKIN_LABELS.get(skin, "클래식"), RIGHT, y + 28, color=C_GOLD)
+        px = RIGHT - 328 - 16 - 7 * 22                            # 현재 스킨으로 그린 7종 블록 미리보기 (설명과 선택기 사이)
+        for i, piece in enumerate("IOTSZJL"):
+            self.screen.blit(self.renderer._cell_surface(piece, 20), (px + i * 22, y + 18))
         y += 56 + 10
         self._s_section("접근성", y)
         y += 30

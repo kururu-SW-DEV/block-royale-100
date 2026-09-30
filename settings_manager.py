@@ -44,11 +44,26 @@ BGM_STAGE_SET_LABELS = {
 }
 BGM_STAGE_SET_DESCS = {
     "random": "경기를 시작할 때마다 5가지 세트 중 하나가 무작위로 선택됩니다.",
-    "0": "오리지널 3부작: Cyber Rush -> Hyperdrive Override -> Apex Protocol",
-    "1": "Neon Circuit -> Circuit Breaker -> Overclock",
-    "2": "Pulse Overdrive -> Redline -> Terminal Velocity",
-    "3": "Chrome Requiem -> Ghost Protocol -> Blackout Surge",
-    "4": "Vector Surge -> Quantum Drift -> Singularity",
+    "0": "오리지널 3부작: Cyber Rush → Hyperdrive Override → Apex Protocol",
+    "1": "Neon Circuit → Circuit Breaker → Overclock",
+    "2": "Pulse Overdrive → Redline → Terminal Velocity",
+    "3": "Chrome Requiem → Ghost Protocol → Blackout Surge",
+    "4": "Vector Surge → Quantum Drift → Singularity",
+}
+
+# 블록 스킨: 게임 화면의 블록 모양 (색은 색상 모드 설정을 따름)
+BLOCK_SKIN_OPTIONS = ["classic", "neon", "flat", "jelly"]
+BLOCK_SKIN_LABELS = {
+    "classic": "클래식",
+    "neon": "네온",
+    "flat": "플랫",
+    "jelly": "젤리",
+}
+BLOCK_SKIN_DESCS = {
+    "classic": "입체감 있는 기본 블록",
+    "neon": "테두리가 빛나는 블록",
+    "flat": "깔끔한 단색 블록",
+    "jelly": "둥글고 윤기 나는 블록",
 }
 
 # 기본 조작키 프리셋
@@ -109,6 +124,7 @@ DEFAULT_SETTINGS = {
     "sdf_ms": 35,                # 소프트 드롭 낙하 간격 (ms, 작을수록 빠름)
     "color_mode": "normal",      # 블록 색상: "normal"(기본) / "colorblind"(색약 보정)
     "text_size": "normal",       # 게임 화면 글자 크기: "normal"(보통) / "large"(크게)
+    "block_skin": "classic",     # 블록 모양: BLOCK_SKIN_OPTIONS 중 하나
     "game_mode": "battle",       # 게임 모드: "battle"(배틀로얄: 공격을 주고받음) / "survival"(서바이벌: 공격 없이 각자 생존 경쟁)
     "mini_detail": "detailed",   # 미니 보드 표시: "detailed"(자세히) / "simple"(간략)
     "key_preset": "arcade",
@@ -173,6 +189,8 @@ def _valid_setting(key, value):
         if key == "color_mode" and value not in ("normal", "colorblind"):
             return False, None
         if key == "text_size" and value not in ("normal", "large"):
+            return False, None
+        if key == "block_skin" and value not in BLOCK_SKIN_OPTIONS:
             return False, None
         return True, value
     if isinstance(default, list):
@@ -246,6 +264,14 @@ class SettingsManager:
         new_idx = (idx + step) % len(BGM_STAGE_SET_OPTIONS)
         new_val = BGM_STAGE_SET_OPTIONS[new_idx]
         self.set("bgm_stage_set", new_val)
+        return new_val
+
+    def cycle_block_skin(self, step=1):
+        cur = self.get("block_skin", "classic")
+        if cur not in BLOCK_SKIN_OPTIONS:
+            cur = "classic"
+        new_val = BLOCK_SKIN_OPTIONS[(BLOCK_SKIN_OPTIONS.index(cur) + step) % len(BLOCK_SKIN_OPTIONS)]
+        self.set("block_skin", new_val)
         return new_val
 
     def cycle_resolution(self, step=1, available=None):

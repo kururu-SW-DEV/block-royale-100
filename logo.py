@@ -210,7 +210,7 @@ class Logo:
             for x, y in p["cells"]:
                 title.blit(shadow_cell, (self._px(x), self._px(y + 6)))
         for p in self._pieces:
-            cell = self.r._cell_surface(p["piece"], cs)
+            cell = self.r._cell_surface(p["piece"], cs, skin="classic")
             seam_col = PIECE_COLORS.get(p["piece"], (180, 180, 200))
             for x, y in p["cells"]:
                 title.blit(cell, (self._px(x), self._px(y)))
@@ -270,7 +270,7 @@ class Logo:
                 if c == ".":
                     continue
                 piece = JEWELS.get(c) or ROW_PIECE[row]
-                crown.blit(self.r._cell_surface(piece, cs2), (self._px(col * cs2), self._px(row * cs2)))
+                crown.blit(self.r._cell_surface(piece, cs2, skin="classic"), (self._px(col * cs2), self._px(row * cs2)))
         self._crown = crown
         self._crown_size = (cw, ch_)
 
@@ -348,7 +348,7 @@ class Logo:
                 continue
             k = _ease_out_bounce(t) if t < 1 else 1.0
             y_off = -(1.0 - k) * p["drop"]
-            cell = self.r._cell_surface(p["piece"], self.CELL)
+            cell = self.r._cell_surface(p["piece"], self.CELL, skin="classic")
             for x, y in p["cells"]:
                 screen.blit(cell, (ox + x, oy + y + y_off))
             seam_col = PIECE_COLORS.get(p["piece"], (180, 180, 200))

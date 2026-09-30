@@ -15,6 +15,7 @@ class CoreMixin:
         """설정의 색상 모드(기본/색약 보정)와 게임 화면 글자 크기를 적용"""
         from config import apply_color_mode
         apply_color_mode(self.settings.get("color_mode"))
+        self.renderer.block_skin = self.settings.get("block_skin")
         self.renderer.set_text_boost(2 if self.settings.get("text_size") == "large" else 0)
         self.renderer.clear_visual_caches()                     # 색이 바뀐 블록/패널 캐시를 비워 새 색으로 다시 만들게 함
 

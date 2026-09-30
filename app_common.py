@@ -28,6 +28,7 @@ from settings_manager import (
     SettingsManager,
     BOT_DIFFICULTY_LABELS, BOT_DIFFICULTY_DESCS,
     BGM_STAGE_SET_LABELS, BGM_STAGE_SET_DESCS,
+    BLOCK_SKIN_LABELS, BLOCK_SKIN_DESCS,
     ACTION_NAMES, RESOLUTION_OPTIONS
 )
 from stats_manager import StatsManager

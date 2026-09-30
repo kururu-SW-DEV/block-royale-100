@@ -88,7 +88,7 @@ class NeonMenuBackground:
         # 떨어지는 테트로미노 (셀은 네이티브 해상도 캐시를 재사용하므로 선명함)
         for f in self.floaters:
             size = f["size"]
-            cell = r._cell_surface(f["piece"], size, alpha=f["alpha"])
+            cell = r._cell_surface(f["piece"], size, alpha=f["alpha"], skin="classic")
             ox = f["x"] + math.sin(f["phase"]) * size * 0.6
             for bx, by in TETROMINOES[f["piece"]][f["rot"]]:
                 screen.blit(cell, (int(ox + bx * size), int(f["y"] + by * size)))

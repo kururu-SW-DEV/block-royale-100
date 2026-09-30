@@ -19,6 +19,13 @@ from config import (
 # ---------------------------------------------------------------- 팔레트
 C_BG_TOP = (14, 17, 30)
 C_BG_BOTTOM = (8, 9, 16)
+
+# 경기 단계별 테마 (1: 100~51인 · 2: 50인 이하 · 3: 최후의 결전). 배경 그라데이션 + 메인 보드 테두리 색
+STAGE_THEMES = {
+    1: {"top": C_BG_TOP, "bottom": C_BG_BOTTOM, "border": (72, 92, 150)},
+    2: {"top": (30, 20, 38), "bottom": (16, 9, 20), "border": (176, 118, 210)},
+    3: {"top": (42, 12, 18), "bottom": (18, 5, 9), "border": (214, 74, 84)},
+}
 C_PANEL = (20, 25, 42)
 C_PANEL_BORDER = (52, 64, 98)
 C_TEXT = (235, 240, 252)
@@ -160,6 +167,12 @@ class UIRenderer:
         self.result_restart_btn = None
         self.result_spectate_btn = None
         self.result_focus_id = "return"     # 결과 화면 키보드 포커스 (restart/spectate/return)
+        self.block_skin = "classic"         # 블록 모양 (settings의 block_skin, core.apply_visual_options가 갱신)
+        self._bg_by_phase = {}
+        self._theme_match_id = None
+        self._theme_from = self._theme_to = 1
+        self._theme_t0 = -10.0
+        self._theme_border = STAGE_THEMES[1]["border"]
         self.pause_resume_btn = None
         self.pause_settings_btn = None
         self.pause_exit_btn = None
@@ -255,16 +268,48 @@ class UIRenderer:
             surf.set_alpha(alpha)
         CANVAS.display.blit(surf, (CANVAS.X(pos[0]), CANVAS.Y(pos[1])))
 
-    def _bg(self):
-        """배경 그라데이션 (네이티브 해상도로 1회 생성)"""
+    def _make_bg(self, top, bottom):
+        surf = CANVAS.make_surface(self.width, self.height, alpha=False)
+        w, h = pygame.Surface.get_size(surf)
+        for y in range(h):
+            pygame.draw.line(surf, _mix(top, bottom, y / h), (0, y), (w, y))
+        return surf
+
+    def _bg(self, phase=1):
+        """배경 그라데이션 (네이티브 해상도로 단계별 1회 생성). phase: 경기 단계 1/2/3"""
         self._check_ver()
         if self.bg_surface is None:
-            surf = CANVAS.make_surface(self.width, self.height, alpha=False)
-            w, h = pygame.Surface.get_size(surf)
-            for y in range(h):
-                pygame.draw.line(surf, _mix(C_BG_TOP, C_BG_BOTTOM, y / h), (0, y), (w, y))
-            self.bg_surface = surf
-        return self.bg_surface
+            self._bg_by_phase = {}
+            self.bg_surface = self._make_bg(C_BG_TOP, C_BG_BOTTOM)
+            self._bg_by_phase[1] = self.bg_surface
+        surf = self._bg_by_phase.get(phase)
+        if surf is None:
+            th = STAGE_THEMES[phase]
+            surf = self._bg_by_phase[phase] = self._make_bg(th["top"], th["bottom"])
+        return surf
+
+    def _update_stage_theme(self, match):
+        """경기 단계(1/2/3)가 바뀌면 배경과 보드 테두리 색을 1.4초에 걸쳐 새 단계 색으로 바꿈"""
+        phase = min(3, max(1, getattr(match, "phase", 1)))
+        now = time.time()
+        if self._theme_match_id != id(match):                 # 새 경기는 이전 경기의 단계 색에서 페이드하지 않고 바로 시작
+            self._theme_match_id = id(match)
+            self._theme_from = self._theme_to = phase
+            self._theme_t0 = -10.0
+        elif phase != self._theme_to:
+            self._theme_from, self._theme_to, self._theme_t0 = self._theme_to, phase, now
+        t = min(1.0, (now - self._theme_t0) / 1.4)
+        if t >= 1.0:
+            self.screen.blit(self._bg(self._theme_to), (0, 0))
+            self._theme_border = STAGE_THEMES[self._theme_to]["border"]
+            return
+        self.screen.blit(self._bg(self._theme_from), (0, 0))
+        nxt = self._bg(self._theme_to)
+        nxt.set_alpha(int(255 * t))
+        self.screen.blit(nxt, (0, 0))
+        nxt.set_alpha(None)
+        tq = round(t * 6) / 6                                   # 테두리 글로우 캐시가 프레임마다 늘지 않도록 6단계로 끊음
+        self._theme_border = _mix(STAGE_THEMES[self._theme_from]["border"], STAGE_THEMES[self._theme_to]["border"], tq)
 
     def _text(self, text, font, color):
         self._check_ver()
@@ -377,7 +422,7 @@ class UIRenderer:
             engine.cleared_row_indices = []
 
         CANVAS.display.fill((0, 0, 0))
-        self.screen.blit(self._bg(), (0, 0))
+        self._update_stage_theme(match)
 
         self._render_mini_boards(match, ox, oy)
         self._render_attack_effects(match, ox, oy)
@@ -795,10 +840,11 @@ class UIRenderer:
         self._draw_bar((r3.x + 14, r3.bottom - 9, w3 - 28, 3), prog, border3)
 
     # ---------------------------------------------------------------- 셀 렌더
-    def _cell_surface(self, piece_type, size, dim=False, alpha=None):
-        """블록 셀 (네이티브 해상도로 생성하여 캐시)"""
+    def _cell_surface(self, piece_type, size, dim=False, alpha=None, skin=None):
+        """블록 셀 (네이티브 해상도로 생성하여 캐시). skin이 없으면 설정의 블록 스킨을 따름 (로고/메뉴 배경은 "classic"을 지정)"""
         self._check_ver()
-        key = (piece_type, size, dim, alpha)
+        skin = skin or self.block_skin
+        key = (piece_type, size, dim, alpha, skin)
         surf = self._cell_cache.get(key)
         if surf is not None:
             return surf
@@ -808,16 +854,45 @@ class UIRenderer:
         n = pygame.Surface.get_width(surf)
         sc = lambda v: max(1, int(round(v * S)))
         outer = pygame.Rect(sc(1), sc(1), n - 2 * sc(1), n - 2 * sc(1))
-        radius = int(round(max(2, size // 6) * S))
-        pygame.draw.rect(surf, _mix(color, (0, 0, 0), 0.45), outer, border_radius=radius)
-        inner = outer.inflate(-sc(3), -sc(3))
-        pygame.draw.rect(surf, color, inner, border_radius=max(1, radius - sc(1)))
-        if size >= 12:
-            hl = pygame.Rect(inner.x + sc(1), inner.y + sc(1), inner.w - 2 * sc(1), max(sc(2), inner.h // 3))
-            pygame.draw.rect(surf, _mix(color, (255, 255, 255), 0.42), hl, border_radius=max(1, radius - sc(2)))
-            sh_h = max(sc(2), inner.h // 5)
-            sh = pygame.Rect(inner.x + sc(1), inner.bottom - sh_h - sc(1), inner.w - 2 * sc(1), sh_h)
-            pygame.draw.rect(surf, _mix(color, (0, 0, 0), 0.22), sh, border_radius=sc(1))
+        if skin == "neon":
+            radius = int(round(max(2, size // 5) * S))
+            pygame.draw.rect(surf, _mix(color, (0, 0, 0), 0.82), outer, border_radius=radius)          # 어두운 몸통
+            pygame.draw.rect(surf, color, outer, max(1, sc(2)), border_radius=radius)                   # 빛나는 테두리
+            if size >= 12:
+                ring = outer.inflate(-sc(6), -sc(6))
+                pygame.draw.rect(surf, _mix(color, (0, 0, 0), 0.55), ring, 1, border_radius=max(1, radius - sc(2)))
+                core = pygame.Rect(0, 0, max(sc(3), n // 4), max(sc(3), n // 4))
+                core.center = outer.center
+                pygame.draw.rect(surf, _mix(color, (255, 255, 255), 0.55), core, border_radius=max(1, core.w // 3))
+        elif skin == "flat":
+            radius = int(round(max(1, size // 10) * S))
+            pygame.draw.rect(surf, color, outer, border_radius=radius)
+            pygame.draw.rect(surf, _mix(color, (0, 0, 0), 0.30), outer, 1, border_radius=radius)
+        elif skin == "jelly":
+            radius = int(round(max(3, size * 0.34) * S))
+            pygame.draw.rect(surf, _mix(color, (0, 0, 0), 0.40), outer, border_radius=radius)           # 아래쪽 그늘
+            body = pygame.Rect(outer.x, outer.y, outer.w, outer.h - sc(2))
+            pygame.draw.rect(surf, color, body, border_radius=radius)
+            if size >= 12:
+                gw, gh = max(2, int(body.w * 0.62)), max(2, int(body.h * 0.34))
+                gloss = pygame.Surface((gw, gh), pygame.SRCALPHA)
+                pygame.draw.ellipse(gloss, (255, 255, 255, 105), (0, 0, gw, gh))
+                surf.blit(gloss, (body.x + int(body.w * 0.14), body.y + sc(2)))
+                dot = max(sc(2), n // 9)
+                spec = pygame.Surface((dot * 2, dot * 2), pygame.SRCALPHA)
+                pygame.draw.circle(spec, (255, 255, 255, 170), (dot, dot), dot)
+                surf.blit(spec, (body.x + int(body.w * 0.14) - dot // 2, body.y + int(body.h * 0.10)))
+        else:
+            radius = int(round(max(2, size // 6) * S))
+            pygame.draw.rect(surf, _mix(color, (0, 0, 0), 0.45), outer, border_radius=radius)
+            inner = outer.inflate(-sc(3), -sc(3))
+            pygame.draw.rect(surf, color, inner, border_radius=max(1, radius - sc(1)))
+            if size >= 12:
+                hl = pygame.Rect(inner.x + sc(1), inner.y + sc(1), inner.w - 2 * sc(1), max(sc(2), inner.h // 3))
+                pygame.draw.rect(surf, _mix(color, (255, 255, 255), 0.42), hl, border_radius=max(1, radius - sc(2)))
+                sh_h = max(sc(2), inner.h // 5)
+                sh = pygame.Rect(inner.x + sc(1), inner.bottom - sh_h - sc(1), inner.w - 2 * sc(1), sh_h)
+                pygame.draw.rect(surf, _mix(color, (0, 0, 0), 0.22), sh, border_radius=sc(1))
         if alpha is not None:
             surf.set_alpha(alpha)
         elif dim:
@@ -838,7 +913,18 @@ class UIRenderer:
         r = pygame.Rect(int(round(2 * S)), int(round(2 * S)), n - int(round(4 * S)), n - int(round(4 * S)))
         rad = int(round(max(2, size // 7) * S))
         pygame.draw.rect(surf, (*color, 46), r, border_radius=rad)
-        pygame.draw.rect(surf, (*color, 190), r, max(1, int(round(2 * S))), border_radius=rad)
+        thick = max(1, int(round(2 * S)))
+        if size < 14:                                             # 아주 작은 칸(미니 보드)은 점선이 뭉개지므로 실선 유지
+            pygame.draw.rect(surf, (*color, 190), r, thick, border_radius=rad)
+        else:                                                     # 점선 테두리: 한 변에 굵은 대시 2개(큰 칸은 3개)
+            k = 2 if size < 30 else 3
+            corners = [r.topleft, r.topright, r.bottomright, r.bottomleft]
+            for i in range(4):
+                (ax, ay), (bx, by) = corners[i], corners[(i + 1) % 4]
+                for d in range(k):
+                    s0, s1 = (d + 0.2) / k, (d + 0.8) / k
+                    pygame.draw.line(surf, (*color, 205), (ax + (bx - ax) * s0, ay + (by - ay) * s0),
+                                     (ax + (bx - ax) * s1, ay + (by - ay) * s1), thick)
         self._ghost_cache[key] = surf
         return surf
 
@@ -867,7 +953,7 @@ class UIRenderer:
         board_rect = pygame.Rect(bx, by, bw, bh)
 
         # 1. 보드 배경 + 미세 그리드
-        border_col = C_GOLD if spectating else (72, 92, 150)
+        border_col = C_GOLD if spectating else self._theme_border
         def _build_glow(surf):
             pygame.draw.rect(surf, (*border_col, 26), (0, 0, bw + 24, bh + 24), border_radius=18)
         self._blit_overlay(("board_glow", bw, bh, border_col), (bw + 24, bh + 24), _build_glow, (bx - 12, by - 12))
