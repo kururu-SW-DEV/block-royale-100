@@ -19,6 +19,7 @@ jobs:
       - run: .\build_exe.bat
       - uses: softprops/action-gh-release@v2
         with:
+          name: BLOCK ROYALE 100 ${{ github.ref_name }}
           files: |
             release/BlockRoyale100.exe
             BLOCK_ROYALE_100_MANUAL.html
