@@ -36,6 +36,13 @@ class HiSurf(pygame.Surface):
             setattr(r, k, v)
         return r
 
+    def get_bounding_rect(self, min_alpha=1):
+        """실제로 그려진 픽셀의 범위를 논리 좌표로 반환 (다른 크기 정보와 같은 좌표계라 배율이 달라도 위치 계산이 맞음)"""
+        r = pygame.Surface.get_bounding_rect(self, min_alpha)
+        s = self.scale
+        left, top, right, bottom = round(r.left / s), round(r.top / s), round(r.right / s), round(r.bottom / s)
+        return pygame.Rect(left, top, right - left, bottom - top)
+
 
 def mix_color(c1, c2, t):
     """두 색을 t(0~1) 비율로 섞음"""

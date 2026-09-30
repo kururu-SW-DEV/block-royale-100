@@ -1839,6 +1839,27 @@ def test_hit_alarm_sounds():
     print("  OK hit alarm sounds")
 
 
+def test_closed_room_disappears_from_room_list():
+    """방을 닫으면(BEACON_CLOSED) 방 참가 화면 목록에서 4초 만료를 기다리지 않고 바로 사라짐. 포트가 다른 닫힘 신호/이상한 메시지는 무시, stop()은 조회 캐시도 비움"""
+    from network import NetworkManager
+    nm = NetworkManager()
+    nm._handle_discovery_message("192.168.0.9", {"type": "BEACON", "room_name": "테스트방", "port": 19999, "players": 1, "max_players": 100})
+    assert "192.168.0.9" in nm.discovered_rooms and nm.discovered_rooms["192.168.0.9"]["room_name"] == "테스트방"
+    nm._handle_discovery_message("192.168.0.9", {"type": "BEACON_CLOSED", "port": 12345})      # 다른 포트의 방이 닫힘: 이 방은 유지
+    assert "192.168.0.9" in nm.discovered_rooms
+    nm._handle_discovery_message("192.168.0.8", {"type": "BEACON_CLOSED", "port": 19999})      # 모르는 방의 닫힘: 무시
+    for junk in (None, [], "x", {"type": 5}, {"type": "BEACON_CLOSED"}, {}):                     # 이상한 메시지에도 죽지 않음
+        nm._handle_discovery_message("192.168.0.9", junk)
+    assert "192.168.0.9" in nm.discovered_rooms
+    nm._handle_discovery_message("192.168.0.9", {"type": "BEACON_CLOSED", "port": 19999})
+    assert nm.discovered_rooms == {}, "닫힘 신호를 받으면 바로 삭제"
+    nm.probe_results[("192.168.0.9", 19999)] = {"ok": True, "ts": 0.0}
+    nm.discovered_rooms["1.2.3.4"] = {"ip": "1.2.3.4", "port": 19999, "room_name": "x", "players": 1, "max_players": 2, "last_seen": 0.0}
+    nm.stop()
+    assert nm.probe_results == {} and nm.discovered_rooms == {}, "stop()은 조회 캐시/방 목록을 비움"
+    print("  OK closed room disappears from room list")
+
+
 def test_new_record_flags():
     """record_match가 이번 경기가 이전 최고 기록(순위/K.O./최대 콤보)을 넘었는지 돌려줌. 첫 경기와 동률은 기록 갱신이 아님"""
     with tempfile.TemporaryDirectory() as d:

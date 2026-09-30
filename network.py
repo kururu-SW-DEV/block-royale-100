@@ -906,6 +906,25 @@ class NetworkManager:
         disc_thread = threading.Thread(target=self._discovery_loop, daemon=True)
         disc_thread.start()
 
+    def _handle_discovery_message(self, host_ip, msg):
+        """LAN 방 알림 수신 처리: BEACON은 방 목록에 등록/갱신, BEACON_CLOSED는 그 방을 바로 삭제 (포트가 같을 때만)"""
+        if not isinstance(msg, dict):
+            return
+        kind = msg.get("type")
+        if kind == "BEACON_CLOSED":
+            info = self.discovered_rooms.get(host_ip)
+            if info is not None and info.get("port") == msg.get("port"):
+                self.discovered_rooms.pop(host_ip, None)          # 방이 닫혔음: 4초 만료를 기다리지 않고 바로 삭제
+        elif kind == "BEACON":
+            self.discovered_rooms[host_ip] = {
+                "ip": host_ip,
+                "port": msg.get("port", DEFAULT_UDP_PORT),
+                "room_name": _sanitize_name(msg.get("room_name"), "Room"),
+                "players": msg.get("players", 1),
+                "max_players": msg.get("max_players", 100),
+                "last_seen": time.time()
+            }
+
     def _discovery_loop(self):
         d_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -917,16 +936,7 @@ class NetworkManager:
                 try:
                     data, addr = d_sock.recvfrom(2048)
                     msg = json.loads(data.decode('utf-8'))
-                    if isinstance(msg, dict) and msg.get("type") == "BEACON":
-                        host_ip = addr[0]
-                        self.discovered_rooms[host_ip] = {
-                            "ip": host_ip,
-                            "port": msg.get("port", DEFAULT_UDP_PORT),
-                            "room_name": _sanitize_name(msg.get("room_name"), "Room"),
-                            "players": msg.get("players", 1),
-                            "max_players": msg.get("max_players", 100),
-                            "last_seen": time.time()
-                        }
+                    self._handle_discovery_message(addr[0], msg)
                 except socket.timeout:
                     pass
                 except Exception:
@@ -946,6 +956,8 @@ class NetworkManager:
                 pass
 
     def stop(self):
+        was_host_running = self.running and self.mode == "HOST"
+        host_port = self.host_port
         # 나가기 통보: 호스트는 참가자 전원에게 방이 닫혔음을, 클라이언트는 호스트에게 나갔음을 알림
         if self.running and self.sock:
             try:
@@ -960,6 +972,10 @@ class NetworkManager:
             except Exception:
                 pass
         self.running = False
+        if was_host_running:
+            self._broadcast_room_closed(host_port)             # 방 목록(방 참가 화면)에서 바로 지워지도록 닫힘을 알림 (안 보내면 비콘이 끊긴 뒤 몇 초간 남음)
+        self.probe_results.clear()                             # 이 PC에서 조회해 둔 방 정보도 비움 (닫은 방이 조회 캐시 때문에 남지 않게)
+        self.discovered_rooms = {}
         if self.sock:
             try:
                 self.sock.close()
@@ -969,3 +985,23 @@ class NetworkManager:
         self.connected = False
         self.mode = "NONE"
         print("[Network] Stopped.")
+
+    @staticmethod
+    def _broadcast_room_closed(port):
+        """방 닫힘(BEACON_CLOSED)을 LAN에 몇 번 브로드캐스트. 비콘 스레드가 마지막 비콘을 늦게 보내는 경우까지 덮도록 간격을 두고 여러 번"""
+        s = None
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            data = json.dumps({"type": "BEACON_CLOSED", "port": port}).encode('utf-8')
+            for _ in range(3):
+                s.sendto(data, ("<broadcast>", DISCOVERY_BROADCAST_PORT))
+                time.sleep(0.05)
+        except Exception:
+            pass
+        finally:
+            if s:
+                try:
+                    s.close()
+                except Exception:
+                    pass

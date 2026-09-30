@@ -1262,27 +1262,28 @@ class UIRenderer:
             self._render_preview_piece(engine.next_queue[i], rect.centerx, cy, scale=scale, dim=(i > 0))
 
     def _render_incoming_box(self, engine, ox=0, oy=0):
-        rect = pygame.Rect(self._right_x(ox), self.main_board_y + 276 + oy, 108, 92)
+        rect = pygame.Rect(self._right_x(ox), self.main_board_y + 276 + oy, 108, 104)
         self._hud_rects["incoming"] = rect
         n = engine.incoming_garbage
         danger = n >= 4
         border = C_DANGER if danger else (C_ORANGE if n > 0 else C_PANEL_BORDER)
         self._panel(rect, border=border, border_w=2 if n > 0 else 1)
-        self._draw_text("받을 공격", self.font_tiny, border if n > 0 else C_DIM, rect.centerx, rect.y + 10, "midtop")
+        self._draw_text("받을 공격", self.font_tiny, border if n > 0 else C_DIM, rect.centerx, rect.y + 11, "midtop")
         col = C_DANGER if danger else (C_ORANGE if n > 0 else C_DIM)
-        # 숫자와 "줄"을 한 줄에 나란히, 박스 가운데 정렬
+        # 숫자와 "줄"은 실제로 그려진 글자 아래끝(기준선)을 맞춰 나란히, 박스 가운데 정렬
         num = self._text(f"+{n}" if n > 0 else "0", self.font_title, col)
         unit = self._text("줄", self.font_mid, C_DIM)
-        gap = 6
+        nb, ub = num.get_bounding_rect(), unit.get_bounding_rect()
+        gap = 8
         total = num.get_width() + gap + unit.get_width()
         x0 = rect.centerx - total // 2
-        cy = rect.y + (48 if n > 0 else 58)                          # 받을 공격이 있으면 아래에 차징 상태 줄이 들어갈 자리를 남김
-        self.screen.blit(num, (x0, cy - num.get_height() // 2))
-        self.screen.blit(unit, (x0 + num.get_width() + gap, cy + num.get_height() // 2 - unit.get_height() - 3))
+        base_y = rect.y + 68                                        # 두 글자의 아래끝이 놓일 y
+        self.screen.blit(num, (x0, base_y - nb.bottom))
+        self.screen.blit(unit, (x0 + num.get_width() + gap, base_y - ub.bottom))
         if n > 0:                                                    # 차징 상태: 다음 락다운에 올라올 수 있는 줄 수 / 아직 차징 중
             ready = getattr(engine, "ready_garbage", n)
-            txt, tcol = (f"곧 {ready}줄 도착", col) if ready > 0 else ("차징 중 · 상쇄 가능", C_DIM)
-            self._draw_text(txt, self.font_tiny, tcol, rect.centerx, rect.bottom - 3, "midbottom")
+            txt, tcol = (f"곧 {ready}줄 도착", col) if ready > 0 else ("차징 중", C_DIM)
+            self._draw_text(txt, self.font_tiny, tcol, rect.centerx, rect.bottom - 10, "midbottom")
 
     def _render_preview_piece(self, piece_type, center_x, center_y, scale=16, dim=False):
         shape = TETROMINOES[piece_type][0]
