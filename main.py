@@ -191,6 +191,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         running = True
         while running:
             dt = self.clock.tick(FPS) / 1000.0
+            self.sound_mgr.tick()
             
             # 이벤트 처리
             for event in pygame.event.get():

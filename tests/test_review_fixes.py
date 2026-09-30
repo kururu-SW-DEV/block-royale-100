@@ -1112,7 +1112,7 @@ def test_results_bgm_plays_after_sting():
     sm = SoundManager(enabled=True)
     if not sm.enabled or not sm.bgm_ch_a:
         print("  (오디오 장치 없음: 순위표 곡 재생 테스트 생략)")
-        return
+    sm._wait_bgm('results', 20); sm._wait_bgm(1, 20)
     sm._wait_bgm('results', 20)
     assert 'results' in sm.bgm_stages
     sm.play_bgm(stage=1)
@@ -1872,6 +1872,31 @@ def test_new_record_flags():
         assert st.record_match(rank=90, kos=0, max_combo=0, **kw) == [], "0은 기록이 아님"
         assert st.record_match(rank=1, kos=0, max_combo=0, mode="survival", **kw) == [], "모드별로 따로 집계 (서바이벌 첫 경기)"
     print("  OK new record flags")
+
+
+def test_play_bgm_does_not_block_while_synthesizing():
+    """아직 합성 중인 BGM(로비곡)을 요청해도 UI 스레드가 멈추지 않고, 준비되면 tick()이 시작 (첫 방 만들기 7초 프리징 회귀)"""
+    import time as _t
+    from sound_fx import SoundManager
+    sm = SoundManager(enabled=True)
+    if not sm.bgm_ch_a:
+        return
+    sm.stop_bgm()
+    sm.bgm_stages.pop('lobby', None)
+    class Alive:
+        def is_alive(self): return True
+    real = sm._bgm_thread
+    sm._bgm_thread = Alive()
+    t0 = _t.time()
+    for _ in range(50):
+        sm.play_bgm('lobby')
+    assert _t.time() - t0 < 0.2, "합성 중인 곡 요청이 UI를 막음"
+    assert not sm.is_bgm_playing and sm._pending_bgm == 'lobby'
+    sm.bgm_stages['lobby'] = sm.bgm_stages.get('menu') or sm.bgm_stages.get(1)
+    sm.tick()
+    assert sm.is_bgm_playing and sm.current_bgm_stage == 'lobby' and sm._pending_bgm is None
+    sm._bgm_thread = real
+    sm.stop_bgm()
 
 
 if __name__ == "__main__":

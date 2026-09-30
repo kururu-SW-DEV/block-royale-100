@@ -95,6 +95,7 @@ class SoundManager:
         self.bgm_ch_b = None
         self.active_channel = None
         self.bgm_volume = 0.60
+        self._pending_bgm = None       # 합성 중이라 대기 중인 BGM 단계
         self._results_due = None       # 순위표 곡을 시작할 시각(승/패 음악이 끝난 뒤)
         self._bgm_bake = 0.60          # BGM 합성 시 곡 자체에 반영하는 기준 음량 (재생 음량 설정과 무관하게 항상 동일)
         self._bgm_thread = None
@@ -134,6 +135,12 @@ class SoundManager:
             if th is None or not th.is_alive():
                 break
             time.sleep(0.01)
+
+    def tick(self):
+        """매 프레임 호출: 합성이 끝나 대기 중이던 BGM이 있으면 시작 (블로킹 없음)"""
+        stage = self._pending_bgm
+        if stage is not None and stage in self.bgm_stages:
+            self.play_bgm(stage)
 
     def _pack_stereo(self, left_arr, right_arr):
         """좌우 채널 배열을 16비트 스테레오 pygame Sound로 패킹"""
@@ -1132,7 +1139,11 @@ class SoundManager:
         if not self.bgm_ch_a or not self.bgm_ch_b:
             return
 
-        self._wait_bgm(stage)                          # 아직 합성 중인 곡이면 잠깐 기다림
+        th = self._bgm_thread
+        if stage not in self.bgm_stages and th is not None and th.is_alive():
+            self._pending_bgm = stage                  # 아직 합성 중: UI를 멈추지 않고 준비되면 tick()이 시작
+            return
+        self._pending_bgm = None
         target_snd = self._resolve_bgm_sound(stage)
         if not target_snd:
             return
@@ -1193,6 +1204,7 @@ class SoundManager:
     def stop_bgm(self):
         """모든 BGM 채널 정지"""
         self._results_due = None
+        self._pending_bgm = None
         if self.bgm_ch_a:
             self.bgm_ch_a.stop()
         if self.bgm_ch_b:
