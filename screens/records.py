@@ -83,10 +83,10 @@ class RecordsMixin:
         mx, my = pygame.mouse.get_pos()
         self.records_buttons.clear()
         
-        self._menu_header("전적 기록실", None, accent=C_GOLD)
+        self._menu_header("전적 기록실", None, accent=C_GOLD, y=14)      # 제목 밑줄이 모드 탭에 가리지 않게 제목을 위로
         box_w, box_h = 1040, 580
         box_x = (SCREEN_WIDTH - box_w) // 2
-        box_y = 120
+        box_y = 132
         self._glass((box_x, box_y, box_w, box_h), accent=(170, 140, 60), radius=18)
 
         # 2. 모드 탭 (배틀로얄 / 서바이벌): 전적은 모드별로 따로 집계
