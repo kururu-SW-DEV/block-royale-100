@@ -484,7 +484,9 @@ class UIRenderer:
             return
 
         actions = [ft for ft in active if ft.get("category") == "action"]
-        feed = sorted((ft for ft in active if ft.get("category") != "action"), key=lambda f: f["birth"])[-2:]
+        pins = sorted((ft for ft in active if ft.get("category") == "pin"), key=lambda f: f["birth"])[-1:]      # 후반전 예고/배율 알림은 토스트 칸 한 자리를 차지하고 다른 토스트에 밀려나지 않음
+        feed = sorted((ft for ft in active if ft.get("category") not in ("action", "pin")), key=lambda f: f["birth"])[-(2 - len(pins)):]
+        feed = pins + feed
 
         cx_board = self.main_board_x + self.main_board_w // 2 + ox
 
@@ -853,8 +855,9 @@ class UIRenderer:
             return
         rects = self._hud_rects
         specs = [("survivors", "① 남은 생존자 수입니다. 마지막 1명이 우승!  (Enter 또는 클릭으로 닫기)", "below-left"),
-                 ("aim", "② 조준 모드: 내 공격이 누구에게 갈지 정합니다 (TAB / 1~5). 칩에 마우스를 올리면 설명이 나와요.", "below-left"),
-                 ("incoming", "③ 받을 공격: 초록→빨강으로 차오르면 위험! 줄을 지우면 막을 수 있어요.", "below-right")]
+                 ("aim", "② 조준 모드: 내 공격이 누구에게 갈지 정합니다. 처음에는 자동(AUTO) 그대로면 충분해요 (TAB / 1~5로 바꿀 수 있어요).", "below-left"),
+                 ("incoming", "③ 받을 공격: 초록→빨강으로 차오르면 위험! 줄을 지우면 막을 수 있어요.", "below-right"),
+                 ("ko", "④ 2줄 이상 지우면 상대에게 공격이 가요. 상대를 처치(K.O.)하면 배지가 쌓여 공격력이 올라요!", "below-left")]
         y_top = None
         alpha = 255 if left > 2.0 else int(255 * left / 2.0)
         for key, text, place in specs:
@@ -868,14 +871,13 @@ class UIRenderer:
             else:
                 r = pygame.Rect(max(8, min(self.width - w - 8, anchor.x)), (y_top if y_top is not None else anchor.bottom + 10), w, h)
                 y_top = r.bottom + 8
-            layer = pygame.Surface((w, h), pygame.SRCALPHA)
-            pygame.draw.rect(layer, (34, 30, 12, 235), (0, 0, w, h), border_radius=9)
-            pygame.draw.rect(layer, (*C_GOLD, 255), (0, 0, w, h), 2, border_radius=9)
-            layer.blit(surf, (11, 7))
-            layer.set_alpha(alpha)
             pygame.draw.line(self.screen, C_GOLD, (anchor.centerx if place == "below-right" else min(anchor.right - 10, max(anchor.x + 10, r.x + 20)), anchor.bottom),
                              (r.x + 20 if place != "below-right" else r.right - 20, r.y), 2)
-            self.screen.blit(layer, r.topleft)
+            CANVAS.alpha_rect(r, (34, 30, 12, int(235 * alpha / 255)), radius=9)          # 화면 배율이 1.0이 아니어도 글자가 잘리지 않게 임시 서피스 대신 직접 그림
+            CANVAS.alpha_rect(r, (*C_GOLD, alpha), width=2, radius=9)
+            surf.set_alpha(alpha)
+            self.screen.blit(surf, (r.x + 11, r.y + 7))
+            surf.set_alpha(255)                                                          # 글자 서피스는 캐시되므로 투명도를 되돌려 둠
 
     def _draw_hud_tooltip(self):
         tip, self._hud_tip = self._hud_tip, None
@@ -927,8 +929,9 @@ class UIRenderer:
                 pygame.draw.rect(self.screen, accent, cr, border_radius=9)
                 col = (12, 16, 28)
             else:
-                pygame.draw.rect(self.screen, (28, 34, 56), cr, border_radius=9)
-                col = C_DIM
+                novice_dim = getattr(match, "novice", False) and mode != "AUTO"          # 첫 3판: 자동 칩만 또렷하게 (다른 모드는 알아서 보게 흐리게)
+                pygame.draw.rect(self.screen, (20, 25, 42) if novice_dim else (28, 34, 56), cr, border_radius=9)
+                col = (72, 80, 104) if novice_dim else C_DIM
             self._draw_text(TARGET_MODE_LABELS.get(mode, mode), self.font_tiny, col, cr.centerx, cr.centery, "center")
             if cr.collidepoint(pygame.mouse.get_pos()):                # 칩에 마우스를 올리면 설명 (다른 그림 위에 그리려고 프레임 끝에서 표시)
                 self._hud_tip = (TARGET_MODE_HELP.get(mode, ""), cr)
@@ -2146,9 +2149,9 @@ class UIRenderer:
         lh = self.font_small.get_height()
         # 최고 기록 줄이 있으면 그 줄 + 배지 줄 + 버튼 발광(위로 8px)이 겹치지 않도록 패널을 그만큼 늘림 (글자 크기 옵션에도 맞춰짐)
         extra = max(0, 178 + lh + 4 + lh + 12 - 226) if (records or ladder_clear or ach) else 0
-        loss_line = None if won else match.defeat_summary()           # 패인 한 줄: 한 줄 더 쓸 만큼 패널을 늘림
-        if loss_line:
-            extra += lh + 4
+        loss_lines = None if won else match.defeat_summary()          # 패인 한 줄 + 다음에 해 볼 한 줄: 그만큼 패널을 늘림
+        if loss_lines:
+            extra += (lh + 4) * len(loss_lines)
         box_w, box_h = 660, 346 + extra
         bx = (self.width - box_w) // 2
         by = (self.height - box_h) // 2
@@ -2237,8 +2240,12 @@ class UIRenderer:
         if goal and t >= 1.2:                                            # 다음 목표: 재도전 동기를 주는 한 줄 (카드 연출이 끝난 뒤 표시)
             badge_txt += f"   ·   다음 목표: {goal}"
         self._draw_text(badge_txt, self.font_small, C_DIM, bx + box_w // 2, badge_y, "midtop")
-        if loss_line and t >= 1.2:
-            self._draw_text(loss_line, self.font_small, (255, 190, 150), bx + box_w // 2, badge_y + lh + 4, "midtop")
+        if loss_lines and t >= 1.2:
+            for li, ln in enumerate(loss_lines):
+                col = (255, 190, 150) if li == 0 else (170, 200, 235)
+                while len(ln) > 8 and self.font_small.size(ln)[0] > box_w - 24:      # 패널 폭을 넘으면 끝을 줄임 (여백 확보)
+                    ln = ln[:-2].rstrip(" ·(") + "…"
+                self._draw_text(ln, self.font_small, col, bx + box_w // 2, badge_y + (lh + 4) * (li + 1), "midtop")
 
         mx, my = pygame.mouse.get_pos()
         can_spectate = (not match.match_finished and match.alive_count > 1 and not match.local_is_alive)

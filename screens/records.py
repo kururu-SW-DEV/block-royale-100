@@ -251,6 +251,7 @@ class RecordsMixin:
     def _render_achievements(self, box_x, box_y, box_w):
         """업적 탭: 10개 카드 (달성은 밝게, 미달성은 흐리게 + 조건 표시)"""
         done = set(self.stats_mgr.achievements_done())
+        prog = self.stats_mgr.achievement_progress()
         self._t(f"달성한 업적  {len(done)} / {len(ACHIEVEMENTS)}", self.font_mid, C_TEXT, box_x + 25, box_y + 20)
         self._t("배틀로얄 경기에서 달성하면 기록됩니다 (서바이벌/연습은 해당 없음)", self.font_tiny, C_DIM, box_x + box_w - 25, box_y + 26, "topright")
         cols, rows = 5, 2
@@ -267,7 +268,14 @@ class RecordsMixin:
             self._t(title, self.font_mid, C_TEXT if got else (140, 152, 185), r.centerx, r.y + 66, "midtop")
             for li, line in enumerate(self._wrap_text(desc, self.font_tiny, cw - 20)[:3]):
                 self._t(line, self.font_tiny, (185, 200, 228) if got else (110, 122, 156), r.centerx, r.y + 98 + li * 18, "midtop")
-            self._t("달성!" if got else "미달성", self.font_tiny, C_GOLD if got else (90, 100, 130), r.centerx, r.bottom - 22, "midtop")
+            if got:
+                self._t("달성!", self.font_tiny, C_GOLD, r.centerx, r.bottom - 22, "midtop")
+            elif aid in prog:                                           # 근접 진행도 (예: 최고 3 / 5)
+                cur, goal = prog[aid]
+                txt = f"진행 {cur // 60}:{cur % 60:02d} / {goal // 60}:{goal % 60:02d}" if aid == "marathon" else f"진행 {cur} / {goal}"
+                self._t(txt, self.font_tiny, C_ORANGE if cur else (90, 100, 130), r.centerx, r.bottom - 22, "midtop")
+            else:
+                self._t("미달성", self.font_tiny, (90, 100, 130), r.centerx, r.bottom - 22, "midtop")
 
     def _wrap_text(self, text, font, max_w):
         """글자 단위 줄바꿈 (한글 포함)"""

@@ -104,6 +104,10 @@ class BattleRoyaleMatch:
         self.screen_shake = 0.0
         self.ko_orbs = []         # K.O. 연출: 처치한 상대 카드에서 K.O. 칸으로 날아가는 빛 구슬 [{"victim": id, "t0": 시각}]
         self.floating_texts = []  # dict: text, color, birth, duration, size
+        self.local_hits_from = {}         # 내가 받은 공격 줄 수: 보낸 사람 id -> 합계 (결과 화면 "패인 한 줄"용)
+        self._hit_agg = None              # 1초 안에 연달아 받은 피격을 한 토스트로 합치기 위한 상태
+        self.events = []                  # 사람 테스트용 경기 로그(설정에서 켠 경우만 기록): (경기 시각, 종류, 내용)
+        self.log_enabled = False
         self.commentary = []      # 전광판 중계 기록: dict(text, color, birth)
         
         self._setup_participants()
@@ -143,6 +147,23 @@ class BattleRoyaleMatch:
             "size": size,
             "category": category
         })
+
+    def log_event(self, kind, **info):
+        """사람 테스트용 경기 로그에 이벤트 한 줄 기록 (log_enabled일 때만, 최대 3000개)"""
+        if self.log_enabled and len(self.events) < 3000:
+            self.events.append({"t": round(self.elapsed, 1), "kind": kind, **info})
+
+    def match_log(self):
+        """경기 로그 내용 (JSON 저장용): 설정/규칙 값, 1초 타임라인, 이벤트, 결과"""
+        return {
+            "version": 1, "total_players": self.total_players, "bot_difficulty": self.bot_difficulty, "attacks": bool(self.attacks_enabled),
+            "target_mode_final": self.local_target_mode, "elapsed": round(self.elapsed, 1), "alive_at_end": self.alive_count,
+            "rank": getattr(self, "local_rank", 0), "kos": self.local_ko_count,
+            "hits_from": {self._short_name(k): v for k, v in self.local_hits_from.items()},
+            "death_attackers": getattr(self, "local_death_attackers", None),
+            "timeline_fields": ["t", "alive", "my_stack", "incoming"], "timeline": [list(x) for x in (getattr(self, "timeline", None) or [])],
+            "events": self.events,
+        }
 
     def add_commentary(self, text, color=(255, 190, 70), prio=0):
         """상단 전광판에 표시할 경기 중계 한 줄. prio=1(결승/우승/페이즈 등 중요 소식)은 대기 중인 일반 소식보다 먼저 방송됨"""
@@ -293,6 +314,7 @@ class BattleRoyaleMatch:
         if mode in TARGET_MODES:
             self.local_target_mode = mode
             self.local_manual_target_id = None
+            self.log_event("target_mode", mode=mode)
         return self.local_target_mode
 
     def cycle_target_mode(self):
@@ -300,6 +322,7 @@ class BattleRoyaleMatch:
         idx = TARGET_MODES.index(self.local_target_mode)
         self.local_target_mode = TARGET_MODES[(idx + 1) % len(TARGET_MODES)]
         self.local_manual_target_id = None
+        self.log_event("target_mode", mode=self.local_target_mode)
         return self.local_target_mode
 
     def set_manual_target(self, target_id):
@@ -604,7 +627,20 @@ class BattleRoyaleMatch:
             self._play_hit_alarm(lines)
             attacker_p = self.players.get(from_id, {})
             attacker_name = attacker_p.get("name", "적 플레이어")
-            self.add_floating_text(f"[피격 경고] +{lines}줄 공격 받음 (보낸이: {attacker_name})", (255, 75, 75), duration=2.4, size=22, category="alert")
+            self.local_hits_from[from_id] = self.local_hits_from.get(from_id, 0) + lines          # 결과 화면 "패인 한 줄"용: 누가 얼마나 보냈나
+            self.log_event("hit", frm=from_id, lines=lines)
+            agg = self._hit_agg
+            now_t = time.time()
+            if agg and now_t - agg["t"] <= 1.0 and agg["ft"] in self.floating_texts:
+                agg["lines"] += lines                                                  # 1초 안에 연달아 맞으면 한 줄로 합쳐 토스트 칸을 아낌
+                agg["senders"].add(from_id)
+                n_s = len(agg["senders"])
+                agg["ft"]["text"] = f"[피격 경고] {n_s}명 +{agg['lines']}줄 공격 받음" if n_s > 1 else f"[피격 경고] +{agg['lines']}줄 공격 받음 (보낸이: {attacker_name})"
+                agg["ft"]["birth"] = now_t
+                agg["t"] = now_t
+            else:
+                self.add_floating_text(f"[피격 경고] +{lines}줄 공격 받음 (보낸이: {attacker_name})", (255, 75, 75), duration=2.4, size=22, category="alert")
+                self._hit_agg = {"t": now_t, "lines": lines, "senders": {from_id}, "ft": self.floating_texts[-1]}
             
         # 2. 로컬에서 관리하는 AI 봇이 피격 대상인 경우
         elif to_id in self.players:
@@ -630,7 +666,8 @@ class BattleRoyaleMatch:
                 killer_id = last
             
         if victim_id == self.local_player_id:
-            self.local_death_attackers = self.get_attackers_count_for(victim_id)      # 결과 화면의 "패인 한 줄"용: 탈락 순간 나를 노리던 상대 수
+            self.local_death_attackers = self.get_attackers_count_for(victim_id)
+            self.log_event("death", rank=self.next_rank_to_assign, attackers=self.local_death_attackers, killer=killer_id)      # 결과 화면의 "패인 한 줄"용: 탈락 순간 나를 노리던 상대 수
         self.players[victim_id]["is_alive"] = False
         self.players[victim_id]["survival"] = self.elapsed
         self.players[victim_id]["rank"] = self.next_rank_to_assign
@@ -823,7 +860,8 @@ class BattleRoyaleMatch:
             self.add_floating_text("★ PERFECT CLEAR! ★", (255, 225, 90), duration=3.2, size=44, category="action")
 
     def defeat_summary(self):
-        """결과 화면 한 줄: 탈락 직전 10초 동안 무슨 일이 있었는지 (타임라인: 1초마다 (시각, 생존자, 내 스택, 받을 공격)). 근거가 부족하면 None"""
+        """결과 화면 "패인 한 줄"(+ 다음에 해 볼 한 줄): 탈락 직전 10초 동안 무슨 일이 있었는지 (타임라인: 1초마다 (시각, 생존자, 내 스택, 받을 공격)).
+        반환: [첫째 줄, 둘째 줄(없으면 생략)] 또는 근거가 부족하면 None"""
         tl = getattr(self, "timeline", None) or []
         if self.local_is_alive or len(tl) < 3:
             return None
@@ -831,16 +869,25 @@ class BattleRoyaleMatch:
         peak_in = max(x[3] for x in last)
         peak_h = max(x[2] for x in last)
         atk = getattr(self, "local_death_attackers", 0)
+        top = max(self.local_hits_from.items(), key=lambda kv: kv[1]) if self.local_hits_from else None
+        mult = self.attack_multiplier() if self.attacks_enabled else 1.0
         if peak_in >= 8 or atk >= 3:
             lead = "집중 공격에 밀렸어요"
+            tip = "줄을 지우면 받을 공격이 먼저 깎여요. 연습 모드(P)에서 G키로 쓰레기를 받으며 막는 연습을 해 보세요"
         elif peak_in < 4 and peak_h >= 16:
-            lead = "스택이 너무 높았어요 (받은 공격은 적음)"
+            lead = "스스로 쌓은 높이가 문제였어요"
+            tip = "높게 쌓기 전에 줄을 먼저 지워 보세요. 연습 모드(P)에서 B키로 판을 비우며 연습할 수 있어요"
         else:
             lead = "버티지 못했어요"
-        bits = [f"받을 공격 최대 {peak_in}줄", f"스택 최대 {peak_h}줄"]
+            tip = "탈락 직전 받은 공격을 줄 지우기로 상쇄하는 것을 노려 보세요 (연습 모드 P · G키)"
+        bits = [f"받을 공격 최대 {peak_in}줄"]
         if atk >= 1:
             bits.append(f"나를 노린 상대 {atk}명")
-        return f"탈락 직전 10초: {lead}  ({' · '.join(bits)})"
+        if top and top[1] >= 4:
+            bits.append(f"가장 많이 보낸 {self._short_name(top[0])} {top[1]}줄")
+        if mult > 1.0:
+            bits.append(f"후반전 ×{mult:.1f}")
+        return [f"탈락 직전 10초: {lead}  ({' · '.join(bits)})", tip]
 
     COUNTDOWN_SECS = 3.0               # 혼자 하는 경기 시작 전 3-2-1 (그동안 경기 정지)
 
@@ -857,13 +904,13 @@ class BattleRoyaleMatch:
         if not getattr(self, "_esc_warned", False) and self.elapsed >= self.ESCALATION_START - self.ESCALATION_WARN_LEAD:
             self._esc_warned = True
             self.add_commentary("곧 후반전: 5분부터 매분 공격력 +20% (최대 3배)", (255, 190, 90), prio=1)
-            self.add_floating_text("곧 후반전! 5분부터 매분 공격력이 20%씩 강해집니다", (255, 190, 90), duration=3.5, size=22, category="alert")
+            self.add_floating_text("곧 후반전! 5분부터 매분 공격력이 20%씩 강해집니다", (255, 190, 90), duration=4.0, size=22, category="pin")
         mult = self.attack_multiplier()
         lvl = int((mult - 1.0) / self.ESCALATION_PER_MIN + 1e-9) if mult > 1.0 else 0      # 20% 단계가 오를 때만 알림
         if lvl > getattr(self, "_esc_level", 0):
             self._esc_level = lvl
             self.add_commentary(f"후반전 공격력 ×{1.0 + lvl * self.ESCALATION_PER_MIN:.1f}", (255, 170, 80))
-            self.add_floating_text(f"후반전: 모든 공격력 ×{1.0 + lvl * self.ESCALATION_PER_MIN:.1f}", (255, 170, 80), duration=2.4, size=22, category="alert")
+            self.add_floating_text(f"후반전: 모든 공격력 ×{1.0 + lvl * self.ESCALATION_PER_MIN:.1f}", (255, 170, 80), duration=3.5, size=22, category="pin")
 
     def update(self, dt):
         """매칭 전체 프레임 업데이트"""
@@ -939,15 +986,15 @@ class BattleRoyaleMatch:
                     self.trigger_screen_shake(10.0)
                 
                 lbl = "[자동 반격]" if (self.local_target_mode == "ATTACKERS" and target_p.get("target_id") == self.local_player_id) else "[공격 발송]"
-                bonus_str = ""
-                if badge_lvl > 0 and attacker_bonus > 0:
-                    bonus_str = f" (배지 Lv.{badge_lvl}, 카운터+{attacker_bonus})"
-                elif badge_lvl > 0:
-                    bonus_str = f" (배지 Lv.{badge_lvl})"
-                elif attacker_bonus > 0:
-                    bonus_str = f" (카운터+{attacker_bonus})"
+                tags = []                                                  # 괄호 하나에 짧게: "(배지2 · 카운터+3 · ×1.4)"
+                if badge_lvl > 0:
+                    tags.append(f"배지{badge_lvl}")
+                if attacker_bonus > 0:
+                    tags.append(f"카운터+{attacker_bonus}")
                 if mult > 1.0:
-                    bonus_str += f" 공격력 ×{mult:.1f}"                  # 후반 증폭이 걸린 상태임을 알림
+                    tags.append(f"×{mult:.1f}")                            # 후반 증폭이 걸린 상태임을 알림
+                bonus_str = f" ({' · '.join(tags)})" if tags else ""
+                self.log_event("attack", to=target, lines=shown_attack, mult=round(mult, 2))
 
                 if len(targets) < 2:                             # 다중 포격은 위의 전용 알림만 표시 (중복 방지)
                     self.add_floating_text(f"{lbl} +{shown_attack}줄 >> {target_name}{bonus_str}", (255, 130, 130), duration=2.4, size=22, category="attack")
@@ -973,7 +1020,7 @@ class BattleRoyaleMatch:
         if not self.attacks_enabled and not self.match_finished and not self.practice:
             self._survival_pressure(dt)
         elif self.attacks_enabled and not self.match_finished and self.elapsed >= self.BATTLE_PRESSURE_START:
-            self._survival_pressure(dt, self.BATTLE_PRESSURE_START, "후반 압박")      # 배틀로얄도 9분이 지나면 시간 압박: 소수의 봇이 서로 끝내지 못해도 경기가 반드시 끝남
+            self._survival_pressure(dt, self.BATTLE_PRESSURE_START, "서든 데스")      # 배틀로얄도 9분이 지나면 시간 압박: 소수의 봇이 서로 끝내지 못해도 경기가 반드시 끝남
 
         # 생존자 수에 따른 페이즈 전환 마일스톤 연출
         # (인원이 적은 대전에서는 시작부터 '최후의 결전'이 되지 않도록 전체 인원 대비 비율로 판정. 8명 미만은 연출 없음)
@@ -982,13 +1029,13 @@ class BattleRoyaleMatch:
         if self.total_players >= 8 and self.alive_count <= p2_thr and self.phase < 2:
             self.phase = 2
             self.trigger_screen_shake(10.0)
-            self.add_commentary("PHASE 2 돌입  ·  스피드 UP", (255, 215, 0), prio=1)
-            self.add_floating_text(f"★ [PHASE 2] 생존자 {p2_thr}인 돌파! 스피드 UP! ★", (255, 215, 0), duration=3.0, size=32, category="action")
+            self.add_commentary("PHASE 2 돌입  ·  생존자 절반", (255, 215, 0), prio=1)
+            self.add_floating_text(f"★ [PHASE 2] 생존자 {p2_thr}인 돌파! ★", (255, 215, 0), duration=3.0, size=32, category="action")
         if self.total_players >= 8 and self.alive_count <= p3_thr and self.phase < 3:
             self.phase = 3
             self.trigger_screen_shake(16.0)
-            self.add_commentary(f"FINAL {p3_thr}  ·  서든 데스!", (255, 90, 90), prio=1)
-            self.add_floating_text(f"★ [FINAL {p3_thr}] 서든 데스! 최후의 결전! ★", (255, 75, 75), duration=3.5, size=34, category="action")
+            self.add_commentary(f"FINAL {p3_thr}  ·  최후의 결전", (255, 90, 90), prio=1)
+            self.add_floating_text(f"★ [FINAL {p3_thr}] 최후의 결전! ★", (255, 75, 75), duration=3.5, size=34, category="action")
 
         # 5. 네트워크 수신 공격 처리
         if self.net_mgr and self.net_mgr.incoming_attacks:

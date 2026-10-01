@@ -345,8 +345,9 @@ class MenuMixin:
         join_chip, join_col = (f"LAN 방 {rooms}개 발견", C_GOLD) if rooms else ("IP 직접 접속도 가능", COL_HINT)
         n = self.target_player_count
         atk_off = self.settings.get("game_mode") == "survival"
+        diff_short = BOT_DIFFICULTY_LABELS.get(self.bot_difficulty, "혼합").split(" (")[0] + " 봇"      # 어떤 난이도로 시작하는지 카드에서 바로 보이게
         self._menu_card("quick_play", (cx - 320, by, 640, 104), "quick", C_ACCENT, "빠른 시작",
-                        (f"봇 {max(0, n - 1)}명과 서바이벌  ·  {n}인 (공격 없음)" if atk_off else f"봇 {max(0, n - 1)}명과 바로 대전  ·  {n}인 배틀로얄"),
+                        (f"봇 {max(0, n - 1)}명과 서바이벌  ·  {n}인 (공격 없음)  ·  {diff_short}" if atk_off else f"봇 {max(0, n - 1)}명과 바로 대전  ·  {n}인 배틀로얄  ·  {diff_short}"),
                         "1", quick_chip, quick_col, True, 0)
         self._menu_card("host_room", (cx - 320, by + 116, 314, 88), "host", C_GREEN, "방 만들기",
                         "친구를 초대해 함께", "2", f"내 IP {self.local_ip}", COL_SUB, False, 1)

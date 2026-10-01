@@ -1921,7 +1921,7 @@ def test_combat_text_pressure_and_onboarding():
     toast = [f["text"] for f in m.floating_texts if f["category"] == "attack"]
     tid = m.players["L"]["target_id"]
     got = m.players[tid]["bot"].engine.incoming_garbage
-    assert toast and f"+{got}줄" in toast[-1] and "공격력 ×1.4" in toast[-1], (toast, got)
+    assert toast and f"+{got}줄" in toast[-1] and "×1.4" in toast[-1], (toast, got)
 
     # 후반전 예고: 4:30에 한 번, 이후 20% 단계가 오를 때마다 한 번
     m = BattleRoyaleMatch(total_players=10, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy")
@@ -1944,7 +1944,7 @@ def test_combat_text_pressure_and_onboarding():
     m.timeline = [(i, 50 - i, 8 + i, (i % 5) * 2) for i in range(12)]
     m.local_death_attackers = 3
     msg = m.defeat_summary()
-    assert msg and "집중 공격" in msg and "나를 노린 상대 3명" in msg and "받을 공격 최대 8줄" in msg, msg
+    assert msg and len(msg) == 2 and "집중 공격" in msg[0] and "나를 노린 상대 3명" in msg[0] and "받을 공격 최대 8줄" in msg[0] and "연습 모드" in msg[1], msg
     m.timeline = [(0, 9, 3, 0)]
     assert m.defeat_summary() is None, "근거(타임라인)가 부족하면 표시하지 않음"
 
@@ -2018,6 +2018,66 @@ def test_achievements():
         app._handle_records_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT, mod=0, unicode=""))
         order.append(app.records_mode)
     assert order == ["survival", "achv", "battle"], order
+
+
+def test_v1012_feed_phase_log_achievement_progress():
+    """v1.0.12: 단계 문구가 사실대로, 피격 토스트 합치기, 후반전 알림 고정 칸, 패인 줄에 증폭/최다 공격자, 경기 로그, 업적 진행도"""
+    import time as _t
+    from battle_royale import BattleRoyaleMatch
+    from stats_manager import ACHIEVEMENTS, StatsManager
+    m = BattleRoyaleMatch(total_players=20, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy")
+    # 단계 문구: 속도/서든 데스를 단정하지 않음 (낙하 속도는 비율로 계속 빨라지고, 서든 데스는 9분 압박 때만)
+    for pid in [p for p in m.players if p != "L"][:11]:
+        m._eliminate_player(pid)
+    m.update(0.016)
+    txt = " ".join(c["text"] for c in m.commentary) + " ".join(f["text"] for f in m.floating_texts)
+    assert "PHASE 2" in txt and "스피드" not in txt, txt
+    m.floating_texts.clear(); m.commentary.clear()
+    for pid in [p for p in m.players if p != "L" and m.players[p]["is_alive"]][:7]:
+        m._eliminate_player(pid)
+    m.update(0.016)
+    txt = " ".join(c["text"] for c in m.commentary) + " ".join(f["text"] for f in m.floating_texts)
+    assert "FINAL" in txt and "서든" not in txt, txt
+    # 피격 토스트 합치기: 1초 안 연속 피격은 한 개로, 보낸 사람 수/합계 갱신
+    m = BattleRoyaleMatch(total_players=10, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy")
+    others = [p for p in m.players if p != "L"]
+    m.apply_attack(others[0], "L", 2); m.apply_attack(others[1], "L", 3); m.apply_attack(others[1], "L", 1)
+    hits = [f["text"] for f in m.floating_texts if f["text"].startswith("[피격")]
+    assert len(hits) == 1 and "2명" in hits[0] and "+6줄" in hits[0], hits
+    assert m.local_hits_from[others[0]] == 2 and m.local_hits_from[others[1]] == 4
+    m._hit_agg["t"] -= 2.0                                    # 1초가 지나면 새 토스트
+    m.apply_attack(others[2], "L", 1)
+    assert len([f for f in m.floating_texts if f["text"].startswith("[피격")]) == 2
+    # 후반전 알림은 pin 카테고리
+    m.elapsed = 275.0; m._announce_escalation()
+    assert any(f["category"] == "pin" for f in m.floating_texts)
+    # 패인 줄: 최다 공격자 + 후반전 배율
+    m.local_is_alive = False
+    m.elapsed = 420.0
+    m.timeline = [(i, 9, 12 + i % 3, i % 6) for i in range(12)]
+    m.local_hits_from = {others[0]: 9, others[1]: 2}
+    lines = m.defeat_summary()
+    assert "후반전 ×1.4" in lines[0] and "가장 많이 보낸" in lines[0] and len(lines) == 2, lines
+    # 경기 로그: 켠 경우만 기록, JSON 직렬화 가능
+    m2 = BattleRoyaleMatch(total_players=10, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy")
+    m2.set_target_mode("KO"); m2.log_event("x")
+    assert m2.events == []
+    m2.log_enabled = True
+    m2.set_target_mode("RANDOM"); m2.apply_attack([p for p in m2.players if p != "L"][0], "L", 2)
+    log = m2.match_log()
+    json.dumps(log)
+    kinds = [e["kind"] for e in log["events"]]
+    assert "target_mode" in kinds and "hit" in kinds, kinds
+    # 업적 진행도/마라토너 7분
+    ids = {a[0]: a for a in ACHIEVEMENTS}
+    assert ids["marathon"][2].startswith("한 판에서 7분"), ids["marathon"][2]
+    import tempfile
+    sm = StatsManager(os.path.join(tempfile.mkdtemp(), "stats.json"))
+    sm.record_match(40, 100, 3, 10, 5, 400)
+    pr = sm.achievement_progress()
+    assert pr["ko5"] == (3, 5) and pr["combo8"] == (5, 8) and pr["marathon"] == (400, 420), pr
+    sm.record_match(40, 100, 0, 10, 1, 430)
+    assert "marathon" in sm.achievements_done()
 
 
 if __name__ == "__main__":

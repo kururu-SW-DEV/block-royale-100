@@ -52,7 +52,8 @@ TAB_NAV = {
     "match": [("players", None, "dec_1", "inc_1"), ("diff", None, "diff_prev", "diff_next"),
               ("attack", "attack_toggle", "attack=on", "attack=off"),
               ("name", "name_edit", None, None), ("color", None, "color_prev", "color_next"),
-              ("shake", None, "shake_prev", "shake_next")],
+              ("shake", None, "shake_prev", "shake_next"),
+              ("matchlog", "matchlog_toggle", "matchlog=off", "matchlog=on")],
     "general": [("fs", "toggle_fs", "fs=window", "fs=full"), ("res", "res_next", "res_prev", "res_next"),
                 ("mini", "mini_detail", "mini_detail=detailed", "mini_detail=simple"),
                 ("block_skin", None, "skin_prev", "skin_next"),
@@ -71,6 +72,7 @@ HELP = {
     "name": "채팅, 대기실 명단, 미니 보드에 표시되는 이름입니다. 클릭하거나 Enter로 수정 (최대 16자).",
     "color": "이름 색: 채팅과 대기실 명단, 미니 보드의 내 이름에 쓰입니다.",
     "shake": "공격을 받거나 K.O.가 났을 때 화면이 흔들리는 정도입니다. 멀미가 나면 '약하게'나 '끔'을 고르세요.",
+    "matchlog": "켜면 경기가 끝날 때마다 받은/보낸 공격, 조준 변경, 탈락 원인을 담은 기록(JSON)을 저장 폴더의 match_logs에 남깁니다. 플레이 테스트 결과를 함께 볼 때 쓰며, 기본은 꺼짐입니다.",
     "fs": "창 모드와 전체 화면을 바꿉니다. F11 키로 언제든 전환할 수 있습니다.",
     "res": "창 크기를 고릅니다. 모니터에 들어가는 크기만 보이며 창 가장자리를 끌어서도 조절할 수 있습니다.",
     "res_off": "전체 화면에서는 모니터 해상도에 맞춰 자동으로 확대됩니다.",
@@ -90,7 +92,7 @@ HELP = {
 
 # 탭별 '기본값으로' 대상 설정 키
 TAB_DEFAULT_KEYS = {
-    "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake"],
+    "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake", "match_log"],
     "general": ["resolution", "mini_detail", "color_mode", "text_size", "block_skin"],
     "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume"],
     "keys": ["das_ms", "arr_ms", "sdf_ms"],
@@ -301,6 +303,12 @@ class SettingsMixin:
             if new != cur:
                 self.sound_mgr.play('rotate')
                 self.settings.set("game_mode", new)
+        elif btn_id in ("matchlog=on", "matchlog=off", "matchlog_toggle"):
+            cur = bool(self.settings.get("match_log", False))
+            new = (btn_id.endswith("=on")) if "=" in btn_id else (not cur)
+            if new != cur:
+                self.sound_mgr.play('rotate')
+                self.settings.set("match_log", new)
         elif btn_id in ("diff_prev", "diff_next"):
             self.sound_mgr.play('rotate')
             self.settings.cycle_bot_difficulty(-1 if btn_id == "diff_prev" else 1)
@@ -480,8 +488,8 @@ class SettingsMixin:
     def _render_tab_match(self):
         y = TOP
         # 참가 인원
-        self._s_row("players", y, 64, "참가 인원", "2 ~ 100명  ·  부족한 인원은 AI 봇이 채웁니다")
-        cy = y + 32
+        self._s_row("players", y, 56, "참가 인원", "2 ~ 100명  ·  부족한 인원은 AI 봇이 채웁니다")
+        cy = y + 28
         parts = [("dec_10", "-10", 56), ("dec_1", "-1", 46), None, ("inc_1", "+1", 46), ("inc_10", "+10", 56)]
         total = sum(p[2] if p else 110 for p in parts) + 8 * (len(parts) - 1)
         x = RIGHT - total
@@ -495,23 +503,23 @@ class SettingsMixin:
             else:
                 self._s_btn(p[0], pygame.Rect(x, cy - 19, p[2], 38), p[1])
                 x += p[2] + 8
-        y += 64
+        y += 56
         # 봇 난이도 (설명은 현재 난이도에 따라 바뀌는 값이라 보조 줄로 유지)
         cur = self.settings.get("bot_difficulty", "mixed")
         dc = {"easy": C_GREEN, "normal": C_ACCENT, "hard": C_ORANGE, "master": C_DANGER, "mixed": C_GOLD}.get(cur, C_TEXT)
         cleared = self.stats_mgr.ladder_cleared("battle")            # 100인급 대전에서 10위 안에 들어 클리어한 난이도는 ★ 표시
         star = "  ★ 클리어" if cur in cleared else ""
-        self._s_row("diff", y, 64, "AI 봇 난이도", BOT_DIFFICULTY_DESCS.get(cur, "") if not star else BOT_DIFFICULTY_DESCS.get(cur, "")[:40])
-        self._s_cycler("diff_prev", "diff_next", BOT_DIFFICULTY_LABELS.get(cur, "혼합") + star, RIGHT, y + 32, color=dc)
-        y += 64
+        self._s_row("diff", y, 56, "AI 봇 난이도", BOT_DIFFICULTY_DESCS.get(cur, "") if not star else BOT_DIFFICULTY_DESCS.get(cur, "")[:40])
+        self._s_cycler("diff_prev", "diff_next", BOT_DIFFICULTY_LABELS.get(cur, "혼합") + star, RIGHT, y + 28, color=dc)
+        y += 56
         # 게임 모드: 배틀로얄(공격을 주고받음) / 서바이벌(공격 없이 각자 생존 경쟁)
         atk_on = self.settings.get("game_mode") != "survival"
-        self._s_row("attack", y, 56, "게임 모드", "줄을 지워 서로 공격하는 모드" if atk_on else "서로 방해하지 않고 각자 끝까지 생존하는 모드")
-        self._s_seg([("attack=on", "배틀로얄"), ("attack=off", "서바이벌")], "attack=on" if atk_on else "attack=off", RIGHT, y + 28)
-        y += 56
+        self._s_row("attack", y, 52, "게임 모드", "줄을 지워 서로 공격하는 모드" if atk_on else "서로 방해하지 않고 각자 끝까지 생존하는 모드")
+        self._s_seg([("attack=on", "배틀로얄"), ("attack=off", "서바이벌")], "attack=on" if atk_on else "attack=off", RIGHT, y + 26)
+        y += 52
         # 이름
-        self._s_row("name", y, 56, "플레이어 이름")
-        box = pygame.Rect(RIGHT - 320, y + 10, 320, 36)
+        self._s_row("name", y, 52, "플레이어 이름")
+        box = pygame.Rect(RIGHT - 320, y + 8, 320, 36)
         self.text_rects["player_name"] = box
         editing = (self.text_focus == "player_name")
         pygame.draw.rect(self.screen, (11, 13, 24), box, border_radius=10)
@@ -522,15 +530,19 @@ class SettingsMixin:
             pygame.draw.rect(self.screen, C_ACCENT, (tr.right + 3, box.y + 8, 2, box.h - 16))
         if not editing:
             self._t("클릭해서 수정", self.font_tiny, COL_SUB, box.right - 12, box.centery, "midright")
-        y += 56
+        y += 52
         # 이름 색
-        self._s_row("color", y, 56, "이름 색")
+        self._s_row("color", y, 52, "이름 색")
         size, gap = 26, 8
-        self.color_rects = self._draw_color_swatches(RIGHT - (size * len(NAME_COLORS) + gap * (len(NAME_COLORS) - 1)), y + 15, size=size, gap=gap)
-        y += 56
+        self.color_rects = self._draw_color_swatches(RIGHT - (size * len(NAME_COLORS) + gap * (len(NAME_COLORS) - 1)), y + 13, size=size, gap=gap)
+        y += 52
         shake = self.settings.get("screen_shake", "normal")
-        self._s_row("shake", y, 56, "화면 흔들림", "공격을 받거나 K.O.가 났을 때")
-        self._s_cycler("shake_prev", "shake_next", SHAKE_LABELS.get(shake, "보통"), RIGHT, y + 28)
+        self._s_row("shake", y, 52, "화면 흔들림", "공격을 받거나 K.O.가 났을 때")
+        self._s_cycler("shake_prev", "shake_next", SHAKE_LABELS.get(shake, "보통"), RIGHT, y + 26)
+        y += 52
+        log_on = bool(self.settings.get("match_log", False))
+        self._s_row("matchlog", y, 52, "경기 기록 저장", "테스트용: 경기마다 JSON 기록을 남김")
+        self._s_seg([("matchlog=off", "끔"), ("matchlog=on", "켜기")], "matchlog=on" if log_on else "matchlog=off", RIGHT, y + 26)
 
     def _render_tab_general(self):
         y = TOP

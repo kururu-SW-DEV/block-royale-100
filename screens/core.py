@@ -210,6 +210,8 @@ class CoreMixin:
         )
         self.match.local_color = self.name_color
         self.match.set_target_mode(self.settings.get("target_mode"))        # 마지막으로 쓴 조준 모드를 이어서 사용
+        self.match.novice = (not practice) and self.stats_mgr.data.get("total_games", 0) < 3        # 처음 3판: 조준 칩은 자동만 또렷하게
+        self.match.log_enabled = bool(self.settings.get("match_log", False)) and not practice
         lead = 0.0
         if mode == "SOLO" and not practice and getattr(self, "use_bot_pool", False):                                                  # 혼자 하는 경기: 3-2-1 동안 경기를 멈추고 화면을 먼저 보여 줌 (네트워크는 동기화 때문에 제외, 테스트/헤드리스 실행은 건너뜀)
             lead = self.match.COUNTDOWN_SECS

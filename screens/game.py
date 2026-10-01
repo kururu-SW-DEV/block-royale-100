@@ -3,9 +3,11 @@ Block Royale 100 - 게임 화면: 입력 처리, 프레임 갱신, 렌더링, �
 BlockRoyaleApp(main.py)이 상속하는 믹스인: 메서드 본문은 원래 main.py에 있던 그대로이며 self로 앱 상태를 공유함
 """
 
+import os
 from stats_manager import next_goal_text
 from app_common import (
     ACTION_NAMES,
+    APP_VERSION,
     TARGET_MODES,
     pygame,
     time
@@ -174,6 +176,7 @@ class GameMixin:
             elif self.settings.is_action_key(event.key, "pause") and self.net_mgr.mode == "NONE":
                 # 싱글 플레이 시 일시정지 토글
                 self.is_paused = not self.is_paused
+                self.match.log_event("pause", on=self.is_paused)
                 if self.match:
                     self.match.is_paused = self.is_paused
                 if self.is_paused:
@@ -343,6 +346,24 @@ class GameMixin:
         self.renderer.chat_my_id = self.net_mgr.my_player_id or ""
         self.renderer.render(self.match, self.sound_mgr)
 
+    def _save_match_log(self, final_rank):
+        """사람 테스트용 경기 기록을 저장 폴더의 match_logs/에 JSON으로 저장 (설정에서 켠 경우만). 실패해도 게임은 계속"""
+        try:
+            import json
+            import datetime
+            from app_paths import data_path
+            folder = data_path("match_logs")
+            os.makedirs(folder, exist_ok=True)
+            log = self.match.match_log()
+            log["rank"] = final_rank
+            log["app_version"] = APP_VERSION
+            log["settings"] = {k: self.settings.get(k) for k in ("target_player_count", "bot_difficulty", "game_mode", "target_mode", "mini_detail", "screen_shake")}
+            name = datetime.datetime.now().strftime("match_%Y%m%d_%H%M%S.json")
+            with open(os.path.join(folder, name), "w", encoding="utf-8") as f:
+                json.dump(log, f, ensure_ascii=False)
+        except Exception as e:
+            print(f"[MatchLog] 저장 실패: {e}")
+
     def _update_game(self, dt):
         if not self.match:
             return
@@ -448,6 +469,8 @@ class GameMixin:
                 daily=self.match.daily
             )
             _mode = "battle" if self.match.attacks_enabled else "survival"
+            if getattr(self.match, "log_enabled", False):
+                self._save_match_log(final_rank)
             self.match.new_achievements = list(getattr(self.stats_mgr, "last_new_achievements", []))
             self.match.ladder_clear = self.stats_mgr.last_ladder_clear
             self.match.next_goal = (f"오늘의 도전 최고 #{self.stats_mgr.daily_best(self.match.daily)}위" if self.match.daily and not self.match.ladder_clear else None) or next_goal_text(final_rank, self.match.local_ko_count, self.match.total_players,

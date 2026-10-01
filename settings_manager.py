@@ -130,6 +130,7 @@ DEFAULT_SETTINGS = {
     "color_mode": "normal",      # 블록 색상: "normal"(기본) / "colorblind"(색약 보정)
     "text_size": "normal",       # 게임 화면 글자 크기: "normal"(보통) / "large"(크게)
     "block_skin": "classic",     # 블록 모양: BLOCK_SKIN_OPTIONS 중 하나
+    "match_log": False,          # 사람 테스트용 경기 로그를 저장할지 (경기마다 JSON 한 개, 기본 끔)
     "onboard_done": False,       # 첫 실행 기본값(50인 쉬움 봇)을 이미 적용했는지. 전적이 있는 사용자는 설정을 바꾸지 않고 표시만 함
     "coach_done": False,         # 첫 경기 코치 마크(핵심 HUD 3곳 설명)를 이미 보여줬는지
     "target_mode": "AUTO",       # 마지막으로 쓴 조준 모드 (다음 경기도 이어서 사용): TARGET_MODE_OPTIONS 중 하나

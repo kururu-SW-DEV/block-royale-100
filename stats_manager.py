@@ -41,7 +41,7 @@ ACHIEVEMENTS = (
     ("ko5", "사냥꾼", "한 판에서 5명 처치", lambda c: c["kos"] >= 5),
     ("ko10", "학살자", "한 판에서 10명 처치", lambda c: c["kos"] >= 10),
     ("combo8", "콤보 장인", "한 판에서 8연속 콤보", lambda c: c["combo"] >= 8),
-    ("marathon", "마라토너", "한 판에서 10분 이상 생존", lambda c: c["secs"] >= 600),
+    ("marathon", "마라토너", "한 판에서 7분 이상 생존", lambda c: c["secs"] >= 420),      # 8~9분에 끝나는 경기라 10분은 사실상 우승권만 가능했음 -> 7분
     ("ladder_all", "사다리 정복", "난이도 사다리 4단계 모두 클리어", lambda c: c["ladder_n"] >= 4),
     ("daily3", "꾸준한 도전자", "오늘의 도전을 3일 이상 플레이", lambda c: c["daily_n"] >= 3),
 )
@@ -175,6 +175,14 @@ class StatsManager:
                     if b not in best_by or r < best_by[b]:
                         best_by[b] = r
         return best_by
+
+    def achievement_progress(self):
+        """아직 못 한 업적의 진행도 {id: (현재, 목표)} (숫자로 셀 수 있는 것만). 생존 시간은 초 단위"""
+        d = self.data
+        best_secs = max([m.get("survival_sec", 0) for m in d.get("recent_matches", []) if isinstance(m.get("survival_sec", 0), (int, float))] or [0])
+        mk, cb = d.get("max_ko", 0), d.get("max_combo", 0)
+        return {"first_ko": (min(mk, 1), 1), "ko5": (min(mk, 5), 5), "ko10": (min(mk, 10), 10), "combo8": (min(cb, 8), 8),
+                "marathon": (min(int(best_secs), 420), 420), "ladder_all": (len(d.get("ladder", [])), 4), "daily3": (min(len(d.get("daily", {})), 3), 3)}
 
     def achievements_done(self):
         """달성한 업적 id 목록 (ACHIEVEMENTS 순서)"""
