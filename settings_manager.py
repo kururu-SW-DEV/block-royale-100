@@ -130,11 +130,12 @@ DEFAULT_SETTINGS = {
     "color_mode": "normal",      # 블록 색상: "normal"(기본) / "colorblind"(색약 보정)
     "text_size": "normal",       # 게임 화면 글자 크기: "normal"(보통) / "large"(크게)
     "block_skin": "classic",     # 블록 모양: BLOCK_SKIN_OPTIONS 중 하나
+    "onboard_done": False,       # 첫 실행 기본값(50인 쉬움 봇)을 이미 적용했는지. 전적이 있는 사용자는 설정을 바꾸지 않고 표시만 함
     "coach_done": False,         # 첫 경기 코치 마크(핵심 HUD 3곳 설명)를 이미 보여줬는지
     "target_mode": "AUTO",       # 마지막으로 쓴 조준 모드 (다음 경기도 이어서 사용): TARGET_MODE_OPTIONS 중 하나
     "screen_shake": "normal",    # 화면 흔들림: "off"(끔) / "low"(약하게) / "normal"(보통)
     "game_mode": "battle",       # 게임 모드: "battle"(배틀로얄: 공격을 주고받음) / "survival"(서바이벌: 공격 없이 각자 생존 경쟁)
-    "mini_detail": "detailed",   # 미니 보드 표시: "detailed"(자세히) / "simple"(간략)
+    "mini_detail": "focus",      # 미니 보드 표시: "detailed"(자세히) / "focus"(자세히 + 나를 노리는/조준/위기 카드만 또렷하게) / "simple"(간략)
     "key_preset": "arcade",
     "custom_keys": None
 }

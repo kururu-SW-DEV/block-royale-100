@@ -51,6 +51,9 @@ class GameMixin:
                     self.match.practice_inject_garbage(8 if (event.mod & pygame.KMOD_SHIFT) else 4)
                     self.match._play_hit_alarm(8 if (event.mod & pygame.KMOD_SHIFT) else 4)
                 return
+            # 시작 카운트다운 중에는 조작 키를 받지 않음 (ESC만 허용)
+            if self.match.countdown_left() > 0 and event.key != pygame.K_ESCAPE:
+                return
             # 탈락 또는 게임 종료 시 처리
             if self.match.match_finished:
                 # 최종 순위표: 스크롤 / 재도전 / 메인 메뉴
@@ -346,7 +349,9 @@ class GameMixin:
             
         if self.is_paused:
             return
-            
+        if self.match.countdown_left() > 0:
+            return                                           # 시작 카운트다운: 블록/봇/시간 모두 정지 (화면만 그림)
+
         # 1. DAS / ARR 연속 좌우 이동 및 초고속 소프트드롭
         if self.match.local_is_alive and not self.match.local_engine.game_over:
             if (self.h_dir == -1 and self.key_left_down) or (self.h_dir == 1 and self.key_right_down):
@@ -443,6 +448,7 @@ class GameMixin:
                 daily=self.match.daily
             )
             _mode = "battle" if self.match.attacks_enabled else "survival"
+            self.match.new_achievements = list(getattr(self.stats_mgr, "last_new_achievements", []))
             self.match.ladder_clear = self.stats_mgr.last_ladder_clear
             self.match.next_goal = (f"오늘의 도전 최고 #{self.stats_mgr.daily_best(self.match.daily)}위" if self.match.daily and not self.match.ladder_clear else None) or next_goal_text(final_rank, self.match.local_ko_count, self.match.total_players,
                                                   self.stats_mgr.best_in_size(_mode, self.match.total_players),

@@ -210,8 +210,12 @@ class CoreMixin:
         )
         self.match.local_color = self.name_color
         self.match.set_target_mode(self.settings.get("target_mode"))        # 마지막으로 쓴 조준 모드를 이어서 사용
-        if not practice and not self.settings.get("coach_done"):                             # 처음 하는 경기: HUD 핵심 3곳을 15초 동안 설명 (한 번만)
-            self.match.coach_until = time.time() + 15.0
+        lead = 0.0
+        if mode == "SOLO" and not practice and getattr(self, "use_bot_pool", False):                                                  # 혼자 하는 경기: 3-2-1 동안 경기를 멈추고 화면을 먼저 보여 줌 (네트워크는 동기화 때문에 제외, 테스트/헤드리스 실행은 건너뜀)
+            lead = self.match.COUNTDOWN_SECS
+            self.match.countdown_until = time.time() + lead
+        if not practice and not self.settings.get("coach_done"):                             # 처음 하는 경기: HUD 핵심 3곳을 15초 동안 설명 (한 번만, 카운트다운 동안에도 보임)
+            self.match.coach_until = time.time() + lead + 15.0
             self.settings.set("coach_done", True)
         self.apply_gameplay_options()
         if getattr(self, "use_bot_pool", False) and mode != "CLIENT":

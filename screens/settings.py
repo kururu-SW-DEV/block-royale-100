@@ -74,7 +74,7 @@ HELP = {
     "fs": "창 모드와 전체 화면을 바꿉니다. F11 키로 언제든 전환할 수 있습니다.",
     "res": "창 크기를 고릅니다. 모니터에 들어가는 크기만 보이며 창 가장자리를 끌어서도 조절할 수 있습니다.",
     "res_off": "전체 화면에서는 모니터 해상도에 맞춰 자동으로 확대됩니다.",
-    "mini": "자세히: 조작 중인 블록, 착지 위치, 홀드/다음 블록까지 표시 · 간략: 쌓인 블록만 표시해 더 깔끔하고 가볍습니다.",
+    "mini": "자세히: 조작 중인 블록, 착지 위치, 홀드/다음 블록까지 표시 · 집중: 자세히와 같되 나를 노리는 상대, 내 조준 대상, 위기 카드만 또렷하게 · 간략: 쌓인 블록만 표시해 더 깔끔하고 가볍습니다.",
     "color_mode": "색약 보정은 블록 색을 밝기 차이가 큰 팔레트로 바꿉니다.",
     "text_size": "게임 화면의 작은 글씨를 키웁니다. (메뉴 글자는 그대로입니다)",
     "block_skin": "게임 화면 블록의 모양을 바꿉니다. 색은 위의 '블록 색상' 설정을 따르며, 로고와 미니 보드는 그대로입니다.",
@@ -275,13 +275,14 @@ class SettingsMixin:
             name, _, value = btn_id.partition("=")
             cur = {"mini_detail": self.settings.get("mini_detail"), "color_mode": self.settings.get("color_mode"),
                    "text_size": self.settings.get("text_size")}[name]
-            other = {"mini_detail": ("detailed", "simple"), "color_mode": ("normal", "colorblind"), "text_size": ("normal", "large")}[name]
-            new = value if value else other[1] if cur == other[0] else other[0]      # 값이 없으면 (예전 방식) 토글
+            other = {"mini_detail": ("detailed", "focus", "simple"), "color_mode": ("normal", "colorblind"), "text_size": ("normal", "large")}[name]
+            new = value if value else other[(other.index(cur) + 1) % len(other)] if cur in other else other[0]      # 값이 없으면 (Enter) 다음 선택지로 순환
             if new != cur:
                 self.sound_mgr.play('rotate')
                 self.settings.set(name, new)
                 if name == "mini_detail":
                     self.renderer.mini_detailed = (new != "simple")
+                    self.renderer.mini_focus = (new == "focus")
                 else:
                     self.apply_visual_options()
         elif btn_id in ("shake_prev", "shake_next"):
@@ -344,6 +345,7 @@ class SettingsMixin:
             self.apply_gameplay_options()
         elif tab == "general":
             self.renderer.mini_detailed = self.settings.get("mini_detail") != "simple"
+            self.renderer.mini_focus = self.settings.get("mini_detail") == "focus"
             self.apply_visual_options()
             if not self.is_fullscreen:
                 self._apply_window_size()
@@ -362,6 +364,7 @@ class SettingsMixin:
         self.settings.reset_to_defaults()
         self.apply_handling()
         self.renderer.mini_detailed = True
+        self.renderer.mini_focus = True
         self.apply_visual_options()
         self._end_text(commit=False)
         self.player_name = "Player_1"
@@ -543,8 +546,8 @@ class SettingsMixin:
         self._s_cycler("res_prev", "res_next", res_label, RIGHT, y + 28, enabled=not fs)
         y += 56
         self._s_row("mini", y, 56, "미니 보드", "상대 보드에 표시할 정보의 양")
-        self._s_seg([("mini_detail=detailed", "자세히"), ("mini_detail=simple", "간략")],
-                    "mini_detail=simple" if self.settings.get("mini_detail") == "simple" else "mini_detail=detailed", RIGHT, y + 28)
+        self._s_seg([("mini_detail=detailed", "자세히"), ("mini_detail=focus", "집중"), ("mini_detail=simple", "간략")],
+                    "mini_detail=" + (self.settings.get("mini_detail") if self.settings.get("mini_detail") in ("detailed", "focus", "simple") else "focus"), RIGHT, y + 28)
         y += 56
         skin = self.settings.get("block_skin", "classic")
         self._s_row("block_skin", y, 56, "블록 스킨", BLOCK_SKIN_DESCS.get(skin, ""))

@@ -11,6 +11,7 @@ import bot_brain
 import bot_pool
 
 STUCK_LIMIT = 6.0            # 살아 있는데 이 시간(봇 시계 기준 초) 동안 블록을 하나도 못 놓으면 워치독이 강제로 풀어 줌 (어떤 원인이든 봇이 멈춘 채 남지 않게)
+EARLY_TEMPO = 3.0           # 생존자가 절반을 넘는 초반에 봇의 생각/입력 시간에 곱하는 배율 (클수록 초반이 느슨함). 1.8(25~50%) -> 1.25(10~25%) -> 1.0으로 줄어듦
 STARVE_LIMIT = 0.3          # 탐색 예산을 이 시간(봇 시계 기준 초) 넘게 못 받으면 예산과 무관하게 가볍게 계산
 POOL_WAIT_TIMEOUT = 0.8      # 작업 프로세스 결과를 이 시간(봇 시계 기준 초)까지 기다리고, 그래도 안 오면 직접 계산
 
@@ -77,7 +78,7 @@ class AIBot:
         """생존자 비율(100인 기준 환산)에 따라 속도/정확도를 동적으로 조절: 초반엔 여유 있게, 후반엔 최고 속도로"""
         if self.brain:
             t = self.brain
-            f = 3.0 if alive_count > 50 else (1.8 if alive_count > 25 else (1.25 if alive_count > 10 else 1.0))
+            f = EARLY_TEMPO if alive_count > 50 else (1.8 if alive_count > 25 else (1.25 if alive_count > 10 else 1.0))
             self.think_duration = (t["think"][0] * f, t["think"][1] * f)
             self.action_interval = t["interval"] * f
             self.error_chance = t["error"] * (2.0 if alive_count > 50 else 1.0)

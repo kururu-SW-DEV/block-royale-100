@@ -10,7 +10,7 @@ import random
 import pygame
 from gfx import CANVAS, HiFont, mix_color as _mix
 from config import NAME_COLORS
-from stats_manager import LADDER_NAMES
+from stats_manager import LADDER_NAMES, ACHIEVEMENTS
 from config import (
     SCREEN_WIDTH, SCREEN_HEIGHT,
     BOARD_WIDTH, BOARD_HEIGHT,
@@ -173,6 +173,7 @@ class UIRenderer:
         self.main_board_y = 112
 
         self.mini_board_rects = {}
+        self.mini_focus = False          # 미니 보드 집중 보기: 나를 노리는 상대/조준 대상/위기 카드가 아닌 카드는 어둡게 (설정에서 변경)
         self.mini_detailed = True        # 미니 보드 자세히 보기 (설정에서 변경): 조작 중 블록/착지 위치/홀드/다음 블록
         self.line_clear_flashes = []
         self.lock_flashes = []
@@ -225,6 +226,7 @@ class UIRenderer:
         self.font_hud = HiFont(font_name, 17, bold=True)
         self.font_small = HiFont(font_name, 13 + bo, bold=True)
         self.font_tiny = HiFont(font_name, 12 + bo, bold=True)
+        self.font_countdown = HiFont(font_name, 110, bold=True)       # 시작 카운트다운 숫자
 
     def set_text_boost(self, boost):
         """게임 화면 글자 크기 옵션 적용: 글꼴을 다시 만들고 글자/패널 캐시를 비움"""
@@ -457,6 +459,7 @@ class UIRenderer:
         self._render_ko_orbs(match)
         self._draw_hud_tooltip()
         self._draw_coach_marks(match)
+        self._render_countdown(match, ox, oy)
         if getattr(match, 'is_paused', False):
             self._render_pause_overlay()
 
@@ -485,7 +488,7 @@ class UIRenderer:
 
         cx_board = self.main_board_x + self.main_board_w // 2 + ox
 
-        for slot, ft in enumerate(actions[-2:]):
+        for slot, ft in enumerate(actions[-1:]):            # 한 번에 하나만 (겹쳐 쌓이면 위기 때 보드를 가림)
             progress = (now - ft["birth"]) / ft["duration"]
             alpha = max(0, min(255, int(255 * (1.0 - progress ** 3))))
             # 좌우 패널(홀드/다음 블록)을 가리지 않도록 보드 폭 안에 들어가는 가장 큰 글꼴 선택
@@ -498,10 +501,10 @@ class UIRenderer:
                     break
             surf = font.render(ft["text"], True, ft["color"])
             tw, th = surf.get_size()
-            cy = self.main_board_y + 140 + slot * (th + 18) - progress * 20 + oy
+            cy = self.main_board_y + self.cell_size * 2 + 4 + slot * (th + 18) - progress * 10 + oy        # 스폰 구역(위 2줄) 바로 아래: 쌓인 블록이 보이는 쪽과 가장 멀다
             plate = pygame.Rect(int(cx_board - (tw + 32) // 2), int(cy), tw + 32, th + 14)
-            CANVAS.alpha_rect(plate, (10, 13, 24, int(alpha * 0.78)), radius=10)
-            CANVAS.alpha_rect(plate, (*ft["color"][:3], alpha), width=2, radius=10)
+            CANVAS.alpha_rect(plate, (10, 13, 24, int(alpha * 0.55)), radius=10)
+            CANVAS.alpha_rect(plate, (*ft["color"][:3], int(alpha * 0.85)), width=2, radius=10)
             surf.set_alpha(alpha)
             self.screen.blit(surf, (plate.x + 16, plate.y + 7))
 
@@ -816,6 +819,32 @@ class UIRenderer:
                 k = (age - fly) / 0.35                                                 # 도착: K.O. 칸이 번쩍임
                 pygame.draw.rect(self.screen, _mix((255, 230, 120), (255, 255, 255), 1.0 - k), dest_rect.inflate(int(10 * k), int(10 * k)), 3, border_radius=10)
                 pygame.draw.circle(self.screen, (255, 240, 170), dest, int(14 + 30 * k), max(1, int(4 * (1.0 - k))))
+
+    def _render_countdown(self, match, ox=0, oy=0):
+        """혼자 하는 경기 시작 전 3-2-1 (끝나면 잠깐 GO!). 보드 한가운데에 크게"""
+        until = getattr(match, "countdown_until", 0.0)
+        if until <= 0.0:
+            return
+        left = until - time.time()
+        if left > 0:
+            n = int(math.ceil(left))
+            frac = left - (n - 1)                            # 숫자 하나가 보이는 1초 동안 1 -> 0
+            text, col = str(n), (255, 226, 130)
+            alpha = int(255 * min(1.0, 0.35 + frac))
+        elif left > -0.6:
+            text, col = "GO!", (140, 255, 170)
+            alpha = int(255 * (1.0 - (-left) / 0.6))
+        else:
+            return
+        cx = self.main_board_x + self.main_board_w // 2 + ox
+        cy = self.main_board_y + self.main_board_h // 2 - 20 + oy
+        surf = self.font_countdown.render(text, True, col)
+        surf.set_alpha(max(0, min(255, alpha)))
+        self.screen.blit(surf, (cx - surf.get_width() // 2, cy - surf.get_height() // 2))
+        if left > 0:
+            sub = self.font_mid.render("준비하세요!", True, (225, 232, 250))
+            sub.set_alpha(max(0, min(255, alpha)))
+            self.screen.blit(sub, (cx - sub.get_width() // 2, cy + surf.get_height() // 2))
 
     def _draw_coach_marks(self, match):
         """첫 경기 한 번만: 핵심 HUD 3곳(생존자 / 조준 모드 / 받을 공격) 말풍선. 끝나기 2초 전부터 사라짐"""
@@ -1228,8 +1257,17 @@ class UIRenderer:
         score_str = f"{score:,}" if score < 100000 else f"{score // 1000}k"
         rows = [("시간", time_str, C_TEXT), ("APM", f"{apm:.1f}", C_GOLD),
                 ("LPM", f"{lpm:.1f}", C_GREEN), ("점수", score_str, C_ACCENT)]
+        esc = 1.0
+        if not spectating and match.attacks_enabled and not match.practice:
+            esc = match.attack_multiplier()                      # 5분 뒤부터 매분 올라가는 공격력 배율 (예전에는 화면에 전혀 안 보였음)
         for i, (label, value, col) in enumerate(rows):
             cy = rect.y + 8 + i * 34 + 17                       # 행 중앙: 라벨과 값을 같은 높이에 맞춤
+            if i == 0 and esc > 1.0:
+                self._draw_text(label, self.font_small, C_ORANGE, rect.x + 12, cy - 6, "midleft")
+                self._draw_text(f"×{esc:.1f}", self.font_tiny, C_ORANGE, rect.x + 12, cy + 9, "midleft")      # 값(시계)과 겹치지 않게 짧게. 설명은 후반전 알림에 있음
+                self._draw_text(value, self.font_hud, C_ORANGE, rect.right - 12, cy, "midright")
+                pygame.draw.line(self.screen, (38, 46, 72), (rect.x + 10, cy + 17), (rect.right - 10, cy + 17), 1)
+                continue
             self._draw_text(label, self.font_small, C_DIM, rect.x + 12, cy, "midleft")
             self._draw_text(value, self.font_hud, col, rect.right - 12, cy, "midright")
             if i < len(rows) - 1:
@@ -1710,6 +1748,10 @@ class UIRenderer:
                 gw = 2 if bw < 46 else 3
                 CANVAS.display.fill((255, 84, 94) if ig >= 4 else (255, 165, 70), CANVAS.rect_f(cbx + 1, cby + ccp * BOARD_HEIGHT - gh - 1, gw, gh))
 
+            if self.mini_focus and is_alive and not (is_targeted or is_spec or in_danger or is_human or pid in attackers_of_me):
+                self._blit_overlay(("mini_dim", board_rect.w, board_rect.h), (board_rect.w, board_rect.h),
+                                   lambda surf: surf.fill((9, 11, 20, 255)), board_rect.topleft, alpha=96)      # 신호 대 잡음: 지금 신경 쓸 필요 없는 카드는 한 단계 어둡게
+
             if is_flashing:
                 a = max(0, min(255, int(220 * (1.0 - flash_age / 0.22))))
                 self._blit_overlay(("mini_flash", board_rect.w, board_rect.h), (board_rect.w, board_rect.h),
@@ -2100,9 +2142,13 @@ class UIRenderer:
         accent = C_GOLD if won else C_DANGER
         records = tuple(getattr(match, "new_records", ()) or ())
         ladder_clear = getattr(match, "ladder_clear", None)
+        ach = tuple(getattr(match, "new_achievements", ()) or ())
         lh = self.font_small.get_height()
         # 최고 기록 줄이 있으면 그 줄 + 배지 줄 + 버튼 발광(위로 8px)이 겹치지 않도록 패널을 그만큼 늘림 (글자 크기 옵션에도 맞춰짐)
-        extra = max(0, 178 + lh + 4 + lh + 12 - 226) if (records or ladder_clear) else 0
+        extra = max(0, 178 + lh + 4 + lh + 12 - 226) if (records or ladder_clear or ach) else 0
+        loss_line = None if won else match.defeat_summary()           # 패인 한 줄: 한 줄 더 쓸 만큼 패널을 늘림
+        if loss_line:
+            extra += lh + 4
         box_w, box_h = 660, 346 + extra
         bx = (self.width - box_w) // 2
         by = (self.height - box_h) // 2
@@ -2162,21 +2208,37 @@ class UIRenderer:
                 pygame.draw.rect(self.screen, C_GOLD, pill, border_radius=8)
                 self._draw_text("NEW", self.font_tiny, (24, 18, 4), pill.centerx, pill.centery, "center")
         badge_y = by + 188
-        if (records or ladder_clear) and t >= rec_t:
+        if (records or ladder_clear or ach) and t >= rec_t:
             names = {"rank": "순위", "ko": "K.O.", "combo": "최대 콤보"}
             parts = []
             if records:
                 parts.append("최고 기록 갱신!  " + " · ".join(names[k] for k in records if k in names))
             if ladder_clear:
                 parts.append(f"난이도 클리어!  {LADDER_NAMES.get(ladder_clear, ladder_clear)}")
-            self._draw_text("★ " + "   ★ ".join(parts), self.font_small, C_GOLD, bx + box_w // 2, by + 178, "midtop")
-        if records or ladder_clear:
+            if ach:
+                titles = {a[0]: a[1] for a in ACHIEVEMENTS}
+                shown = [titles.get(x, x) for x in ach[:2]]
+                parts.append("업적 달성!  " + " · ".join(shown) + (f" 외 {len(ach) - 2}개" if len(ach) > 2 else ""))
+            line = "★ " + "   ★ ".join(parts)
+            if self.font_small.size(line)[0] > box_w - 30:                # 한 줄에 다 안 들어가면 상세를 줄임 (기록 항목/업적 이름)
+                short = []
+                if records:
+                    short.append("최고 기록 갱신!")
+                if ladder_clear:
+                    short.append(f"난이도 클리어!  {LADDER_NAMES.get(ladder_clear, ladder_clear)}")
+                if ach:
+                    short.append(f"업적 {len(ach)}개 달성!")
+                line = "★ " + "   ★ ".join(short)
+            self._draw_text(line, self.font_small, C_GOLD, bx + box_w // 2, by + 178, "midtop")
+        if records or ladder_clear or ach:
             badge_y = by + 178 + lh + 4
         badge_txt = f"최종 배지 Lv.{tier} (공격력 +{pct})" if tier > 0 else "최종 배지 Lv.0"
         goal = getattr(match, "next_goal", None)
         if goal and t >= 1.2:                                            # 다음 목표: 재도전 동기를 주는 한 줄 (카드 연출이 끝난 뒤 표시)
             badge_txt += f"   ·   다음 목표: {goal}"
         self._draw_text(badge_txt, self.font_small, C_DIM, bx + box_w // 2, badge_y, "midtop")
+        if loss_line and t >= 1.2:
+            self._draw_text(loss_line, self.font_small, (255, 190, 150), bx + box_w // 2, badge_y + lh + 4, "midtop")
 
         mx, my = pygame.mouse.get_pos()
         can_spectate = (not match.match_finished and match.alive_count > 1 and not match.local_is_alive)

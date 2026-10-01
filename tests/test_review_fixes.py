@@ -1899,6 +1899,127 @@ def test_play_bgm_does_not_block_while_synthesizing():
     sm.stop_bgm()
 
 
+def test_combat_text_pressure_and_onboarding():
+    """전투 문구 정리(싱글/더블 배너 없음, 숫자 괄호 없음), 공격 토스트=실제 보낸 줄 수, 후반전 예고, 시작 카운트다운, 패인 한 줄, 첫 실행 기본값, 미니 보드 집중 모드"""
+    import time as _t
+    from battle_royale import BattleRoyaleMatch
+    m = BattleRoyaleMatch(total_players=10, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy")
+    e = m.local_engine
+    e.last_clear_info = {}
+    for n in (1, 2):
+        m.floating_texts.clear(); m.on_lines_cleared(n)
+        assert not [f for f in m.floating_texts if f["category"] == "action"], f"{n}줄 클리어는 배너를 띄우지 않음"
+    m.floating_texts.clear(); m.on_lines_cleared(4)
+    banner = [f["text"] for f in m.floating_texts if f["category"] == "action"]
+    assert banner and "쿼드" in banner[0] and "(" not in banner[0], banner            # 실제 보낸 줄 수는 공격 토스트가 보여 줌
+
+    # 공격 토스트의 줄 수 = 실제로 상대에게 들어간 줄 수 (후반 증폭 포함)
+    m = BattleRoyaleMatch(total_players=10, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy")
+    m.elapsed = 419.9                                            # 공격력 약 x1.4
+    m.local_engine.garbage_to_send = 5
+    m.update(0.016)
+    toast = [f["text"] for f in m.floating_texts if f["category"] == "attack"]
+    tid = m.players["L"]["target_id"]
+    got = m.players[tid]["bot"].engine.incoming_garbage
+    assert toast and f"+{got}줄" in toast[-1] and "공격력 ×1.4" in toast[-1], (toast, got)
+
+    # 후반전 예고: 4:30에 한 번, 이후 20% 단계가 오를 때마다 한 번
+    m = BattleRoyaleMatch(total_players=10, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy")
+    m.elapsed = 275.0; m._announce_escalation(); m._announce_escalation()
+    assert sum("곧 후반전" in c["text"] for c in m.commentary) == 1
+    m.elapsed = 361.0; m._announce_escalation(); m._announce_escalation()
+    assert sum("×1.2" in c["text"] for c in m.commentary) == 1
+    pm = BattleRoyaleMatch(total_players=2, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy", practice=True)
+    pm.elapsed = 400.0; pm._announce_escalation()
+    assert not pm.commentary or all("후반전" not in c["text"] for c in pm.commentary), "연습 모드에는 후반전 알림 없음"
+
+    # 시작 카운트다운
+    assert m.countdown_left() == 0.0
+    m.countdown_until = _t.time() + 2.0
+    assert 1.5 < m.countdown_left() <= 2.0
+    m.countdown_until = 0.0
+
+    # 패인 한 줄
+    m.local_is_alive = False
+    m.timeline = [(i, 50 - i, 8 + i, (i % 5) * 2) for i in range(12)]
+    m.local_death_attackers = 3
+    msg = m.defeat_summary()
+    assert msg and "집중 공격" in msg and "나를 노린 상대 3명" in msg and "받을 공격 최대 8줄" in msg, msg
+    m.timeline = [(0, 9, 3, 0)]
+    assert m.defeat_summary() is None, "근거(타임라인)가 부족하면 표시하지 않음"
+
+    # 첫 실행 기본값: 전적이 없는 새 사용자만 50인 쉬움, 전적이 있으면 그대로
+    import main as M
+    app = M.BlockRoyaleApp()
+    app.stats_mgr.reset_stats()
+    app.settings.data["onboard_done"] = False
+    app.settings.data["target_player_count"] = 100; app.settings.data["bot_difficulty"] = "mixed"
+    app._apply_first_run_defaults()
+    assert app.settings.get("target_player_count") == 50 and app.settings.get("bot_difficulty") == "easy" and app.settings.get("onboard_done")
+    app.settings.data["onboard_done"] = False
+    app.settings.data["target_player_count"] = 100; app.settings.data["bot_difficulty"] = "mixed"
+    app.stats_mgr.record_match(5, 100, 1, 10, 1, 60)
+    app._apply_first_run_defaults()
+    assert app.settings.get("target_player_count") == 100 and app.settings.get("bot_difficulty") == "mixed" and app.settings.get("onboard_done")
+
+    # 미니 보드 표시: 자세히 -> 집중 -> 간략 순으로 순환, 집중일 때만 렌더러가 카드를 어둡게
+    app.settings.data["mini_detail"] = "detailed"
+    app._settings_activate("mini_detail")
+    assert app.settings.get("mini_detail") == "focus" and app.renderer.mini_focus and app.renderer.mini_detailed
+    app._settings_activate("mini_detail")
+    assert app.settings.get("mini_detail") == "simple" and not app.renderer.mini_focus and not app.renderer.mini_detailed
+    app._settings_activate("mini_detail")
+    assert app.settings.get("mini_detail") == "detailed" and not app.renderer.mini_focus and app.renderer.mini_detailed
+
+
+def test_achievements():
+    """업적: 조건 달성 시 한 번만 기록되고 저장/불러오기와 초기화가 되며, 서바이벌 경기와는 무관, 결과/전적 화면이 그려짐"""
+    import tempfile
+    from stats_manager import StatsManager, ACHIEVEMENTS, ACHIEVEMENT_IDS
+    path = os.path.join(tempfile.mkdtemp(), "stats.json")
+    sm = StatsManager(path)
+    assert len(ACHIEVEMENTS) == 10 and len(set(ACHIEVEMENT_IDS)) == 10
+    sm.record_match(40, 100, 0, 5, 1, 60)
+    assert sm.last_new_achievements == [] and sm.achievements_done() == []
+    sm.record_match(1, 100, 6, 50, 3, 300)
+    assert sm.last_new_achievements == ["first_ko", "top10", "victory", "century", "ko5"], sm.last_new_achievements
+    sm.record_match(1, 100, 6, 50, 3, 300)
+    assert sm.last_new_achievements == [], "이미 달성한 업적은 다시 알리지 않음"
+    sm.record_match(30, 50, 12, 90, 9, 700, mode="survival")             # 서바이벌 경기는 업적과 무관
+    assert sm.achievements_done() == ["first_ko", "top10", "victory", "century", "ko5"]
+    sm.record_match(9, 40, 10, 90, 8, 650)
+    assert set(sm.last_new_achievements) == {"ko10", "combo8", "marathon"}
+    sm2 = StatsManager(path)                                             # 저장 후 다시 불러와도 유지
+    assert sm2.achievements_done() == sm.achievements_done() and len(sm2.achievements_done()) == 8
+    d = json.load(open(path, encoding="utf-8"))
+    d["achievements"] = ["victory", "없는업적", 5]                        # 손상/알 수 없는 값은 걸러냄
+    json.dump(d, open(path, "w", encoding="utf-8"))
+    assert StatsManager(path).achievements_done() == ["victory"]
+    for i in range(3):                                                    # 오늘의 도전 3일 + 사다리 4단계
+        sm.record_match(5, 100, 0, 5, 1, 60, daily=f"2026090{i + 1}")
+    assert "daily3" in sm.achievements_done()
+    for dn in ("easy", "normal", "hard", "master"):
+        sm.record_match(5, 100, 0, 5, 1, 60, difficulty=dn)
+    assert "ladder_all" in sm.achievements_done()
+    sm.reset_stats()
+    assert sm.achievements_done() == []
+
+    # 전적 화면의 업적 탭 / 결과 화면의 업적 줄이 오류 없이 그려짐
+    import main as M
+    app = M.BlockRoyaleApp()
+    app.stats_mgr.reset_stats()
+    app.stats_mgr.record_match(1, 100, 6, 50, 3, 300)
+    app.state = "RECORDS"
+    for mode in ("achv", "survival", "battle"):
+        app.records_mode = mode
+        app._render_records()
+    order = []
+    for _ in range(3):
+        app._handle_records_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT, mod=0, unicode=""))
+        order.append(app.records_mode)
+    assert order == ["survival", "achv", "battle"], order
+
+
 if __name__ == "__main__":
     pygame.init()
     keep = {}

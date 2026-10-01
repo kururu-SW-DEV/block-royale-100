@@ -629,6 +629,8 @@ class BattleRoyaleMatch:
             if last and recent and last != victim_id and self.players.get(last, {}).get("is_alive"):
                 killer_id = last
             
+        if victim_id == self.local_player_id:
+            self.local_death_attackers = self.get_attackers_count_for(victim_id)      # 결과 화면의 "패인 한 줄"용: 탈락 순간 나를 노리던 상대 수
         self.players[victim_id]["is_alive"] = False
         self.players[victim_id]["survival"] = self.elapsed
         self.players[victim_id]["rank"] = self.next_rank_to_assign
@@ -798,30 +800,70 @@ class BattleRoyaleMatch:
             self.trigger_screen_shake(14.0)
             prefix = f"★ B2B x{chain} " if (is_b2b and chain >= 1) else ("★ B2B " if is_b2b else "★ ")
             if cleared == 3:
-                self.add_floating_text(f"{prefix}T-스핀 트리플! (6줄 공격) ★", (255, 130, 255), duration=2.5, size=32, category="action")
+                self.add_floating_text(f"{prefix}T-스핀 트리플! ★", (255, 130, 255), duration=2.5, size=32, category="action")
             elif cleared == 2:
-                self.add_floating_text(f"{prefix}T-스핀 더블! (4줄 공격) ★", (255, 150, 255), duration=2.2, size=30, category="action")
+                self.add_floating_text(f"{prefix}T-스핀 더블! ★", (255, 150, 255), duration=2.2, size=30, category="action")
             elif cleared == 1:
-                self.add_floating_text(f"{prefix}T-스핀 싱글! (2줄 공격) ★", (255, 180, 255), duration=1.8, size=26, category="action")
+                self.add_floating_text(f"{prefix}T-스핀 싱글! ★", (255, 180, 255), duration=1.8, size=26, category="action")
             else:
                 self.add_floating_text("★ T-스핀 보너스! ★", (255, 180, 255), duration=1.4, size=22, category="action")
         elif cleared >= 4:
             self.trigger_screen_shake(14.0)
             if is_b2b:
-                self.add_floating_text(f"★ B2B x{chain} 쿼드! (5줄 공격) ★" if chain >= 1 else "★ B2B 쿼드! (5줄 공격) ★", (255, 235, 80), duration=2.4, size=34, category="action")
+                self.add_floating_text(f"★ B2B x{chain} 쿼드! ★" if chain >= 1 else "★ B2B 쿼드! ★", (255, 235, 80), duration=2.4, size=34, category="action")
             else:
-                self.add_floating_text("★ 쿼드! (4줄 제거) ★", (255, 215, 0), duration=2.2, size=32, category="action")
+                self.add_floating_text("★ 쿼드! ★", (255, 215, 0), duration=2.2, size=32, category="action")
         elif cleared == 3:
-            self.add_floating_text("★ 트리플 클리어! (3줄) ★", (100, 240, 255), duration=1.8, size=28, category="action")
-        elif cleared == 2:
-            self.add_floating_text("★ 더블 클리어! (2줄) ★", (120, 255, 120), duration=1.6, size=26, category="action")
-        elif cleared == 1:
-            self.add_floating_text("★ 싱글 클리어! (1줄) ★", (180, 220, 255), duration=1.2, size=22, category="action")
+            self.add_floating_text("★ 트리플 클리어! ★", (100, 240, 255), duration=1.8, size=28, category="action")
+        # 싱글/더블은 자주 나오고 공격도 약해서 배너를 띄우지 않음 (위기 때 보드를 가리고 정말 큰 기술의 배너가 묻힘)
             
         if self.local_engine.combo > 0:
             self.add_floating_text(f"[{self.local_engine.combo}연속 콤보!]", (255, 120, 220), duration=1.8, size=22, category="combo")
         if info.get('is_pc'):                                                    # 일반 클리어 문구보다 나중에 넣어 가장 눈에 띄게 표시
             self.add_floating_text("★ PERFECT CLEAR! ★", (255, 225, 90), duration=3.2, size=44, category="action")
+
+    def defeat_summary(self):
+        """결과 화면 한 줄: 탈락 직전 10초 동안 무슨 일이 있었는지 (타임라인: 1초마다 (시각, 생존자, 내 스택, 받을 공격)). 근거가 부족하면 None"""
+        tl = getattr(self, "timeline", None) or []
+        if self.local_is_alive or len(tl) < 3:
+            return None
+        last = tl[-10:]
+        peak_in = max(x[3] for x in last)
+        peak_h = max(x[2] for x in last)
+        atk = getattr(self, "local_death_attackers", 0)
+        if peak_in >= 8 or atk >= 3:
+            lead = "집중 공격에 밀렸어요"
+        elif peak_in < 4 and peak_h >= 16:
+            lead = "스택이 너무 높았어요 (받은 공격은 적음)"
+        else:
+            lead = "버티지 못했어요"
+        bits = [f"받을 공격 최대 {peak_in}줄", f"스택 최대 {peak_h}줄"]
+        if atk >= 1:
+            bits.append(f"나를 노린 상대 {atk}명")
+        return f"탈락 직전 10초: {lead}  ({' · '.join(bits)})"
+
+    COUNTDOWN_SECS = 3.0               # 혼자 하는 경기 시작 전 3-2-1 (그동안 경기 정지)
+
+    def countdown_left(self):
+        """시작 카운트다운이 남은 시간(초). 0이면 경기 진행 중"""
+        return max(0.0, getattr(self, "countdown_until", 0.0) - time.time())
+
+    ESCALATION_WARN_LEAD = 30.0        # 후반 공격력 증폭 시작 이 시간(초) 전에 미리 알림
+
+    def _announce_escalation(self):
+        """보이지 않던 규칙(5분 뒤 매분 공격력 +20%)을 미리 예고하고, 단계가 오를 때마다 알림"""
+        if not self.attacks_enabled or self.practice or self.ESCALATION_START is None:
+            return
+        if not getattr(self, "_esc_warned", False) and self.elapsed >= self.ESCALATION_START - self.ESCALATION_WARN_LEAD:
+            self._esc_warned = True
+            self.add_commentary("곧 후반전: 5분부터 매분 공격력 +20% (최대 3배)", (255, 190, 90), prio=1)
+            self.add_floating_text("곧 후반전! 5분부터 매분 공격력이 20%씩 강해집니다", (255, 190, 90), duration=3.5, size=22, category="alert")
+        mult = self.attack_multiplier()
+        lvl = int((mult - 1.0) / self.ESCALATION_PER_MIN + 1e-9) if mult > 1.0 else 0      # 20% 단계가 오를 때만 알림
+        if lvl > getattr(self, "_esc_level", 0):
+            self._esc_level = lvl
+            self.add_commentary(f"후반전 공격력 ×{1.0 + lvl * self.ESCALATION_PER_MIN:.1f}", (255, 170, 80))
+            self.add_floating_text(f"후반전: 모든 공격력 ×{1.0 + lvl * self.ESCALATION_PER_MIN:.1f}", (255, 170, 80), duration=2.4, size=22, category="alert")
 
     def update(self, dt):
         """매칭 전체 프레임 업데이트"""
@@ -830,6 +872,7 @@ class BattleRoyaleMatch:
             
         now = time.time()
         self.elapsed += dt
+        self._announce_escalation()
         
         # 스크린 셰이크 감쇠
         if self.screen_shake > 0:
@@ -876,6 +919,8 @@ class BattleRoyaleMatch:
                 attacker_bonus = ATTACKER_BONUS.get(min(6, att_count), 0)
                 
                 total_attack = base_garbage + attacker_bonus
+                mult = self.attack_multiplier()
+                shown_attack = int(math.ceil(total_attack * mult)) if mult > 1.0 else total_attack      # apply_attack이 실제로 보내는 줄 수 (표시와 같게)
                 # 반격(ATTACKERS) 모드: 나를 노리는 플레이어가 둘 이상이면 전원에게 동시에 같은 공격을 보냄 (역전 기회)
                 targets = [target]
                 if self.local_target_mode == "ATTACKERS" and not self.local_manual_target_id:
@@ -889,8 +934,8 @@ class BattleRoyaleMatch:
                 if self.sound_mgr:
                     self.sound_mgr.play('attack')
                 if len(targets) >= 2:
-                    self.add_floating_text(f"★ 다중 포격! +{total_attack}줄 × {len(targets)}명 ★", (255, 170, 90), duration=2.6, size=28, category="action")
-                    self.add_commentary(f"{self._short_name(self.local_player_id)}  {len(targets)}명에게 동시 포격! {total_attack}줄", (255, 170, 90))
+                    self.add_floating_text(f"★ 다중 포격! +{shown_attack}줄 × {len(targets)}명 ★", (255, 170, 90), duration=2.6, size=28, category="action")
+                    self.add_commentary(f"{self._short_name(self.local_player_id)}  {len(targets)}명에게 동시 포격! {shown_attack}줄", (255, 170, 90))
                     self.trigger_screen_shake(10.0)
                 
                 lbl = "[자동 반격]" if (self.local_target_mode == "ATTACKERS" and target_p.get("target_id") == self.local_player_id) else "[공격 발송]"
@@ -901,9 +946,11 @@ class BattleRoyaleMatch:
                     bonus_str = f" (배지 Lv.{badge_lvl})"
                 elif attacker_bonus > 0:
                     bonus_str = f" (카운터+{attacker_bonus})"
-                    
+                if mult > 1.0:
+                    bonus_str += f" 공격력 ×{mult:.1f}"                  # 후반 증폭이 걸린 상태임을 알림
+
                 if len(targets) < 2:                             # 다중 포격은 위의 전용 알림만 표시 (중복 방지)
-                    self.add_floating_text(f"{lbl} +{total_attack}줄 >> {target_name}{bonus_str}", (255, 130, 130), duration=2.4, size=22, category="attack")
+                    self.add_floating_text(f"{lbl} +{shown_attack}줄 >> {target_name}{bonus_str}", (255, 130, 130), duration=2.4, size=22, category="attack")
             elif not self.attacks_enabled:
                 self.total_attacks_sent += self.local_engine.garbage_to_send     # 서바이벌: 실제로 보내지는 않지만 만들어 낸 공격력은 APM에 반영
             self.local_engine.garbage_to_send = 0

@@ -31,6 +31,22 @@ def size_bucket(total_players):
 
 STATS_FILE = data_path("stats.json")
 
+# 업적 (배틀로얄 전적에만 기록, 한 번 달성하면 유지). (id, 제목, 설명, 달성 조건 ctx -> bool)
+# ctx: rank, total, kos, lines, combo, secs, ladder_n(클리어한 난이도 수), daily_n(오늘의 도전을 한 날 수)
+ACHIEVEMENTS = (
+    ("first_ko", "첫 K.O.", "한 판에서 상대를 1명 처치", lambda c: c["kos"] >= 1),
+    ("top10", "TOP 10 진입", "30인 이상 대전에서 10위 안", lambda c: c["total"] >= 30 and c["rank"] <= 10),
+    ("victory", "로열 빅토리", "10인 이상 대전에서 우승", lambda c: c["total"] >= 10 and c["rank"] == 1),
+    ("century", "백인의 왕", "100인 대전에서 우승", lambda c: c["total"] >= 100 and c["rank"] == 1),
+    ("ko5", "사냥꾼", "한 판에서 5명 처치", lambda c: c["kos"] >= 5),
+    ("ko10", "학살자", "한 판에서 10명 처치", lambda c: c["kos"] >= 10),
+    ("combo8", "콤보 장인", "한 판에서 8연속 콤보", lambda c: c["combo"] >= 8),
+    ("marathon", "마라토너", "한 판에서 10분 이상 생존", lambda c: c["secs"] >= 600),
+    ("ladder_all", "사다리 정복", "난이도 사다리 4단계 모두 클리어", lambda c: c["ladder_n"] >= 4),
+    ("daily3", "꾸준한 도전자", "오늘의 도전을 3일 이상 플레이", lambda c: c["daily_n"] >= 3),
+)
+ACHIEVEMENT_IDS = tuple(a[0] for a in ACHIEVEMENTS)
+
 DEFAULT_STATS = {
     "total_games": 0,
     "victories": 0,
@@ -45,6 +61,7 @@ DEFAULT_STATS = {
     "recent_matches": [],
     "daily": {},                      # 오늘의 도전 날짜별 최고 순위 {"20260930": 12} (최근 30일만 유지)
     "ladder": [],                     # 클리어한 난이도 목록 (LADDER 중)
+    "achievements": [],               # 달성한 업적 id (ACHIEVEMENTS 중, 배틀로얄 전적에만)
     "best_by_size": {}                # 규모별 최고 순위 {"small": 3, "mid": 8, "large": 28} (플레이한 규모만)
 }
 
@@ -87,6 +104,7 @@ class StatsManager:
         self.data = copy.deepcopy(DEFAULT_STATS)          # 배틀로얄(공격 있음) 전적. 예전 파일과 호환되도록 최상위에 유지
         self.data["survival"] = copy.deepcopy(DEFAULT_STATS)   # 서바이벌(공격 없음) 전적: 같은 구조를 따로 보관
         self.last_ladder_clear = None
+        self.last_new_achievements = []
         self.load()
 
     def _bucket(self, mode):
@@ -101,6 +119,9 @@ class StatsManager:
                 if isinstance(v, dict):
                     target[k] = {kk: int(vv) for kk, vv in v.items()
                                  if isinstance(kk, str) and len(kk) == 8 and kk.isdigit() and isinstance(vv, (int, float)) and not isinstance(vv, bool) and vv >= 1}
+            elif k == "achievements":                      # 업적: 알려진 id만
+                if isinstance(v, list):
+                    target[k] = [x for x in ACHIEVEMENT_IDS if x in v]
             elif k == "ladder":                            # 클리어한 난이도: 알려진 난이도 이름만
                 if isinstance(v, list):
                     target[k] = [x for x in LADDER if x in v]
@@ -155,6 +176,10 @@ class StatsManager:
                         best_by[b] = r
         return best_by
 
+    def achievements_done(self):
+        """달성한 업적 id 목록 (ACHIEVEMENTS 순서)"""
+        return [x for x in ACHIEVEMENT_IDS if x in self.data.get("achievements", [])]
+
     def ladder_cleared(self, mode="battle"):
         """클리어한 난이도 목록 (쉬움 -> 마스터 순)"""
         return [x for x in LADDER if x in self._bucket(mode).get("ladder", [])]
@@ -196,6 +221,16 @@ class StatsManager:
             d["ladder"].append(difficulty)
             self.last_ladder_clear = difficulty
         d["total_games"] = prev_games + 1
+        self.last_new_achievements = []                    # 이번 경기로 새로 달성한 업적 id
+        if mode == "battle":
+            ctx = {"rank": rank, "total": total_players, "kos": kos, "lines": lines, "combo": max_combo, "secs": survival_sec,
+                   "ladder_n": len(d.get("ladder", [])), "daily_n": len(d.get("daily", {}))}
+            have = d.setdefault("achievements", [])
+            for aid, _title, _desc, ok in ACHIEVEMENTS:
+                if aid not in have and ok(ctx):
+                    have.append(aid)
+                    self.last_new_achievements.append(aid)
+            d["achievements"] = [x for x in ACHIEVEMENT_IDS if x in have]
         
         is_victory = (rank == 1)
         if is_victory:

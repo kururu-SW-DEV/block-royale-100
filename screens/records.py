@@ -3,7 +3,7 @@ Block Royale 100 - 전적 기록실 화면
 BlockRoyaleApp(main.py)이 상속하는 믹스인: 메서드 본문은 원래 main.py에 있던 그대로이며 self로 앱 상태를 공유함
 """
 
-from stats_manager import SIZE_BUCKETS, SIZE_BUCKET_IDS
+from stats_manager import SIZE_BUCKETS, SIZE_BUCKET_IDS, ACHIEVEMENTS
 from app_common import BOT_DIFFICULTY_LABELS, C_ACCENT, C_DIM, C_GOLD, C_GREEN, C_ORANGE, C_TEXT, SCREEN_WIDTH, _mix, pygame
 
 
@@ -45,7 +45,9 @@ class RecordsMixin:
                 self.records_scroll = max(0, min(self.records_max_scroll, self.records_scroll + step))
             return
         if event.type == pygame.KEYDOWN and event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_TAB, pygame.K_a, pygame.K_d):
-            self._records_set_mode("survival" if self.records_mode == "battle" else "battle")
+            order = ("battle", "survival", "achv")
+            step = -1 if event.key in (pygame.K_LEFT, pygame.K_a) else 1
+            self._records_set_mode(order[(order.index(self.records_mode) + step) % len(order)] if self.records_mode in order else "battle")
             return
         if event.type == pygame.KEYDOWN:
             if event.key in [pygame.K_ESCAPE, pygame.K_r, pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE]:
@@ -55,7 +57,7 @@ class RecordsMixin:
             mx, my = event.pos
             for btn_id, rect in self.records_buttons.items():
                 if rect.collidepoint(mx, my):
-                    if btn_id in ("mode_battle", "mode_survival"):
+                    if btn_id in ("mode_battle", "mode_survival", "mode_achv"):
                         self._records_set_mode(btn_id[5:])
                     elif btn_id.startswith("size_"):
                         self._records_set_filter(size=None if btn_id == "size_all" else btn_id[5:])
@@ -91,20 +93,24 @@ class RecordsMixin:
 
         # 2. 모드 탭 (배틀로얄 / 서바이벌): 전적은 모드별로 따로 집계
         tab_y = box_y - 34
-        for i, (mid, label, col) in enumerate((("battle", "배틀로얄", C_GOLD), ("survival", "서바이벌", C_GREEN))):
-            r = pygame.Rect(box_x + i * 150, tab_y, 140, 30)
+        for i, (mid, label, col) in enumerate((("battle", "배틀로얄", C_GOLD), ("survival", "서바이벌", C_GREEN), ("achv", "업적", C_ORANGE))):
+            r = pygame.Rect(box_x + i * 110, tab_y, 104, 30)
             self.records_buttons["mode_" + mid] = r
             on = self.records_mode == mid
             hov = r.collidepoint(mx, my)
             pygame.draw.rect(self.screen, _mix((16, 20, 34), col, 0.30 if on else (0.14 if hov else 0.05)), r, border_radius=8)
             pygame.draw.rect(self.screen, col if on else (60, 72, 104), r, 2 if on else 1, border_radius=8)
             self._t(label, self.font_small, col if on else C_DIM, r.centerx, r.centery, "center")
-        self._t("← → 모드 · 1~4 규모 · F 난이도", self.font_tiny, C_DIM, box_x + box_w, tab_y + 15, "midright")
+        self._t("← → 탭 · 1~4 규모 · F 난이도" if self.records_mode != "achv" else "← → 탭", self.font_tiny, C_DIM, box_x + box_w, tab_y + 15, "midright")
+        if self.records_mode == "achv":
+            self._render_achievements(box_x, box_y, box_w)
+            self._records_bottom_buttons(mx, my, box_x, box_y, box_w)
+            return
         # 필터 칩: 인원 규모(1~4) / 난이도(F). 필터를 걸면 전체 누적이 아니라 최근 100경기 중 조건에 맞는 경기로 다시 집계
-        chip_x = box_x + 310
+        chip_x = box_x + 332
         size_chips = [("size_all", "전체", None)] + [("size_" + b[0], f"{b[3].split(' ')[0][0]} {b[1]}~{b[2]}", b[0]) for b in SIZE_BUCKETS]
         for cid, label, val in size_chips:
-            w = 52 if val is None else 92
+            w = 52 if val is None else 86
             r = pygame.Rect(chip_x, tab_y, w, 30)
             self.records_buttons[cid] = r
             on = self.records_size == val
@@ -240,6 +246,44 @@ class RecordsMixin:
                 pygame.draw.rect(self.screen, result_col, chip, 1, border_radius=chip.h // 2)
                 self._t(result_str, self.font_small, result_col, chip.centerx, chip.centery, "center")
 
+        self._records_bottom_buttons(mx, my, box_x, box_y, box_w)
+
+    def _render_achievements(self, box_x, box_y, box_w):
+        """업적 탭: 10개 카드 (달성은 밝게, 미달성은 흐리게 + 조건 표시)"""
+        done = set(self.stats_mgr.achievements_done())
+        self._t(f"달성한 업적  {len(done)} / {len(ACHIEVEMENTS)}", self.font_mid, C_TEXT, box_x + 25, box_y + 20)
+        self._t("배틀로얄 경기에서 달성하면 기록됩니다 (서바이벌/연습은 해당 없음)", self.font_tiny, C_DIM, box_x + box_w - 25, box_y + 26, "topright")
+        cols, rows = 5, 2
+        gap = 12
+        cw = (box_w - 50 - gap * (cols - 1)) // cols
+        ch = 168
+        for i, (aid, title, desc, _ok) in enumerate(ACHIEVEMENTS):
+            r = pygame.Rect(box_x + 25 + (i % cols) * (cw + gap), box_y + 66 + (i // cols) * (ch + gap), cw, ch)
+            got = aid in done
+            col = C_GOLD if got else (80, 92, 126)
+            pygame.draw.rect(self.screen, (44, 38, 18) if got else (16, 20, 34), r, border_radius=12)
+            pygame.draw.rect(self.screen, col, r, 2 if got else 1, border_radius=12)
+            self._t("★" if got else "☆", self.font_title, C_GOLD if got else (70, 80, 110), r.centerx, r.y + 14, "midtop")
+            self._t(title, self.font_mid, C_TEXT if got else (140, 152, 185), r.centerx, r.y + 66, "midtop")
+            for li, line in enumerate(self._wrap_text(desc, self.font_tiny, cw - 20)[:3]):
+                self._t(line, self.font_tiny, (185, 200, 228) if got else (110, 122, 156), r.centerx, r.y + 98 + li * 18, "midtop")
+            self._t("달성!" if got else "미달성", self.font_tiny, C_GOLD if got else (90, 100, 130), r.centerx, r.bottom - 22, "midtop")
+
+    def _wrap_text(self, text, font, max_w):
+        """글자 단위 줄바꿈 (한글 포함)"""
+        lines, cur = [], ""
+        for ch in text:
+            if cur and font.size(cur + ch)[0] > max_w:
+                lines.append(cur)
+                cur = ch
+            else:
+                cur += ch
+        if cur:
+            lines.append(cur)
+        return lines
+
+    def _records_bottom_buttons(self, mx, my, box_x, box_y, box_w):
+        ix = box_x + 25
         # 5. 하단 액션 버튼들
         btn_y = box_y + 520
         self.records_buttons['reset_stats'] = pygame.Rect(ix + 20, btn_y, 220, 48)

@@ -10,6 +10,7 @@ import time
 
 from app_common import (
     APP_VERSION, BOT_DIFFICULTY_LABELS, C_ACCENT, C_DANGER, C_GOLD, C_GREEN, C_TEXT,
+    LADDER, LADDER_MIN_PLAYERS, LADDER_NAMES, LADDER_RANK,
     NAME_COLORS, SCREEN_HEIGHT, SCREEN_WIDTH, _mix, pygame
 )
 
@@ -357,6 +358,10 @@ class MenuMixin:
         desc = DESCRIPTIONS.get(fid, "")
         if fid == "quick_play":
             desc = f"봇 {max(0, n - 1)}명과 바로 대전합니다.  ← → 로 인원, D 로 봇 난이도를 바꿀 수 있어요."
+            if self.settings.get("game_mode") != "survival":
+                nxt = next((d for d in LADDER if d not in self.stats_mgr.ladder_cleared()), None)
+                if nxt:                                                  # 보이지 않던 보상(난이도 사다리 ★)을 메뉴에서 알려 줌
+                    desc += f"   ★ 다음 도전: {LADDER_NAMES[nxt]} 봇 {LADDER_MIN_PLAYERS}인↑에서 {LADDER_RANK}위 안"
         self._t(self._menu_fit(desc, self.font_help, 900), self.font_help, COL_SUB, cx, by + 226, "midtop")
 
         # 5. 하단 바: 버전 · 키 안내 · 게임 종료

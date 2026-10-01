@@ -32,7 +32,7 @@ from settings_manager import (
     SHAKE_LABELS, SHAKE_OPTIONS, SHAKE_SCALE,
     ACTION_NAMES, RESOLUTION_OPTIONS
 )
-from stats_manager import StatsManager
+from stats_manager import StatsManager, LADDER, LADDER_NAMES, LADDER_MIN_PLAYERS, LADDER_RANK
 
 
 def short_key_name(key_code):

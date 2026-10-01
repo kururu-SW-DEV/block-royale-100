@@ -71,7 +71,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         
         self.net_mgr = NetworkManager()
         self.renderer = UIRenderer(self.screen)
-        self.renderer.mini_detailed = self.settings.get("mini_detail", "detailed") != "simple"
+        self.renderer.mini_detailed = self.settings.get("mini_detail", "focus") != "simple"
+        self.renderer.mini_focus = self.settings.get("mini_detail", "focus") == "focus"
         self.apply_visual_options()
         self.menu_bg = NeonMenuBackground(SCREEN_WIDTH, SCREEN_HEIGHT)
         self.menu_bg.renderer = self.renderer
@@ -114,6 +115,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         
         # 전적 및 설정 탭 관리
         self.stats_mgr = StatsManager()
+        self._apply_first_run_defaults()
         self.match_recorded = False
         self.match_start_time = 0.0
         self.records_buttons = {}
@@ -262,6 +264,16 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         bot_pool.stop()
         pygame.quit()
         sys.exit()
+
+    def _apply_first_run_defaults(self):
+        """처음 설치한 사람: 100인 혼합 난이도(가장 어려운 쪽)로 바로 던지지 않고 50인 쉬움 봇으로 시작 (난이도 사다리 1단계와 같은 규모). 이미 전적이 있으면 설정은 그대로 둠"""
+        if self.settings.get("onboard_done"):
+            return
+        if (self.stats_mgr.data.get("total_games", 0) == 0
+                and self.stats_mgr.data.get("survival", {}).get("total_games", 0) == 0):
+            self.settings.set("target_player_count", 50, autosave=False)
+            self.settings.set("bot_difficulty", "easy", autosave=False)
+        self.settings.set("onboard_done", True, autosave=False)
 
     def _handle_event(self, event):
         if self._text_input_event(event):
