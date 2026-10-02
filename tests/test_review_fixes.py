@@ -2080,6 +2080,112 @@ def test_v1012_feed_phase_log_achievement_progress():
     assert "marathon" in sm.achievements_done()
 
 
+def test_v1013_result_flow_autolock_assist_tasks():
+    """v1.0.13: 탈락/순위표에서 P=연습, 오늘의 도전 재도전 유지, 순위표 정보 띠, 자동 조준 락온, K.O. 기여, 토스트 우선순위, 통계 칸, 연습 과제"""
+    import main as M
+    from gfx import CANVAS
+    from battle_royale import BattleRoyaleMatch
+    app = M.BlockRoyaleApp()
+    CANVAS.attach(pygame.Surface((1366, 768)))
+    app.screen = CANVAS
+    app.renderer.screen = CANVAS
+    app.settings.data["coach_done"] = True
+
+    # 오늘의 도전 재도전은 같은 도전으로
+    app.start_game(mode="SOLO", daily="20260102")
+    assert app.match.daily == "20260102"
+    app._restart_after_match()
+    assert app.match.daily == "20260102" and app.match.total_players == 100
+
+    # 탈락 후 P: 일시정지가 아니라 연습 모드 시작
+    app.start_game(mode="SOLO", total_players=20)
+    m = app.match
+    m._eliminate_player(m.local_player_id)
+    app.result_lock_until = 0.0
+    app._handle_game_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_p, mod=0))
+    assert app.match.practice and not app.is_paused, "탈락 후 P는 연습 시작"
+    # 결과 버튼 목록에 연습하기가 포함됨
+    app.start_game(mode="SOLO", total_players=20)
+    app.match._eliminate_player(app.match.local_player_id)
+    assert "practice" in app._result_button_ids()
+
+    # 순위표 정보 띠: 기록/업적/목표/패인 중 있는 것만
+    m = BattleRoyaleMatch(total_players=10, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy")
+    m.new_records = ("rank",); m.new_achievements = ["first_win"]; m.ladder_clear = None; m.next_goal = "우승"
+    m.local_rank = 1
+    info = app.renderer._standings_info_lines(m)
+    assert info and info[0][0].startswith("★") and "최고 기록" in info[0][0], info
+    assert len(info) == 2 and info[1][0].startswith("다음 목표"), info
+
+    # 자동 조준 락온: 0.8초 안에는 위험도가 바뀌어도 대상 유지, 대기열 가득 찬 상대는 건너뜀
+    m = BattleRoyaleMatch(total_players=10, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy")
+    others = [p for p in m.players if p != "L"]
+    for p in others:
+        m.players[p]["highest_y"] = 10
+        m.players[p]["ig"] = 0
+    m.set_target_mode("AUTO")
+    m.players[others[0]]["highest_y"] = 5
+    assert m.get_target_for("L") == others[0]
+    m.players[others[1]]["highest_y"] = 1                          # 더 위험해졌지만 락온 시간 안
+    m.elapsed += 0.3
+    assert m.get_target_for("L") == others[0]
+    m.elapsed += 1.0
+    assert m.get_target_for("L") == others[1], "락온 시간이 지나고 위험도 차이가 크면 바꿈"
+    m.elapsed += 2.0
+    m.players[others[1]]["highest_y"] = 5                          # 차이가 작으면 유지
+    m.players[others[0]]["highest_y"] = 4
+    assert m.get_target_for("L") == others[1]
+    m.players[others[1]]["ig"] = 24                                # 가득 찬 상대는 건너뜀
+    assert m.get_target_for("L") == others[0]
+    alive = [p for p in others if m.players[p]["is_alive"]]
+    assert m.get_target_for("L", "KO") == m._most_endangered(alive), "KO 모드는 락온 없음"
+
+    # K.O. 기여: 내가 4줄 이상 보낸 상대를 다른 플레이어가 마무리
+    m = BattleRoyaleMatch(total_players=10, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy")
+    others = [p for p in m.players if p != "L"]
+    m.apply_attack("L", others[0], 5)
+    m.floating_texts.clear()
+    m._eliminate_player(others[0], killer_id=others[1])
+    assert m.local_assists == 1 and m.local_ko_count == 0
+    assert any(f["text"].startswith("[처치 기여]") for f in m.floating_texts)
+    m.apply_attack("L", others[2], 2)
+    m._eliminate_player(others[2], killer_id=others[1])
+    assert m.local_assists == 1, "4줄 미만은 기여가 아님"
+
+    # 토스트: 오류 없이 그려지고, 칸이 모자라면 콤보가 먼저 밀려남
+    m = BattleRoyaleMatch(total_players=10, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy")
+    m.add_floating_text("[피격 경고] +3줄", (255, 0, 0), category="alert")
+    m.add_floating_text("[3연속 콤보!]", (255, 0, 0), category="combo")
+    m.add_floating_text("[공격 발송] +2줄", (255, 0, 0), category="attack")
+    drawn = []
+    real = app.renderer.font_small.render
+    class _F:
+        def __init__(self, f): self.f = f
+        def render(self, text, *a, **k):
+            drawn.append(text)
+            return self.f.render(text, *a, **k)
+        def __getattr__(self, k): return getattr(self.f, k)
+    app.renderer.font_small = _F(app.renderer.font_small)
+    try:
+        app.renderer._render_floating_texts(m, 0, 0)
+    finally:
+        app.renderer.font_small = app.renderer.font_small.f
+    assert "[피격 경고] +3줄" in drawn and "[공격 발송] +2줄" in drawn and "[3연속 콤보!]" not in drawn, drawn
+
+    # 연습 과제: 순서대로 완료
+    m = BattleRoyaleMatch(total_players=2, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy", practice=True)
+    assert m.practice_current_task()[0] == 0
+    m.local_engine.garbage_canceled_total = 2
+    m._practice_check({"cleared": 1})
+    assert m.practice_current_task()[0] == 1
+    m._practice_check({"cleared": 4})
+    m.local_engine.combo = 3
+    m._practice_check({"cleared": 1})
+    m._practice_check({"cleared": 2, "is_tspin": True})
+    assert m.practice_current_task() is None
+    print("  OK v1.0.13")
+
+
 if __name__ == "__main__":
     pygame.init()
     keep = {}

@@ -66,6 +66,9 @@ class GameMixin:
                 elif event.key == pygame.K_r:
                     self.sound_mgr.play('move')
                     self._restart_after_match()
+                elif event.key == pygame.K_p and self.net_mgr.mode == "NONE":
+                    self.sound_mgr.play('move')
+                    self._practice_after_match()
                 elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE, pygame.K_ESCAPE):
                     if time.time() >= self.result_lock_until:
                         self.return_to_menu()
@@ -88,6 +91,10 @@ class GameMixin:
                         self.sound_mgr.play('move')
                         self._restart_after_match()
                         return
+                    elif event.key == pygame.K_p and self.net_mgr.mode == "NONE":
+                        self.sound_mgr.play('move')
+                        self._practice_after_match()
+                        return
                     elif event.key == pygame.K_ESCAPE:
                         if self.net_mgr.mode != "NONE" and not self.match.match_finished:
                             self._confirm_leave_network_game()
@@ -100,11 +107,15 @@ class GameMixin:
                             self.return_to_menu()
                         return
                 else:
-                    if event.key in (pygame.K_r, pygame.K_s) and time.time() < self.result_lock_until:
+                    if event.key in (pygame.K_r, pygame.K_s, pygame.K_p) and time.time() < self.result_lock_until:
                         return                                    # 탈락 직후 습관적인 키(WASD 프리셋의 S 소프트 드롭 등)로 재도전/관전이 바로 실행되지 않게
                     if event.key == pygame.K_r:
                         self.sound_mgr.play('move')
                         self._restart_after_match()
+                        return
+                    elif event.key == pygame.K_p and self.net_mgr.mode == "NONE":
+                        self.sound_mgr.play('move')
+                        self._practice_after_match()          # 패인 팁의 '연습 모드(P)': 탈락 상태에서는 일시정지가 아니라 바로 연습 시작
                         return
                     elif event.key == pygame.K_s and not self.match.match_finished and self.match.alive_count > 1:
                         self.match.is_spectating = True
@@ -245,6 +256,10 @@ class GameMixin:
                     self.sound_mgr.play('move')
                     self._restart_after_match()
                     return
+                if getattr(self.renderer, 'result_practice_btn', None) and self.renderer.result_practice_btn.collidepoint(mx, my):
+                    self.sound_mgr.play('move')
+                    self._practice_after_match()
+                    return
                 if hasattr(self.renderer, 'result_spectate_btn') and self.renderer.result_spectate_btn and self.renderer.result_spectate_btn.collidepoint(mx, my):
                     self.match.is_spectating = True
                     self.match.cycle_spectate_target(0)
@@ -277,9 +292,9 @@ class GameMixin:
         if net_on:
             return (["spectate"] if can_spectate else []) + ["return"]
         elif can_spectate:
-            return ["restart", "spectate", "return"]
+            return ["restart", "spectate", "practice", "return"]
         else:
-            return ["restart", "return"]
+            return ["restart", "practice", "return"]
 
     def _activate_result_focus(self, bid=None):
         """결과 화면(K.O.) 버튼 실행 (키보드 엔터/마우스 클릭 공용)"""
@@ -288,6 +303,8 @@ class GameMixin:
         self.sound_mgr.play('move')
         if bid == "restart":
             self._restart_after_match()
+        elif bid == "practice":
+            self._practice_after_match()
         elif bid == "spectate":
             self.match.is_spectating = True
             self.match.cycle_spectate_target(0)

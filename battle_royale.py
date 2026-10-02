@@ -104,6 +104,9 @@ class BattleRoyaleMatch:
         self.screen_shake = 0.0
         self.ko_orbs = []         # K.O. 연출: 처치한 상대 카드에서 K.O. 칸으로 날아가는 빛 구슬 [{"victim": id, "t0": 시각}]
         self.floating_texts = []  # dict: text, color, birth, duration, size
+        self.local_assists = 0            # K.O. 기여 횟수: 내가 4줄 이상 보내 둔 상대를 다른 플레이어가 마무리한 경우 (배지 보상은 없음)
+        self._auto_lock = None            # 자동 조준 락온: (대상 id, 고정한 시각)
+        self.practice_done = set()        # 연습 과제 중 완료한 번호
         self.local_hits_from = {}         # 내가 받은 공격 줄 수: 보낸 사람 id -> 합계 (결과 화면 "패인 한 줄"용)
         self._hit_agg = None              # 1초 안에 연달아 받은 피격을 한 토스트로 합치기 위한 상태
         self.events = []                  # 사람 테스트용 경기 로그(설정에서 켠 경우만 기록): (경기 시각, 종류, 내용)
@@ -158,7 +161,7 @@ class BattleRoyaleMatch:
         return {
             "version": 1, "total_players": self.total_players, "bot_difficulty": self.bot_difficulty, "attacks": bool(self.attacks_enabled),
             "target_mode_final": self.local_target_mode, "elapsed": round(self.elapsed, 1), "alive_at_end": self.alive_count,
-            "rank": getattr(self, "local_rank", 0), "kos": self.local_ko_count,
+            "rank": getattr(self, "local_rank", 0), "kos": self.local_ko_count, "assists": self.local_assists,
             "hits_from": {self._short_name(k): v for k, v in self.local_hits_from.items()},
             "death_attackers": getattr(self, "local_death_attackers", None),
             "timeline_fields": ["t", "alive", "my_stack", "incoming"], "timeline": [list(x) for x in (getattr(self, "timeline", None) or [])],
@@ -482,11 +485,10 @@ class BattleRoyaleMatch:
                 pid for pid in alive_candidates
                 if not self.players[pid].get("is_ai", False)
             ]
-            if other_humans:
-                # 살아있는 인간 상대 중 가장 위협적인(블록이 높은) 사람 자동 타겟팅
-                return self._most_endangered(other_humans)
-            # 인간 상대가 모두 탈락했거나 솔로일 때: K.O. 직전(가장 높이 쌓인) 적 자동 타겟팅
-            return self._most_endangered(alive_candidates)
+            pool = other_humans or alive_candidates          # 사람 상대가 있으면 그 중에서, 없거나 솔로면 전체에서 가장 위험한(높이 쌓인) 상대
+            if attacker_id == self.local_player_id:
+                return self._auto_lock_target(pool)
+            return self._most_endangered(pool)
             
         elif strat == "KO":
             return self._most_endangered(alive_candidates)
@@ -522,6 +524,26 @@ class BattleRoyaleMatch:
 
     def _focus_cap(self, p):
         return self.FOCUS_CAP if p.get("is_ai") else self.HUMAN_FOCUS_CAP
+
+    AUTO_LOCK_SECS = 0.8             # 자동 조준: 한 번 고른 대상을 최소 이 시간(초) 유지 (조준선/상단 이름이 프레임마다 옮겨 다니지 않게)
+    AUTO_SWITCH_MARGIN = 3           # 그 뒤에도 새 후보의 위험도가 지금 대상보다 이만큼 이상 커야 바꿈
+
+    def _auto_lock_target(self, pool):
+        """내 자동 조준: 위험도가 가장 큰 상대를 고르되 락온을 유지하고, 대기열이 가득 찬 상대(더 보내도 버려짐)는 다른 후보가 있으면 건너뜀.
+        K.O. 모드는 이 유지/건너뜀 없이 항상 그 순간 가장 위험한 상대를 겨눔"""
+        def full(q):
+            return self.alive_count > 3 and self.players[q].get("ig", 0) >= MAX_INCOMING_GARBAGE
+        cand = [q for q in pool if not full(q)] or pool
+        best = self._most_endangered(cand)
+        lock = self._auto_lock
+        if lock and lock[0] in pool and self.players[lock[0]]["is_alive"] and lock[0] in cand:
+            cur = lock[0]
+            if self.elapsed - lock[1] < self.AUTO_LOCK_SECS:
+                return cur
+            if self._danger(self.players[best]) < self._danger(self.players[cur]) + self.AUTO_SWITCH_MARGIN:
+                return cur
+        self._auto_lock = (best, self.elapsed)
+        return best
 
     def _most_endangered(self, pids):
         """K.O. 직전에 가장 가까운 후보: 쌓인 높이 + 곧 올라올 쓰레기가 가장 큰 상대 (봇의 위험도 계산과 같은 기준)"""
@@ -599,6 +621,10 @@ class BattleRoyaleMatch:
         if to_id in self.players:
             self.players[to_id]["last_attacker"] = from_id
             self.players[to_id]["last_attack_t"] = self.elapsed
+            if from_id == self.local_player_id and to_id != from_id:
+                hist = self.players[to_id].setdefault("from_local", [])           # K.O. 기여 판정용: 내가 이 상대에게 보낸 (시각, 줄 수)
+                hist.append((self.elapsed, lines))
+                del hist[:-12]
         if from_id in self.players:
             self.players[from_id]["attacks"] += lines          # 플레이어별 공격력 합계 (APM 계산용)
             
@@ -690,6 +716,14 @@ class BattleRoyaleMatch:
             self.local_rank = self.players[victim_id]["rank"]
             self.trigger_screen_shake(18.0)
             
+        # K.O. 기여: 내가 막 보내 둔 상대를 다른 플레이어가 마무리했을 때 알려 줌 (배지/K.O. 수에는 반영 안 함)
+        if (killer_id != self.local_player_id and victim_id != self.local_player_id and self.local_is_alive and self.attacks_enabled):
+            sent = sum(n for t, n in self.players[victim_id].get("from_local", ()) if self.elapsed - t <= self.KO_CREDIT_WINDOW)
+            if sent >= 4:
+                self.local_assists += 1
+                self.log_event("assist", victim=victim_id, lines=sent)
+                self.add_floating_text(f"[처치 기여] {self._short_name(victim_id)}에게 {sent}줄 보냄", (255, 200, 120), duration=2.2, size=22, category="ko")
+
         # 킬러에게 K.O. 부여 및 배지 등급 승급 판정
         if killer_id and killer_id in self.players:
             old_lvl, _, _ = get_badge_info(self.players[killer_id]["ko_count"])
@@ -752,6 +786,37 @@ class BattleRoyaleMatch:
         if self.practice and self.local_is_alive:
             self.local_engine.queue_garbage(lines, source="연습")
 
+    PRACTICE_TASKS = ("G로 받은 줄 상쇄하기", "4줄 한 번에 지우기(쿼드)", "3연속 콤보 만들기", "T-스핀 한 번 성공하기")
+
+    def practice_current_task(self):
+        """연습 과제: 아직 못 한 첫 과제의 (번호, 문구). 모두 끝났으면 None"""
+        for i, label in enumerate(self.PRACTICE_TASKS):
+            if i not in self.practice_done:
+                return i, label
+        return None
+
+    def _practice_check(self, info=None):
+        """연습 과제 완료 판정 (줄을 지울 때마다 + 매 프레임 상쇄량 확인)"""
+        if not self.practice or self.practice_current_task() is None:
+            return
+        i, label = self.practice_current_task()
+        eng = self.local_engine
+        ok = False
+        if i == 0:
+            ok = eng.garbage_canceled_total >= 2
+        elif i == 1:
+            ok = bool(info) and info.get("cleared", 0) >= 4
+        elif i == 2:
+            ok = eng.combo >= 3
+        elif i == 3:
+            ok = bool(info) and bool(info.get("is_tspin")) and info.get("cleared", 0) >= 1
+        if ok:
+            self.practice_done.add(i)
+            nxt = self.practice_current_task()
+            self.add_floating_text(f"★ 과제 완료!  {label}" + (f"  → 다음: {nxt[1]}" if nxt else "  (모든 과제 완료!)"), (140, 255, 170), duration=2.8, size=26, category="action")
+            if self.sound_mgr:
+                self.sound_mgr.play('badge_up')
+
     def practice_reset(self, announce=True):
         """연습 모드: 보드를 새로 시작 (직접 초기화하거나 블록이 끝까지 쌓였을 때)"""
         self.local_engine = BlockEngine()
@@ -808,6 +873,7 @@ class BattleRoyaleMatch:
         is_tspin = info.get('is_tspin', False)
         is_b2b = info.get('is_b2b', False)
         chain = info.get('b2b_chain', 0)
+        self._practice_check(dict(info, cleared=cleared))
         
         if self.sound_mgr:
             combo = max(0, self.local_engine.combo)          # 0 = 첫 클리어, 이어질수록 증가 -> 삭제음이 한 음씩 올라감
@@ -1000,6 +1066,8 @@ class BattleRoyaleMatch:
                     self.add_floating_text(f"{lbl} +{shown_attack}줄 >> {target_name}{bonus_str}", (255, 130, 130), duration=2.4, size=22, category="attack")
             elif not self.attacks_enabled:
                 self.total_attacks_sent += self.local_engine.garbage_to_send     # 서바이벌: 실제로 보내지는 않지만 만들어 낸 공격력은 APM에 반영
+                if self.practice:
+                    self.add_floating_text(f"[연습] 이 클리어의 공격력 +{self.local_engine.garbage_to_send}줄 (실제로는 보내지 않아요)", (150, 220, 255), duration=2.2, size=22, category="attack")
             self.local_engine.garbage_to_send = 0
             
         # 로컬 플레이어 상태 갱신

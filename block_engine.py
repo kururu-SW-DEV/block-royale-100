@@ -86,6 +86,7 @@ class BlockEngine:
         self.garbage_delay = GARBAGE_CHARGE_DELAY
         self.garbage_to_send = 0        # 방금 라인 클리어로 발생한 공격력
         self.attack_generated_total = 0  # 들어오는 쓰레기 상쇄 여부와 무관하게 누적된 총 생성 공격력 (APM 집계용)
+        self.garbage_canceled_total = 0  # 줄을 지워 상쇄한(막은) 받을 공격 누적 줄 수 (왼쪽 통계 칸 "막은 줄")
 
         # 낙하 타이머 및 락 딜레이 (표준 낙하/락 딜레이)
         self.fall_speed = 0.8  # 초 단위 (생존자 수에 따라 배틀로얄에서 가속됨)
@@ -344,6 +345,7 @@ class BlockEngine:
             if self.incoming_garbage > 0:
                 canceled = min(self.incoming_garbage, attack_lines)
                 self.incoming_garbage -= canceled
+                self.garbage_canceled_total += canceled
                 attack_lines -= canceled
         else:
             self.combo = -1

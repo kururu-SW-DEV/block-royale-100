@@ -233,9 +233,18 @@ class CoreMixin:
     def _restart_after_match(self):
         """경기 종료 후 '재도전': 솔로는 새 게임, 네트워크는 같은 방의 대기실로 복귀 (경기 중 탈락 상태에서는 무시)"""
         if self.net_mgr.mode == "NONE":
-            self.start_game(mode="SOLO", total_players=self.target_player_count)
+            daily = getattr(self.match, "daily", None) if self.match is not None else None
+            if daily:
+                self.start_game(mode="SOLO", daily=daily)             # 오늘의 도전은 재도전도 같은 도전(같은 블록 순서/상대)
+            else:
+                self.start_game(mode="SOLO", total_players=self.target_player_count)
         elif self.match is not None and self.match.match_finished:
             self._return_to_lobby()
+
+    def _practice_after_match(self):
+        """결과 화면 '연습하기'(P): 솔로 경기에서만 바로 연습 모드로 (네트워크 경기에서는 무시)"""
+        if self.net_mgr.mode == "NONE":
+            self.start_game(mode="SOLO", practice=True)
 
     def _return_to_lobby(self):
         """네트워크 경기 종료 후 대기실로: 호스트는 방을 다시 열고(참가자 유지), 참가자는 호스트의 다음 시작을 기다림"""

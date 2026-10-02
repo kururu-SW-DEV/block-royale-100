@@ -485,7 +485,11 @@ class UIRenderer:
 
         actions = [ft for ft in active if ft.get("category") == "action"]
         pins = sorted((ft for ft in active if ft.get("category") == "pin"), key=lambda f: f["birth"])[-1:]      # 후반전 예고/배율 알림은 토스트 칸 한 자리를 차지하고 다른 토스트에 밀려나지 않음
-        feed = sorted((ft for ft in active if ft.get("category") not in ("action", "pin")), key=lambda f: f["birth"])[-(2 - len(pins)):]
+        feed = sorted((ft for ft in active if ft.get("category") not in ("action", "pin")), key=lambda f: f["birth"])
+        prio = {"alert": 3, "ko": 3, "attack": 2}                     # 칸이 모자라면 낮은 것부터 밀어냄: 피격·K.O. > 공격 > 콤보 등 (같으면 오래된 것부터)
+        while len(feed) > 2 - len(pins):
+            drop = min(range(len(feed)), key=lambda i: (prio.get(feed[i].get("category"), 1), feed[i]["birth"]))
+            del feed[drop]
         feed = pins + feed
 
         cx_board = self.main_board_x + self.main_board_w // 2 + ox
@@ -941,11 +945,23 @@ class UIRenderer:
         if aim_on:
             self._draw_text(f"● {name}" + ("  (사람)" if is_human else ""), self.font_hud,
                             C_GREEN if is_human else C_TEXT, r2.x + 12, r2.y + 31)
+            if target_p:                                           # 대상의 위험도(쌓인 높이 + 곧 올라올 쓰레기): 한 방 더로 K.O.가 가능한지 한눈에
+                dg = min(1.0, match._danger(target_p) / float(BOARD_HEIGHT))
+                dcol = C_DANGER if dg >= 0.75 else (C_ORANGE if dg >= 0.5 else C_GREEN)
+                self._draw_bar((r2.x + 14, r2.bottom - 9, w2 - 28, 3), dg, dcol)
         else:
             self._draw_text("연습 모드" if getattr(match, "practice", False) else "공격 없이 끝까지 생존", self.font_hud, C_TEXT, r2.centerx, r2.y + 10, "midtop")
         att_count = match.get_attackers_count_for(match.local_player_id)
         if not getattr(match, "attacks_enabled", True):
-            self._draw_text("G 쓰레기 · B 초기화" if getattr(match, "practice", False) else "서바이벌 모드", self.font_small, C_GREEN, r2.centerx, r2.y + 36, "midtop")
+            task = match.practice_current_task() if getattr(match, "practice", False) else None
+            if getattr(match, "practice", False):
+                ttxt = f"과제 {task[0] + 1}/{len(match.PRACTICE_TASKS)} · {task[1]}" if task else "과제 모두 완료!  G 쓰레기 · B 초기화"
+                while len(ttxt) > 6 and self.font_small.size(ttxt)[0] > r2.w - 20:
+                    ttxt = ttxt[:-2].rstrip(" ·") + "…"
+                self._draw_text(ttxt, self.font_small, C_GREEN, r2.centerx, r2.y + 36, "midtop")
+                self._draw_text("G 쓰레기 · B 초기화", self.font_tiny, C_DIM, r2.right - 10, r2.y + 14, "topright")
+            else:
+                self._draw_text("서바이벌 모드", self.font_small, C_GREEN, r2.centerx, r2.y + 36, "midtop")
         elif att_count >= 2:
             self._draw_text(f"피조준 {att_count}명  반격 +{match.get_attacker_bonus(att_count)}", self.font_small,
                             C_DANGER, r2.right - 12, r2.y + 34, "topright")
@@ -1260,6 +1276,10 @@ class UIRenderer:
         score_str = f"{score:,}" if score < 100000 else f"{score // 1000}k"
         rows = [("시간", time_str, C_TEXT), ("APM", f"{apm:.1f}", C_GOLD),
                 ("LPM", f"{lpm:.1f}", C_GREEN), ("점수", score_str, C_ACCENT)]
+        if not spectating and match.attacks_enabled:
+            # 배틀: 점수/LPM은 순위와 관계가 적어서, 규칙을 숫자로 보여 주는 두 값으로 (줄을 지우면 받을 공격이 깎임)
+            rows[2] = ("보낸 줄", str(int(match.total_attacks_sent)), C_GREEN)
+            rows[3] = ("막은 줄", str(int(match.local_engine.garbage_canceled_total)), C_ACCENT)
         esc = 1.0
         if not spectating and match.attacks_enabled and not match.practice:
             esc = match.attack_multiplier()                      # 5분 뒤부터 매분 올라가는 공격력 배율 (예전에는 화면에 전혀 안 보였음)
@@ -2002,8 +2022,10 @@ class UIRenderer:
 
         rows = match.standings()
         n = len(rows)
-        box_w, box_h = 1100, 640
-        bx, by = (self.width - box_w) // 2, 60
+        info = self._standings_info_lines(match)               # 기록·업적·다음 목표·패인: 우승/상위권 때도 순위표에서 바로 보이게
+        nl = len(info)
+        box_w, box_h = 1100, 640 + 24 * nl
+        bx, by = (self.width - box_w) // 2, 60 - 6 * nl
         pop = self._ease_out(t / 0.45)
         by_off = int((1 - pop) * 40)
         won = match.local_rank == 1
@@ -2023,8 +2045,11 @@ class UIRenderer:
         if me and not won:
             self._fade_text(f"내 순위  {me['rank']}위 / {n}명", self.font_mid, C_DIM, bx + box_w // 2, by + 92, a_head, "midtop")
 
+        for li, (txt, col) in enumerate(info):
+            self._fade_text(txt, self.font_small, col, bx + box_w // 2, by + (92 if won else 118) + 24 * li, a_head, "midtop")
+
         # 열 머리글
-        head_y = by + 124
+        head_y = by + 124 + 24 * nl
         cols = [("순위", 46, "center"), ("이름", 96, "topleft"), ("K.O.", 520, "topright"), ("라인", 610, "topright"),
                 ("APM", 706, "topright"), ("LPM", 800, "topright"), ("점수", 920, "topright"), ("시간", 1030, "topright")]
         for label, cx_, anc in cols:
@@ -2104,14 +2129,56 @@ class UIRenderer:
         mx, my = pygame.mouse.get_pos()
         btn_y = by + box_h - 64
         self.result_spectate_btn = None
-        self.result_restart_btn = pygame.Rect(bx + box_w // 2 - 260, btn_y, 250, 46)
-        self.result_return_btn = pygame.Rect(bx + box_w // 2 + 10, btn_y, 250, 46)
         net_on = match.net_mgr is not None and match.net_mgr.mode != "NONE"
+        self.result_practice_btn = None
+        if net_on:
+            self.result_restart_btn = pygame.Rect(bx + box_w // 2 - 260, btn_y, 250, 46)
+            self.result_return_btn = pygame.Rect(bx + box_w // 2 + 10, btn_y, 250, 46)
+        else:
+            self.result_restart_btn = pygame.Rect(bx + box_w // 2 - 318, btn_y, 200, 46)
+            self.result_practice_btn = pygame.Rect(bx + box_w // 2 - 100, btn_y, 200, 46)
+            self.result_return_btn = pygame.Rect(bx + box_w // 2 + 118, btn_y, 200, 46)
         self._button(self.result_restart_btn, "대기실로 돌아가기" if net_on else "재도전", "green",
                      self.result_restart_btn.collidepoint(mx, my), "R")
+        if self.result_practice_btn:
+            self._button(self.result_practice_btn, "연습하기", "blue", self.result_practice_btn.collidepoint(mx, my), "P")
         self._button(self.result_return_btn, "메인 메뉴", "blue", self.result_return_btn.collidepoint(mx, my), "ESC")
         if n > visible:
             self._draw_text("마우스 휠 / ↑ ↓ / PageUp·PageDown 으로 스크롤", self.font_tiny, C_DIM, bx + box_w // 2, by + box_h - 96, "midtop")
+
+    def _standings_info_lines(self, match):
+        """순위표 머리에 붙일 한두 줄 [(문구, 색)]: ★ 최고 기록/클리어/업적, 다음 목표, (탈락했다면) 패인 첫 줄. 없으면 빈 목록"""
+        won = match.local_rank == 1
+        lines = []
+        records = tuple(getattr(match, "new_records", ()) or ())
+        ladder_clear = getattr(match, "ladder_clear", None)
+        ach = tuple(getattr(match, "new_achievements", ()) or ())
+        names = {"rank": "순위", "ko": "K.O.", "combo": "최대 콤보"}
+        parts = []
+        if records:
+            parts.append("최고 기록 갱신!  " + " · ".join(names[k] for k in records if k in names))
+        if ladder_clear:
+            parts.append(f"난이도 클리어!  {LADDER_NAMES.get(ladder_clear, ladder_clear)}")
+        if ach:
+            titles = {a[0]: a[1] for a in ACHIEVEMENTS}
+            parts.append("업적 달성!  " + " · ".join(titles.get(x, x) for x in ach[:2]) + (f" 외 {len(ach) - 2}개" if len(ach) > 2 else ""))
+        if parts:
+            lines.append(("★ " + "   ★ ".join(parts), C_GOLD))
+        goal = getattr(match, "next_goal", None)
+        loss = None if won else match.defeat_summary()
+        second = None
+        if loss:
+            second = (loss[0], (255, 190, 150))
+        elif goal:
+            second = (f"다음 목표: {goal}", C_DIM)
+        if second:
+            lines.append(second)
+        out = []
+        for txt, col in lines[:2]:
+            while len(txt) > 8 and self.font_small.size(txt)[0] > 1060:
+                txt = txt[:-2].rstrip(" ·(") + "…"
+            out.append((txt, col))
+        return out
 
     def _standings_scroll_seen(self, start):
         """스크롤로 새로 보이게 된 행은 등장 애니메이션 없이 바로 표시"""
@@ -2236,6 +2303,8 @@ class UIRenderer:
         if records or ladder_clear or ach:
             badge_y = by + 178 + lh + 4
         badge_txt = f"최종 배지 Lv.{tier} (공격력 +{pct})" if tier > 0 else "최종 배지 Lv.0"
+        if getattr(match, "local_assists", 0) > 0:
+            badge_txt += f"   ·   K.O. 기여 {match.local_assists}"
         goal = getattr(match, "next_goal", None)
         if goal and t >= 1.2:                                            # 다음 목표: 재도전 동기를 주는 한 줄 (카드 연출이 끝난 뒤 표시)
             badge_txt += f"   ·   다음 목표: {goal}"
@@ -2251,7 +2320,7 @@ class UIRenderer:
         can_spectate = (not match.match_finished and match.alive_count > 1 and not match.local_is_alive)
         btn_y, btn_h = by + 226 + extra, 50
 
-        self.result_restart_btn = self.result_spectate_btn = self.result_return_btn = None
+        self.result_restart_btn = self.result_spectate_btn = self.result_return_btn = self.result_practice_btn = None
         net_on = match.net_mgr is not None and match.net_mgr.mode != "NONE"
         if net_on and not match.match_finished:
             # 네트워크 경기 도중 탈락: 재도전은 없음 (경기가 끝나면 대기실로 복귀). 관전 / 메인 메뉴만.
@@ -2262,19 +2331,21 @@ class UIRenderer:
                 specs.append(("spectate", pygame.Rect(sbx, btn_y, btn_w, btn_h), "경기 관전", "gold", "S"))
             specs.append(("return", pygame.Rect(sbx + btn_w + g, btn_y, btn_w, btn_h), "메인 메뉴", "blue", "ESC"))
         elif can_spectate:
+            btn_w, g = 148, 10
+            sbx = bx + (box_w - (btn_w * 4 + g * 3)) // 2
+            specs = [
+                ("restart", pygame.Rect(sbx, btn_y, btn_w, btn_h), "재도전", "green", "R"),
+                ("spectate", pygame.Rect(sbx + btn_w + g, btn_y, btn_w, btn_h), "경기 관전", "gold", "S"),
+                ("practice", pygame.Rect(sbx + (btn_w + g) * 2, btn_y, btn_w, btn_h), "연습하기", "blue", "P"),
+                ("return", pygame.Rect(sbx + (btn_w + g) * 3, btn_y, btn_w, btn_h), "메인 메뉴", "blue", "ESC"),
+            ]
+        else:
             btn_w, g = 196, 12
             sbx = bx + (box_w - (btn_w * 3 + g * 2)) // 2
             specs = [
                 ("restart", pygame.Rect(sbx, btn_y, btn_w, btn_h), "재도전", "green", "R"),
-                ("spectate", pygame.Rect(sbx + btn_w + g, btn_y, btn_w, btn_h), "경기 관전", "gold", "S"),
+                ("practice", pygame.Rect(sbx + btn_w + g, btn_y, btn_w, btn_h), "연습하기", "blue", "P"),
                 ("return", pygame.Rect(sbx + (btn_w + g) * 2, btn_y, btn_w, btn_h), "메인 메뉴", "blue", "ESC"),
-            ]
-        else:
-            btn_w, g = 260, 16
-            sbx = bx + (box_w - (btn_w * 2 + g)) // 2
-            specs = [
-                ("restart", pygame.Rect(sbx, btn_y, btn_w, btn_h), "재도전", "green", "R"),
-                ("return", pygame.Rect(sbx + btn_w + g, btn_y, btn_w, btn_h), "메인 메뉴", "blue", "ESC"),
             ]
 
         ids = [s[0] for s in specs]
@@ -2291,6 +2362,8 @@ class UIRenderer:
                 self.result_spectate_btn = rect
             elif bid == "return":
                 self.result_return_btn = rect
+            elif bid == "practice":
+                self.result_practice_btn = rect
             self._button(rect, label, style, self.result_focus_id == bid, hint)
 
         self._draw_text("버튼을 클릭하거나 단축키로, ← → 와 Enter 로도 실행할 수 있습니다", self.font_tiny, C_DIM,
@@ -2320,6 +2393,7 @@ class UIRenderer:
         hints = [("← →", "대상 변경"), ("클릭", "미니 보드 선택")]
         if not net_on:
             hints.append(("R", "재도전"))
+            hints.append(("P", "연습"))
         hints.append(("ESC", "일시정지" if not net_on else "메뉴"))
         self._keycap_hints(hints, rect.centerx, rect.y + 36)
 
