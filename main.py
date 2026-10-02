@@ -70,6 +70,10 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         self.sound_mgr.set_sfx_volume(self.settings.get("sfx_volume", 70) / 100.0)
         
         self.net_mgr = NetworkManager()
+        try:
+            pygame.key.stop_text_input()         # 입력칸을 열기 전에는 IME를 꺼 둠 (한글 모드에서 조작키가 조합으로 먹히는 것 방지)
+        except Exception:
+            pass
         self.renderer = UIRenderer(self.screen)
         self.renderer.mini_detailed = self.settings.get("mini_detail", "focus") != "simple"
         self.renderer.mini_focus = self.settings.get("mini_detail", "focus") == "focus"
@@ -188,11 +192,28 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         # 오프닝 / 타이틀 화면 BGM 즉시 재생
         self.sound_mgr.play_menu_bgm()
 
+    MAX_FRAME_DT = 0.1                   # 한 프레임으로 처리할 최대 시간(초): 멈췄다 돌아와도 블록이 한 번에 떨어지지 않게
+    LONG_FRAME_PAUSE = 0.5               # 이 이상 멈췄다면 솔로 경기는 자동 일시정지
+
+    def _on_long_frame(self, raw_dt):
+        self.key_left_down = self.key_right_down = self.key_down_down = False
+        self.h_dir = 0
+        if (raw_dt >= self.LONG_FRAME_PAUSE and self.state == "GAME" and self.match is not None
+                and self.net_mgr.mode == "NONE" and not self.is_paused
+                and self.match.local_is_alive and not self.match.match_finished):
+            self.is_paused = True
+            self.match.is_paused = True
+            self.renderer.pause_focus = 0
+            self.sound_mgr.pause_bgm()
+
     def run(self):
         self.use_bot_pool = True                 # 실제 실행에서만 봇 계산 작업 프로세스를 사용 (테스트/시뮬레이션은 직접 계산)
         running = True
         while running:
-            dt = self.clock.tick(FPS) / 1000.0
+            raw_dt = self.clock.tick(FPS) / 1000.0
+            if raw_dt > self.MAX_FRAME_DT:
+                self._on_long_frame(raw_dt)              # 창 드래그/크기 조절로 루프가 멈췄다 돌아온 경우
+            dt = min(raw_dt, self.MAX_FRAME_DT)
             self.sound_mgr.tick()
             
             # 이벤트 처리
@@ -213,6 +234,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                         self._pending_quit = True                # 떠 있는 다른 알림 창을 덮어쓰지 않고, 닫은 뒤에 종료 확인
                 elif self.modal is not None and event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
                     self._handle_modal_event(event)
+                elif self.modal is not None and event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONUP, pygame.MOUSEWHEEL):
+                    pass                                         # 알림 창이 떠 있는 동안 아래 화면의 호버/포커스가 바뀌지 않게 함
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
                     self.toggle_fullscreen()
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_m and self.state != "JOIN_MENU" and self.text_focus is None and self.rebinding_action is None:
@@ -289,89 +312,14 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
             self._handle_menu_event(event)
 
         elif self.state == "HOST_LOBBY":
-            if event.type == pygame.KEYDOWN:
-                if event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER):
-                    self._host_start_game_action()
-                elif event.key == pygame.K_ESCAPE:
-                    self.net_mgr.stop()
-                    self.state = "MENU"
-                elif event.key in [pygame.K_LEFT, pygame.K_DOWN]:
-                    self.adjust_player_count(-1)
-                elif event.key in [pygame.K_RIGHT, pygame.K_UP]:
-                    self.adjust_player_count(1)
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                mx, my = event.pos
-                for btn_id, rect in self.lobby_buttons.items():
-                    if rect.collidepoint(mx, my):
-                        self.sound_mgr.play('move')
-                        if btn_id == "start_game":
-                            self._host_start_game_action()
-                        elif btn_id == "back_menu":
-                            self.net_mgr.stop()
-                            self.state = "MENU"
-                        elif btn_id == "dec_10":
-                            self.adjust_player_count(-10)
-                        elif btn_id == "dec_1":
-                            self.adjust_player_count(-1)
-                        elif btn_id == "inc_1":
-                            self.adjust_player_count(1)
-                        elif btn_id == "inc_10":
-                            self.adjust_player_count(10)
-                        break
+            self._handle_host_lobby_event(event)
 
         elif self.state == "JOIN_MENU":
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    self.state = "MENU"
-                elif event.key == pygame.K_BACKSPACE:
-                    self.join_ip_input = self.join_ip_input[:-1]
-                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                    self._join_by_input()
-                elif event.key == pygame.K_v and (event.mod & pygame.KMOD_CTRL):
-                    try:                                    # Ctrl+V 붙여넣기 (클립보드의 IP 주소)
-                        pygame.scrap.init()
-                        clip = pygame.scrap.get_text() or ""
-                        clip = "".join(ch for ch in clip.strip() if ch.isalnum() or ch in ".:-")
-                        self.join_ip_input = clip[:40] or self.join_ip_input
-                    except Exception:
-                        pass
-                else:
-                    if len(self.join_ip_input) < 40 and (event.unicode.isalnum() or event.unicode in ".:-"):
-                        self.join_ip_input += event.unicode
-                        
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                mx, my = event.pos
-                # 뒤로가기 버튼
-                if hasattr(self, 'join_back_btn') and self.join_back_btn.collidepoint(mx, my):
-                    self.sound_mgr.play('move')
-                    self.state = "MENU"
-                    return
-                # 접속 버튼
-                if hasattr(self, 'join_connect_btn') and self.join_connect_btn.collidepoint(mx, my):
-                    self.sound_mgr.play('move')
-                    self._join_by_input()
-                    return
-                # 목록의 방 클릭 시 접속
-                for row in getattr(self, "join_rows", []):
-                    rect = row.get("rect")
-                    if rect and rect.collidepoint(mx, my):
-                        self.sound_mgr.play('move')
-                        self.join_ip_input = row["host"] if row["port"] == self.host_port else f"{row['host']}:{row['port']}"
-                        self._join_by_input()
-                        break
+            self._handle_join_menu_event(event)
 
         elif self.state == "CLIENT_LOBBY":
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    self.net_mgr.stop()
-                    self.state = "MENU"
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                mx, my = event.pos
-                if hasattr(self, 'client_leave_btn') and self.client_leave_btn.collidepoint(mx, my):
-                    self.sound_mgr.play('move')
-                    self.net_mgr.stop()
-                    self.state = "MENU"
-                    
+            self._handle_client_lobby_event(event)
+
         elif self.state == "GAME":
             self._handle_game_event(event)
 

@@ -9,6 +9,8 @@ Block Royale 100 - Resolution-independent drawing layer
 16:9가 아닌 창에서는 가운데 정렬 + 검은 여백(레터박스)으로 표시합니다.
 """
 
+import math
+
 import pygame
 
 BASE_W, BASE_H = 1366, 768
@@ -49,6 +51,24 @@ def mix_color(c1, c2, t):
     return tuple(int(a + (b - a) * t) for a, b in zip(c1[:3], c2[:3]))
 
 
+class _Redirect:
+    def __init__(self, canvas, surface, ox, oy):
+        self.canvas, self.surface, self.dx, self.dy = canvas, surface, ox, oy
+
+    def __enter__(self):
+        c = self.canvas
+        self.saved = (c.display, c.ox, c.oy)
+        c.display, c.ox, c.oy = self.surface, c.ox - self.dx, c.oy - self.dy
+        c._redirect_depth += 1
+        return c
+
+    def __exit__(self, *exc):
+        c = self.canvas
+        c.display, c.ox, c.oy = self.saved
+        c._redirect_depth -= 1
+        return False
+
+
 class Canvas:
     """논리 좌표계(1366x768) -> 실제 디스플레이 서피스 변환기. pygame.Surface처럼 blit/fill 등을 제공."""
 
@@ -57,6 +77,9 @@ class Canvas:
         self.S = 1.0
         self.ox = 0.0
         self.oy = 0.0
+        self._redirect_depth = 0
+        self._real_ox = 0.0   # 창 기준 원점 (redirect 중에도 마우스 좌표 변환에 사용)
+        self._real_oy = 0.0
         self.version = 0     # 배율이 바뀔 때마다 증가 (캐시 무효화용)
         self._orig = {}
 
@@ -73,6 +96,7 @@ class Canvas:
         self.S = max(0.25, min(w / BASE_W, h / BASE_H))
         self.ox = (w - BASE_W * self.S) / 2.0
         self.oy = (h - BASE_H * self.S) / 2.0
+        self._real_ox, self._real_oy = self.ox, self.oy
         self.version += 1
 
     # ------------------------------------------------------------ 좌표 변환
@@ -87,8 +111,14 @@ class Canvas:
         return max(minimum, n)
 
     def rect(self, r):
-        r = pygame.Rect(r) if not isinstance(r, pygame.Rect) else r
-        return self.rect_f(r.x, r.y, r.w, r.h)
+        if isinstance(r, pygame.Rect):
+            return self.rect_f(r.x, r.y, r.w, r.h)
+        try:
+            x, y, w, h = r                                  # 실수 좌표(흔들림 등)도 잘라내지 않고 그대로 변환
+        except (TypeError, ValueError):
+            r = pygame.Rect(r)
+            x, y, w, h = r.x, r.y, r.w, r.h
+        return self.rect_f(x, y, w, h)
 
     def rect_f(self, x, y, w, h):
         left, top = self.X(x), self.Y(y)
@@ -101,8 +131,13 @@ class Canvas:
             rh = 1
         return pygame.Rect(left, top, rw, rh)
 
+    def redirect(self, surface, origin_x, origin_y):
+        """with 블록 동안 그리기 대상을 오프스크린 surface로 바꾸고 (origin_x, origin_y) 물리 픽셀을 원점으로 삼음.
+        블록 안에서도 마우스 좌표 변환은 실제 창 기준(_screen_ox/_screen_oy)을 쓰므로 어긋나지 않음"""
+        return _Redirect(self, surface, origin_x, origin_y)
+
     def to_logical(self, pos):
-        return (int((pos[0] - self.ox) / self.S), int((pos[1] - self.oy) / self.S))
+        return (math.floor((pos[0] - self._real_ox) / self.S), math.floor((pos[1] - self._real_oy) / self.S))
 
     # ------------------------------------------------------------ Surface 호환 API
     def get_size(self):
@@ -128,7 +163,16 @@ class Canvas:
             dx, dy = dest.topleft
         else:
             dx, dy = dest[0], dest[1]
+        if area is not None:                                 # 논리 좌표 영역만 그리는 기능은 지원하지 않음 (조용히 무시하지 않고 알림)
+            raise NotImplementedError("Canvas.blit does not support area")
         if isinstance(src, HiSurf):
+            if abs(src.scale - self.S) > 1e-3:                # 배율이 바뀌기 전에 만든 서피스: 현재 배율로 다시 맞춰 그림
+                nw = max(1, int(round(pygame.Surface.get_width(src) * self.S / src.scale)))
+                nh = max(1, int(round(pygame.Surface.get_height(src) * self.S / src.scale)))
+                try:
+                    src = pygame.transform.smoothscale(src, (nw, nh))
+                except ValueError:
+                    src = pygame.transform.scale(src, (nw, nh))
             self.display.blit(src, (self.X(dx), self.Y(dy)))
             return
         w, h = src.get_size()
@@ -235,6 +279,7 @@ pygame.mouse.get_pos = lambda: CANVAS.to_logical(_orig_get_pos())
 class HiFont:
     """논리 크기(pt)로 지정하되 실제로는 배율만큼 큰 글꼴로 렌더링하는 글꼴 래퍼"""
     _fonts = {}
+    _fonts_version = -1
 
     def __init__(self, names, size, bold=False):
         self.names = names
@@ -242,6 +287,9 @@ class HiFont:
         self.bold = bold
 
     def _real(self):
+        if HiFont._fonts_version != CANVAS.version:         # 창 크기가 바뀔 때마다 이전 배율의 글꼴을 비움
+            HiFont._fonts.clear()
+            HiFont._fonts_version = CANVAS.version
         px = max(6, int(round(self.size_pt * CANVAS.S)))
         key = (self.names, px, self.bold)
         font = HiFont._fonts.get(key)

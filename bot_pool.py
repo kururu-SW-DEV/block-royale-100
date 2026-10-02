@@ -8,14 +8,17 @@ Block Royale 100 - 봇 계산 작업 프로세스 풀
 
 import multiprocessing
 import os
+import pickle
 import queue
 import time
 
 MAX_WORKERS = 6
 MAX_INFLIGHT_PER_WORKER = 3            # 작업자 한 명당 동시에 맡길 수 있는 요청 수
+STALE_AFTER = 8.0                      # 이 시간(초) 넘게 아무도 가져가지 않은 요청/결과는 정리 (탈락한 봇이 남긴 것)
 
 _state = {"procs": [], "req": None, "res": None, "next": 1, "ready": {}, "pending": set(), "hello": 0,
-          "broken": False, "started": False, "workers": 0}
+          "broken": False, "started": False, "workers": 0,
+          "born": {}, "params": None, "params_blob": None, "params_ver": 0}
 
 
 def default_workers():
@@ -33,15 +36,15 @@ def default_workers():
 def _worker_main(req_q, res_q):
     import bot_brain
     res_q.put((0, "hello"))
-    last_params = None
+    last_ver = None
     while True:
         item = req_q.get()
         if item is None:
             break
-        rid, rows, cur, hold, qu, can_hold, combo, b2b, inc, depth, beam, atk, ts, params = item
-        if params != last_params:
-            bot_brain.PARAMS.update(params)
-            last_params = params
+        rid, rows, cur, hold, qu, can_hold, combo, b2b, inc, depth, beam, atk, ts, (ver, blob) = item
+        if ver != last_ver:                            # 파라미터는 바뀐 버전일 때만 풀어서 적용
+            bot_brain.PARAMS.update(pickle.loads(blob))
+            last_ver = ver
         try:
             res = bot_brain.plan_rows(rows, cur, hold, qu, can_hold, combo, b2b, inc, depth, beam, atk, ts)[:6]
         except Exception:
@@ -92,6 +95,8 @@ def stop():
     st["procs"] = []
     st["ready"].clear()
     st["pending"].clear()
+    st["born"].clear()
+    st["params"] = st["params_blob"] = None
     st["hello"] = 0
     st["req"] = st["res"] = None
 
@@ -114,6 +119,12 @@ def pump():
     except Exception:
         _mark_broken()
         return
+    if st["born"]:                                     # 주인(탈락한 봇 등)이 가져가지 않은 오래된 요청/결과 정리
+        cutoff = time.time() - STALE_AFTER
+        for rid in [r for r, t in st["born"].items() if t < cutoff]:
+            st["born"].pop(rid, None)
+            st["pending"].discard(rid)
+            st["ready"].pop(rid, None)
     if any(not p.is_alive() for p in st["procs"]):
         _mark_broken()
 
@@ -135,23 +146,33 @@ def submit(rows, cur, hold, qu, can_hold, combo, b2b, inc, depth, beam, atk, ts,
         return None
     rid = st["next"]
     st["next"] += 1
+    if params != st["params"]:                         # 요청마다 dict를 pickle하지 않고, 바뀔 때만 한 번 묶어 둠
+        st["params"] = dict(params)
+        st["params_blob"] = pickle.dumps(st["params"])
+        st["params_ver"] += 1
     try:
-        st["req"].put((rid, rows, cur, hold, qu, can_hold, combo, b2b, inc, depth, beam, atk, ts, params))
+        st["req"].put((rid, rows, cur, hold, qu, can_hold, combo, b2b, inc, depth, beam, atk, ts,
+                       (st["params_ver"], st["params_blob"])))
     except Exception:
         _mark_broken()
         return None
     st["pending"].add(rid)
+    st["born"][rid] = time.time()
     return rid
 
 
 def take(rid):
     """결과가 왔으면 꺼내서 돌려주고(없으면 None), 요청을 정리함"""
-    return _state["ready"].pop(rid, None)
+    res = _state["ready"].pop(rid, None)
+    if res is not None:
+        _state["born"].pop(rid, None)
+    return res
 
 
 def cancel(rid):
     _state["pending"].discard(rid)
     _state["ready"].pop(rid, None)
+    _state["born"].pop(rid, None)
 
 
 def wait_ready(timeout=10.0):

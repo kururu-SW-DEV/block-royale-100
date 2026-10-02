@@ -3,6 +3,8 @@ Block Royale 100 - 창/해상도/게임 시작·종료 등 앱 공통 동작
 BlockRoyaleApp(main.py)이 상속하는 믹스인: 메서드 본문은 원래 main.py에 있던 그대로이며 self로 앱 상태를 공유함
 """
 
+import sys
+
 from app_common import (
     BattleRoyaleMatch, CANVAS, MAX_PLAYERS, MIN_PLAYERS, RESOLUTION_OPTIONS,
     SCREEN_HEIGHT, SCREEN_WIDTH, pygame, short_key_name, socket, time
@@ -54,13 +56,38 @@ class CoreMixin:
         self.net_mgr.host_send_start_game(players_summary, attacks_enabled=self.settings.get("game_mode") != "survival")
         self.start_game(mode="HOST", total_players=self.target_player_count, initial_players=players_summary)
 
-    def _target_window_size(self):
-        """설정된 해상도를 모니터 크기 안에 들어가도록(16:9 유지) 보정한 창 크기"""
+    @staticmethod
+    def _work_area():
+        """(x, y, w, h, 창 장식 여백 w, h): Windows 작업 영역(작업표시줄 제외)과 제목줄/테두리 크기. 알 수 없으면 None"""
+        if sys.platform != "win32":
+            return None
+        try:
+            import ctypes
+            from ctypes import wintypes
+            rc = wintypes.RECT()
+            if not ctypes.windll.user32.SystemParametersInfoW(48, 0, ctypes.byref(rc), 0):      # SPI_GETWORKAREA
+                return None
+            gm = ctypes.windll.user32.GetSystemMetrics
+            border = (gm(33) + gm(92)) * 2                       # SM_CYSIZEFRAME + SM_CXPADDEDBORDER (DPI 배율 반영된 값)
+            return rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, border, gm(4) + border
+        except Exception:
+            return None
+
+    def _usable_area(self):
+        """창이 들어갈 수 있는 최대 크기와 작업 영역 (x, y, w, h)"""
+        wa = self._work_area()
+        if wa and wa[2] > 0 and wa[3] > 0:
+            x, y, w, h, bw, bh = wa
+            return max(640, w - bw), max(360, h - bh), (x, y, w, h)
         try:
             dw, dh = pygame.display.get_desktop_sizes()[0]
         except Exception:
             dw, dh = 1920, 1080
-        max_w, max_h = dw - 40, dh - 100      # 작업표시줄/타이틀바 여유
+        return dw - 40, dh - 100, (0, 0, dw, dh)                  # 작업표시줄/타이틀바 여유(추정)
+
+    def _target_window_size(self):
+        """설정된 해상도를 모니터 크기 안에 들어가도록(16:9 유지) 보정한 창 크기"""
+        max_w, max_h, (ax, ay, dw, dh) = self._usable_area()
         choice = self.settings.get("resolution", "auto")
         if choice in RESOLUTION_OPTIONS and choice != "auto":
             w, h = (int(v) for v in choice.split("x"))
@@ -69,19 +96,20 @@ class CoreMixin:
             w, h = SCREEN_WIDTH, SCREEN_HEIGHT
             scale = min(max_w / w, max_h / h)                # 자동: 모니터에 꽉 차는 최대 크기
         w, h = int(w * scale), int(h * scale)
-        return max(640, w), max(360, h), dw, dh
+        return max(640, w), max(360, h), (ax, ay, dw, dh)
 
     def _create_window(self):
         """현재 설정(전체화면 / 창 해상도)에 맞춰 디스플레이를 (재)생성하고 CANVAS에 연결"""
         if self.is_fullscreen:
             surf = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
         else:
-            w, h, dw, dh = self._target_window_size()
+            w, h, (ax, ay, dw, dh) = self._target_window_size()
             surf = pygame.display.set_mode((w, h), pygame.RESIZABLE)
             try:
                 from pygame import _sdl2
                 win = _sdl2.video.Window.from_display_module()
-                win.position = (max(0, (dw - w) // 2), max(0, (dh - h) // 2 - 20))
+                win.minimum_size = (640, 360)                      # 배율 하한(0.25)에 걸려 화면이 잘리는 것 방지
+                win.position = (ax + max(0, (dw - w) // 2), ay + max(0, (dh - h) // 2))
             except Exception:
                 pass
         CANVAS.attach(surf)
@@ -93,12 +121,9 @@ class CoreMixin:
 
     def _available_resolutions(self):
         """현재 모니터의 창 모드에 들어가는 해상도만 선택지로 제공 (더 큰 해상도는 전체 화면이 담당)"""
-        try:
-            dw, dh = pygame.display.get_desktop_sizes()[0]
-        except Exception:
-            dw, dh = 1920, 1080
+        max_w, max_h, _ = self._usable_area()
         return [r for r in RESOLUTION_OPTIONS
-                if r == "auto" or (int(r.split("x")[0]) <= dw - 40 and int(r.split("x")[1]) <= dh - 100)]
+                if r == "auto" or (int(r.split("x")[0]) <= max_w and int(r.split("x")[1]) <= max_h)]
 
     def change_resolution(self, step):
         new = self.settings.cycle_resolution(step, self._available_resolutions())

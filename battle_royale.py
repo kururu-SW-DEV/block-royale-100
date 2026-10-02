@@ -332,6 +332,8 @@ class BattleRoyaleMatch:
         """특정 플레이어 클릭 시 수동 타겟 지정"""
         if target_id in self.players and self.players[target_id]["is_alive"] and target_id != self.local_player_id:
             self.local_manual_target_id = target_id
+            return True
+        return False
 
     def get_attackers_count_for(self, pid):
         """특정 플레이어를 조준 중인 살아있는 상대방 수 계산 (카운터 보너스 산정용)"""

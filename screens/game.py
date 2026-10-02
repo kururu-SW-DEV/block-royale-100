@@ -55,6 +55,17 @@ class GameMixin:
                 return
             # 시작 카운트다운 중에는 조작 키를 받지 않음 (ESC만 허용)
             if self.match.countdown_left() > 0 and event.key != pygame.K_ESCAPE:
+                # 누르고 있는 상태만 기록해 두면 'GO' 순간부터 바로 이어서 움직임 (이동/회전 자체는 하지 않음)
+                if self.settings.is_action_key(event.key, "move_left"):
+                    self.key_left_down = True
+                    self.h_dir = -1
+                elif self.settings.is_action_key(event.key, "move_right"):
+                    self.key_right_down = True
+                    self.h_dir = 1
+                elif self.settings.is_action_key(event.key, "soft_drop"):
+                    self.key_down_down = True
+                self.das_timer = 0.0
+                self.arr_timer = 0.0
                 return
             # 탈락 또는 게임 종료 시 처리
             if self.match.match_finished:
@@ -188,8 +199,7 @@ class GameMixin:
                 # 싱글 플레이 시 일시정지 토글
                 self.is_paused = not self.is_paused
                 self.match.log_event("pause", on=self.is_paused)
-                if self.match:
-                    self.match.is_paused = self.is_paused
+                self.match.is_paused = self.is_paused
                 if self.is_paused:
                     self.renderer.pause_focus = 0
                     self.sound_mgr.pause_bgm()
@@ -249,6 +259,7 @@ class GameMixin:
                 if getattr(self.renderer, 'pause_exit_btn', None) and self.renderer.pause_exit_btn.collidepoint(mx, my):
                     self._activate_pause_focus(2)
                     return
+                return                                           # 일시정지 창 뒤의 미니 보드는 클릭되지 않게 막음
             
             # 게임 종료/탈락 시 결과 오버레이 버튼 클릭
             if self.match.match_finished or (not self.match.local_is_alive and not getattr(self.match, 'is_spectating', False)):
@@ -269,6 +280,7 @@ class GameMixin:
                     self.sound_mgr.play('move')
                     self.return_to_menu()
                     return
+                return                                           # 결과 오버레이 뒤의 미니 보드는 클릭되지 않게 막음
 
             # 관전 모드 중 미니 보드 클릭 시 해당 생존자 관전으로 즉시 전환
             if getattr(self.match, 'is_spectating', False):
@@ -281,8 +293,8 @@ class GameMixin:
             # 일반 인게임: 미니 보드 클릭으로 수동 타겟 지정
             for pid, rect in self.renderer.mini_board_rects.items():
                 if rect.collidepoint(mx, my):
-                    self.match.set_manual_target(pid)
-                    self.sound_mgr.play('attack')
+                    if self.match.set_manual_target(pid):
+                        self.sound_mgr.play('attack')        # 실제로 조준이 바뀐 경우에만 소리
                     break
 
     def _result_button_ids(self):
@@ -515,6 +527,7 @@ class GameMixin:
                 # 전체 상태 취합 브로드캐스트
                 all_st = []
                 for pid, p in self.match.players.items():
+                    ps = self.match.player_stats(pid)
                     all_st.append({
                         "id": pid,
                         "name": p["name"],
@@ -523,9 +536,9 @@ class GameMixin:
                         "highest_y": p["highest_y"],
                         "ko_count": p["ko_count"],
                         "rank": p["rank"],
-                        "score": self.match.player_stats(pid)["score"],
-                        "lines": self.match.player_stats(pid)["lines"],
-                        "atk": self.match.player_stats(pid)["attacks"],
+                        "score": ps["score"],
+                        "lines": ps["lines"],
+                        "atk": ps["attacks"],
                         "surv": p.get("survival"),
                         "cg": "".join(p["cg"]) if len(p.get("cg") or []) == 20 else "",
                         "cp": list(p["cpiece"]) if p.get("cpiece") else None,

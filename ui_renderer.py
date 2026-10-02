@@ -8,7 +8,7 @@ import time
 import math
 import random
 import pygame
-from gfx import CANVAS, HiFont, mix_color as _mix
+from gfx import CANVAS, Canvas, HiFont, mix_color as _mix
 from config import NAME_COLORS
 from stats_manager import LADDER_NAMES, ACHIEVEMENTS
 from config import (
@@ -121,6 +121,15 @@ class ParticleManager:
         for r in self.rings:
             rx, ry = int(r["x"] + ox), int(r["y"] + oy)
             rad = max(1, int(r["radius"]))
+            if isinstance(surface, Canvas):                 # 네이티브 해상도로 직접 그려 4K에서도 흐려지지 않게 함
+                S = CANVAS.S
+                pw, ph = max(1, int(round((rad * 2 + 4) * S))), max(1, int(round((rad * 2 + 4) * S)))
+                ring_surf = pygame.Surface((pw, ph), pygame.SRCALPHA)
+                CANVAS._orig["ellipse"](ring_surf, (*r["color"][:3], r["alpha"]),
+                                        pygame.Rect(int(round(2 * S)), int(round((2 + rad // 2) * S)), max(2, int(round(rad * 2 * S))), max(2, int(round(rad * S)))),
+                                        max(1, int(round(2 * S))))
+                CANVAS.display.blit(ring_surf, (CANVAS.X(rx - rad - 2), CANVAS.Y(ry - rad // 2 - 2)))
+                continue
             ring_surf = pygame.Surface((rad * 2 + 4, rad * 2 + 4), pygame.SRCALPHA)
             pygame.draw.ellipse(ring_surf, (*r["color"][:3], r["alpha"]), (2, 2 + rad // 2, rad * 2, rad), 2)
             surface.blit(ring_surf, (rx - rad - 2, ry - rad // 2 - 2))
@@ -248,23 +257,20 @@ class UIRenderer:
     def _blit_card_layer(self, slot, key, x, y, w, h, draw):
         """미니 카드의 자주 안 바뀌는 부분(이름표, 홀드/다음 칸)을 오프스크린에 한 번 그려 두고 한 장으로 붙임.
         draw()는 원래 그리기 코드 그대로이며, CANVAS의 출력 대상/원점만 잠시 바꿔 같은 좌표 반올림으로 그림 (_blit_mini_cells와 같은 방식)"""
-        if not self.mini_fast:
+        if not self.mini_fast or getattr(self, "_shaking", False):
             draw()
             return
         self._check_ver()
         X0, Y0 = CANVAS.X(x), CANVAS.Y(y)
         X0 -= X0 % 2
         Y0 -= Y0 % 2
+        frac = (round((CANVAS.ox + x * CANVAS.S) % 2.0, 3), round((CANVAS.oy + y * CANVAS.S) % 2.0, 3))   # 반올림이 달라지는 위치만 키로 (같은 2px 격자 이동은 재사용)
         ent = self._card_layers.get(slot)
-        if ent is None or ent[0] != key or ent[1] != (X0, Y0):
+        if ent is None or ent[0] != key or ent[1] != frac:
             surf = pygame.Surface((max(1, CANVAS.X(x + w) - X0 + 4), max(1, CANVAS.Y(y + h) - Y0 + 4)), pygame.SRCALPHA)
-            saved = (CANVAS.display, CANVAS.ox, CANVAS.oy)
-            CANVAS.display, CANVAS.ox, CANVAS.oy = surf, saved[1] - X0, saved[2] - Y0
-            try:
+            with CANVAS.redirect(surf, X0, Y0):
                 draw()
-            finally:
-                CANVAS.display, CANVAS.ox, CANVAS.oy = saved
-            ent = self._card_layers[slot] = (key, (X0, Y0), surf)
+            ent = self._card_layers[slot] = (key, frac, surf)
         CANVAS.display.blit(ent[2], (X0, Y0))
 
     def _blit_overlay(self, key, size, build, pos, alpha=None):
@@ -406,8 +412,12 @@ class UIRenderer:
         shake = getattr(match, 'screen_shake', 0.0)
         ox = random.uniform(-shake, shake) if shake > 0 else 0
         oy = random.uniform(-shake, shake) if shake > 0 else 0
+        self._shaking = shake > 0                        # 흔들리는 동안은 미니 카드 레이어 캐시를 쓰지 않고 직접 그림 (틀과 내용이 같은 반올림으로 그려져 어긋나지 않고, 매 프레임 레이어를 새로 만드는 비용도 없음)
 
-        self.particles.update(1.0 / 60.0)
+        now_t = time.perf_counter()
+        pdt = min(0.1, max(0.0, now_t - getattr(self, "_last_render_t", now_t - 1.0 / 60.0)))
+        self._last_render_t = now_t
+        self.particles.update(pdt)
         engine = match.local_engine
         spectating = getattr(match, 'is_spectating', False)
 
@@ -784,10 +794,13 @@ class UIRenderer:
         self.pause_resume_btn = pygame.Rect(px + 40, py + 88, pw - 80, 44)
         self.pause_settings_btn = pygame.Rect(px + 40, py + 142, pw - 80, 44)
         self.pause_exit_btn = pygame.Rect(px + 40, py + 196, pw - 80, 44)
-        for i, btn in enumerate((self.pause_resume_btn, self.pause_settings_btn, self.pause_exit_btn)):
-            if btn.collidepoint(mx, my):        # 마우스가 다른 버튼 위에 있으면 키보드 포커스도 그쪽으로 옮겨서, 두 버튼이 동시에 하이라이트되지 않게 함
-                self.pause_focus = i
-                break
+        moved = (mx, my) != getattr(self, "_pause_last_mouse", None)       # 마우스가 실제로 움직였을 때만 호버로 포커스를 옮김 (↑↓ 키 탐색이 되돌려지지 않게)
+        self._pause_last_mouse = (mx, my)
+        if moved:
+            for i, btn in enumerate((self.pause_resume_btn, self.pause_settings_btn, self.pause_exit_btn)):
+                if btn.collidepoint(mx, my):    # 마우스가 다른 버튼 위에 있으면 키보드 포커스도 그쪽으로 옮겨서, 두 버튼이 동시에 하이라이트되지 않게 함
+                    self.pause_focus = i
+                    break
         self._button(self.pause_resume_btn, "계속하기", "blue", self.pause_focus == 0, "P")
         self._button(self.pause_settings_btn, "환경 설정", "green", self.pause_focus == 1)
         self._button(self.pause_exit_btn, "메인 메뉴로 나가기", "red", self.pause_focus == 2, "ESC")
@@ -1467,51 +1480,53 @@ class UIRenderer:
         self._check_ver()
         use_cells = cp >= 9
         cell_px = int(cp)
-        key = (cgt, bw, bh, use_cells, cell_px)
+        frac = (round((CANVAS.ox + bx * CANVAS.S) % 2.0, 3), round((CANVAS.oy + by * CANVAS.S) % 2.0, 3))   # 위치의 반올림 차이로 틀과 어긋나지 않게
+        key = (cgt, bw, bh, use_cells, cell_px, frac)
         X0, Y0 = CANVAS.X(bx), CANVAS.Y(by)
         X0 -= X0 % 2                    # 원점은 짝수 픽셀로: round()의 '짝수로 반올림' 규칙이 원본과 똑같이 적용되도록
         Y0 -= Y0 % 2
+        def paint(target):
+            for y_idx, row in enumerate(cgt):
+                if row == "." * BOARD_WIDTH:
+                    continue
+                x_idx = 0
+                while x_idx < BOARD_WIDTH:
+                    ch = row[x_idx]
+                    if ch == ".":
+                        x_idx += 1
+                        continue
+                    if use_cells:                                  # 큰 보드는 입체 셀
+                        self._draw_cell(bx + x_idx * cp, by + y_idx * cp, cell_px, ch)
+                        x_idx += 1
+                        continue
+                    start = x_idx                                  # 작은 보드: 같은 종류가 이어지면 한 덩어리로
+                    while x_idx < BOARD_WIDTH and row[x_idx] == ch:
+                        x_idx += 1
+                    col = PIECE_COLORS.get(ch, (150, 150, 170))
+                    if self.mini_fast:
+                        # 좌표 변환(CANVAS.rect_f)과 똑같은 계산을 한 곳에서 직접 수행 (호출 단계를 줄여 빠르게, 결과 픽셀은 동일)
+                        S_, ox_, oy_ = CANVAS.S, CANVAS.ox, CANVAS.oy
+                        x0 = bx + start * cp
+                        ww = (x_idx - start) * cp - 0.6
+                        y0 = by + y_idx * cp
+                        hh = max(1, cp - 0.6)
+                        l_ = int(round(ox_ + x0 * S_))
+                        t_ = int(round(oy_ + y0 * S_))
+                        rw_ = int(round(ox_ + (x0 + ww) * S_)) - l_
+                        rh_ = int(round(oy_ + (y0 + hh) * S_)) - t_
+                        _orig_rect(target, col, (l_, t_, rw_ if rw_ >= 1 else 1, rh_ if rh_ >= 1 else 1), 0, border_radius=0)
+                    else:
+                        pygame.draw.rect(self.screen, col, (bx + start * cp, by + y_idx * cp, (x_idx - start) * cp - 0.6, max(1, cp - 0.6)))
+        if getattr(self, "_shaking", False):             # 흔들리는 동안은 레이어 없이 직접 그림 (틀과 같은 반올림, 레이어 재생성 비용 없음)
+            paint(CANVAS.display)
+            return
         ent = self._mini_layers.get(pid)
         if ent is None or ent[0] != key:
             w = CANVAS.X(bx + bw) - X0 + 4
             h = CANVAS.Y(by + bh) - Y0 + 4
             surf = pygame.Surface((max(1, w), max(1, h)), pygame.SRCALPHA)
-            saved = (CANVAS.display, CANVAS.ox, CANVAS.oy)
-            CANVAS.display, CANVAS.ox, CANVAS.oy = surf, saved[1] - X0, saved[2] - Y0
-            try:
-                for y_idx, row in enumerate(cgt):
-                    if row == "." * BOARD_WIDTH:
-                        continue
-                    x_idx = 0
-                    while x_idx < BOARD_WIDTH:
-                        ch = row[x_idx]
-                        if ch == ".":
-                            x_idx += 1
-                            continue
-                        if use_cells:                                  # 큰 보드는 입체 셀
-                            self._draw_cell(bx + x_idx * cp, by + y_idx * cp, cell_px, ch)
-                            x_idx += 1
-                            continue
-                        start = x_idx                                  # 작은 보드: 같은 종류가 이어지면 한 덩어리로
-                        while x_idx < BOARD_WIDTH and row[x_idx] == ch:
-                            x_idx += 1
-                        col = PIECE_COLORS.get(ch, (150, 150, 170))
-                        if self.mini_fast:
-                            # 좌표 변환(CANVAS.rect_f)과 똑같은 계산을 한 곳에서 직접 수행 (호출 단계를 줄여 빠르게, 결과 픽셀은 동일)
-                            S_, ox_, oy_ = CANVAS.S, CANVAS.ox, CANVAS.oy
-                            x0 = bx + start * cp
-                            ww = (x_idx - start) * cp - 0.6
-                            y0 = by + y_idx * cp
-                            hh = max(1, cp - 0.6)
-                            l_ = int(round(ox_ + x0 * S_))
-                            t_ = int(round(oy_ + y0 * S_))
-                            rw_ = int(round(ox_ + (x0 + ww) * S_)) - l_
-                            rh_ = int(round(oy_ + (y0 + hh) * S_)) - t_
-                            _orig_rect(surf, col, (l_, t_, rw_ if rw_ >= 1 else 1, rh_ if rh_ >= 1 else 1), 0, border_radius=0)
-                        else:
-                            pygame.draw.rect(self.screen, col, (bx + start * cp, by + y_idx * cp, (x_idx - start) * cp - 0.6, max(1, cp - 0.6)))
-            finally:
-                CANVAS.display, CANVAS.ox, CANVAS.oy = saved
+            with CANVAS.redirect(surf, X0, Y0):
+                paint(surf)
             ent = self._mini_layers[pid] = (key, surf)
         CANVAS.display.blit(ent[1], (X0, Y0))
 

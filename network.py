@@ -9,7 +9,9 @@ import json
 import time
 import zlib
 import math
-from config import DEFAULT_UDP_PORT, DISCOVERY_BROADCAST_PORT, NAME_COLOR_COUNT
+from config import DEFAULT_UDP_PORT, DISCOVERY_BROADCAST_PORT, NAME_COLOR_COUNT, APP_VERSION
+
+PROTOCOL_VERSION = 1         # 호환되지 않는 패킷 변경 때 올림. JOIN_REQ의 proto와 다르면 호스트가 거절
 
 MAX_CHAT_LEN = 120            # 채팅 한 줄 최대 글자 수
 MAX_ATTACK_LINES = 20        # 패킷 1개당 허용되는 최대 공격 줄 수 (위조/오류 방어)
@@ -18,6 +20,50 @@ ATTACK_BUCKET_MAX = 120      # 클라이언트 한 명이 한꺼번에 보낼 �
 ATTACK_REFILL_PER_SEC = 10   # 초당 회복되는 공격 줄 수 (정상 플레이 상한보다 넉넉하게)
 MAX_INCOMING_ATTACKS = 300   # 처리 대기 중인 공격 큐 상한
 WORLD_SYNC_CHUNK = 8         # WORLD_SYNC 패킷 하나에 담는 플레이어 수 (압축 후 MTU 1.5KB 이내)
+
+
+class MsgType:
+    """UDP 메시지의 "type" 값. 송신/수신이 같은 상수를 쓰도록 한 곳에 모음 (오타 방지, 프로토콜 목록 확인용)"""
+    # 참가자 -> 호스트
+    JOIN_REQ = "JOIN_REQ"; CLIENT_STATE = "CLIENT_STATE"; ATTACK = "ATTACK"; PING = "PING"
+    LEAVE = "LEAVE"; PROFILE = "PROFILE"; CHAT = "CHAT"; PROBE = "PROBE"
+    # 호스트 -> 참가자
+    JOIN_ACK = "JOIN_ACK"; JOIN_NACK = "JOIN_NACK"; ROSTER = "ROSTER"; GAME_START = "GAME_START"
+    WORLD_SYNC = "WORLD_SYNC"; LOBBY_RETURN = "LOBBY_RETURN"; HOST_LEFT = "HOST_LEFT"; PROFILE_ACK = "PROFILE_ACK"
+    PROBE_ACK = "PROBE_ACK"
+    # LAN 방 알림
+    BEACON = "BEACON"; BEACON_CLOSED = "BEACON_CLOSED"
+
+    ALL = frozenset({"JOIN_REQ", "CLIENT_STATE", "ATTACK", "PING", "LEAVE", "PROFILE", "CHAT", "PROBE", "JOIN_ACK",
+                     "JOIN_NACK", "ROSTER", "GAME_START", "WORLD_SYNC", "LOBBY_RETURN", "HOST_LEFT", "PROFILE_ACK",
+                     "PROBE_ACK", "BEACON", "BEACON_CLOSED"})
+
+
+def _disable_udp_connreset(sock):
+    """Windows: 상대 포트가 닫혀 있으면 다음 recvfrom이 ConnectionResetError(10054)를 내는 동작을 끔."""
+    ioctl = getattr(sock, "ioctl", None)
+    code = getattr(socket, "SIO_UDP_CONNRESET", None)
+    if ioctl is None or code is None:
+        return
+    try:
+        ioctl(code, False)
+    except (OSError, ValueError):
+        pass
+
+
+def _recv_should_stop(sock, running, err):
+    """수신 중 오류가 났을 때 루프를 끝낼지 판단. 상대가 죽어서 생기는 CONNRESET은 무시하고 계속 받음."""
+    if not running:
+        return True
+    if isinstance(err, ConnectionResetError):
+        return False
+    try:
+        if sock.fileno() == -1:
+            return True
+    except OSError:
+        return True
+    time.sleep(0.01)             # 다른 일시 오류: 바쁜 대기 방지
+    return False
 
 
 def _sanitize_name(name, fallback):
@@ -182,7 +228,7 @@ class NetworkManager:
         self.game_started = False
         self.room_settings = {}
         self.initial_players = []
-        self.join_rejected = None      # (클라이언트) 호스트가 입장을 거절한 이유 ("full" / "started")
+        self.join_rejected = None      # (클라이언트) 호스트가 입장을 거절한 이유 ("full" / "started" / "version")
         self.host_view_of_me = None    # (클라이언트) 호스트가 보낸 '나'의 상태 (순위 등 호스트 기준 값)
         self.match_attacks = True      # (클라이언트) 호스트가 정한 게임 모드 (False = 서바이벌: 공격 없음)
         self.lobby_return = False      # (클라이언트) 호스트가 경기를 마치고 대기실로 돌아왔다는 통보를 받음
@@ -233,6 +279,7 @@ class NetworkManager:
                 self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             self.sock.bind(("", port))
+            _disable_udp_connreset(self.sock)
             self.running = True
 
             # 수신 스레드
@@ -257,7 +304,7 @@ class NetworkManager:
         while self.running and not self.game_started:
             try:
                 msg = {
-                    "type": "BEACON",
+                    "type": MsgType.BEACON,
                     "room_name": self.room_settings.get("room_name", "Block Room"),
                     "port": self.host_port,
                     "players": len(self.clients) + 1,
@@ -280,8 +327,10 @@ class NetworkManager:
         while self.running:
             try:
                 data, addr = self.sock.recvfrom(65535)
-            except socket.error:
-                break
+            except socket.error as e:
+                if _recv_should_stop(self.sock, self.running, e):
+                    break
+                continue
             except Exception:
                 continue
             try:
@@ -294,10 +343,10 @@ class NetworkManager:
                 if addr in self.clients:
                     self.clients[addr]["last_seen"] = time.time()      # 종류와 상관없이 등록된 참가자가 보낸 패킷은 생존 신호
 
-                if mtype == "JOIN_REQ":
+                if mtype == MsgType.JOIN_REQ:
                     self._host_handle_join(msg, addr)
 
-                elif mtype == "CLIENT_STATE":
+                elif mtype == MsgType.CLIENT_STATE:
                     # 등록된 클라이언트의 상태만 수용 (시퀀스가 오래된 패킷은 무시)
                     cinfo = self.clients.get(addr)
                     if cinfo is None:
@@ -316,7 +365,7 @@ class NetworkManager:
                     cinfo["state"] = clean
                     self.remote_players_state[cinfo["id"]] = clean
 
-                elif mtype == "ATTACK":
+                elif mtype == MsgType.ATTACK:
                     # 등록된 클라이언트만 자기 ID로 공격 가능 (타인 ID 위조 차단)
                     cinfo = self.clients.get(addr)
                     parsed = _sanitize_attack(msg)
@@ -337,11 +386,11 @@ class NetworkManager:
                     self.incoming_attacks.append((from_id, to_id, lines))
                     # 다른 클라이언트들에게도 공격 이벤트 즉시 중계
                     self._host_broadcast(
-                        {"type": "ATTACK", "from_id": from_id, "to_id": to_id, "lines": lines},
+                        {"type": MsgType.ATTACK, "from_id": from_id, "to_id": to_id, "lines": lines},
                         exclude_addr=addr
                     )
 
-                elif mtype == "CHAT":
+                elif mtype == MsgType.CHAT:
                     cinfo = self.clients.get(addr)
                     text = _sanitize_chat_text(msg.get("text"))
                     now = time.time()
@@ -349,16 +398,16 @@ class NetworkManager:
                         cinfo["chat_t"] = now
                         self._host_publish_chat(cinfo["id"], cinfo["name"], text, color=cinfo.get("color", 0))
 
-                elif mtype == "PROFILE":
+                elif mtype == MsgType.PROFILE:
                     self._host_handle_profile(addr, msg)
 
-                elif mtype == "LEAVE":
+                elif mtype == MsgType.LEAVE:
                     self._host_drop_client(addr)
 
-                elif mtype == "PROBE":
+                elif mtype == MsgType.PROBE:
                     # 방 정보 조회: 참가하지 않고 방 이름/인원만 알려줌 (참가 화면에서 입력한 주소의 방을 목록에 띄우기 위함)
                     reply = {
-                        "type": "PROBE_ACK",
+                        "type": MsgType.PROBE_ACK,
                         "room_name": self.room_settings.get("room_name", "Block Room"),
                         "players": len(self.clients) + 1,
                         "max_players": self.room_settings.get("max_players", 100),
@@ -369,7 +418,7 @@ class NetworkManager:
                     except Exception:
                         pass
 
-                elif mtype == "PING":
+                elif mtype == MsgType.PING:
                     if addr in self.clients:
                         self.clients[addr]["last_seen"] = time.time()
             except Exception:
@@ -379,11 +428,17 @@ class NetworkManager:
     def _host_handle_join(self, msg, addr):
         """참가 요청 처리. 같은 주소의 중복 요청에는 기존 ID로 ACK만 다시 보냄."""
         info = self.clients.get(addr)
+        if info is None and msg.get("proto") != PROTOCOL_VERSION:       # 다른 버전은 규칙/패킷이 어긋나므로 입장 거절
+            try:
+                self.sock.sendto(json.dumps({"type": MsgType.JOIN_NACK, "reason": "version", "host_app": APP_VERSION}).encode('utf-8'), addr)
+            except Exception:
+                pass
+            return
         if info is None:
             if self.game_started or len(self.clients) + 1 >= self.room_settings.get("max_players", 100):
                 reason = "started" if self.game_started else "full"
                 try:                                            # 조용히 무시하지 않고 거절 이유를 알려 줌
-                    self.sock.sendto(json.dumps({"type": "JOIN_NACK", "reason": reason}).encode('utf-8'), addr)
+                    self.sock.sendto(json.dumps({"type": MsgType.JOIN_NACK, "reason": reason}).encode('utf-8'), addr)
                 except Exception:
                     pass
                 return
@@ -408,7 +463,7 @@ class NetworkManager:
             self._host_publish_chat("SYS", "시스템", f"{name} 님이 입장했습니다", system=True)
             self.host_broadcast_roster()
         ack = {
-            "type": "JOIN_ACK",
+            "type": MsgType.JOIN_ACK,
             "assigned_id": info["id"],
             "room_settings": self.room_settings
         }
@@ -435,7 +490,7 @@ class NetworkManager:
         for info in list(self.clients.values()):
             info["last_seen"] = now0                     # 대기실에서 오래 기다렸어도 시작 직후 곧바로 제거되지 않게
         msg = {
-            "type": "GAME_START",
+            "type": MsgType.GAME_START,
             "players_list": players_summary_list,
             "attacks": bool(attacks_enabled),
             "start_time": time.time()
@@ -458,7 +513,7 @@ class NetworkManager:
             seq_now = self.chat_seq
         entry = {"seq": seq_now, "id": pid, "name": name, "text": text, "sys": bool(system), "color": _sanitize_color(color)}
         self._append_chat(dict(entry))
-        msg = {"type": "CHAT", **entry}
+        msg = {"type": MsgType.CHAT, **entry}
         for _ in range(2):
             self._host_broadcast(msg)
 
@@ -472,7 +527,7 @@ class NetworkManager:
             return True
         if self.mode == "CLIENT" and self.connected:
             try:
-                self.sock.sendto(json.dumps({"type": "CHAT", "text": text}).encode('utf-8'), self.server_addr)
+                self.sock.sendto(json.dumps({"type": MsgType.CHAT, "text": text}).encode('utf-8'), self.server_addr)
                 return True
             except Exception:
                 return False
@@ -490,7 +545,7 @@ class NetworkManager:
             info["state"] = {}
             info["last_seen"] = now
         for _ in range(3):
-            self._host_broadcast({"type": "LOBBY_RETURN"})
+            self._host_broadcast({"type": MsgType.LOBBY_RETURN})
             time.sleep(0.02)
         if not (self.beacon_thread and self.beacon_thread.is_alive()):     # 방 알림(비콘)/명단 전송 재개
             self.beacon_thread = threading.Thread(target=self._host_beacon_loop, daemon=True)
@@ -509,7 +564,7 @@ class NetworkManager:
         """(호스트) 참가자 전원에게 전체 명단과 대전 인원을 전송 (대기실에서 모두가 같은 명단을 보도록)"""
         if not self.running or self.mode != "HOST" or not self.clients:
             return
-        self._host_broadcast({"type": "ROSTER", "players": self.roster_list(), "target": self.room_settings.get("target", 0)})
+        self._host_broadcast({"type": MsgType.ROSTER, "players": self.roster_list(), "target": self.room_settings.get("target", 0)})
 
     def unique_name(self, base, exclude_addr=None, exclude_host=False):
         """(호스트) 다른 참가자/호스트와 겹치지 않는 이름 (겹치면 #번호를 붙임). exclude_*: 이름을 바꾸는 본인은 제외"""
@@ -532,7 +587,7 @@ class NetworkManager:
         info["name"] = new
         info["color"] = _sanitize_color(msg.get("color"))
         try:
-            self.sock.sendto(json.dumps({"type": "PROFILE_ACK", "name": new, "color": info["color"]}).encode('utf-8'), addr)
+            self.sock.sendto(json.dumps({"type": MsgType.PROFILE_ACK, "name": new, "color": info["color"]}).encode('utf-8'), addr)
         except Exception:
             pass
         if new != old:
@@ -555,7 +610,7 @@ class NetworkManager:
         self.my_color = _sanitize_color(color)
         if self.mode == "CLIENT" and self.connected and self.sock:
             try:
-                self.sock.sendto(json.dumps({"type": "PROFILE", "name": name, "color": self.my_color}).encode('utf-8'), self.server_addr)
+                self.sock.sendto(json.dumps({"type": MsgType.PROFILE, "name": name, "color": self.my_color}).encode('utf-8'), self.server_addr)
             except Exception:
                 pass
 
@@ -607,9 +662,9 @@ class NetworkManager:
         chunk = WORLD_SYNC_CHUNK
         parts = [all_states[i:i + chunk] for i in range(0, len(all_states), chunk)] or [[]]
         for idx, part in enumerate(parts):
-            self._host_broadcast({"type": "WORLD_SYNC", "timestamp": ts, "part": idx, "states": part}, compress=True)
+            self._host_broadcast({"type": MsgType.WORLD_SYNC, "timestamp": ts, "part": idx, "states": part}, compress=True)
         if details:
-            self._host_broadcast({"type": "WORLD_SYNC", "timestamp": ts, "part": "d", "states": [], "details": details}, compress=True)
+            self._host_broadcast({"type": MsgType.WORLD_SYNC, "timestamp": ts, "part": "d", "states": [], "details": details}, compress=True)
 
     # ----------------------------------------------------
     # 클라이언트(Client) 모드 시작
@@ -643,6 +698,7 @@ class NetworkManager:
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.sock.bind(("", 0)) # 임의 로컬 포트 바인딩
+            _disable_udp_connreset(self.sock)
             self.running = True
 
             # 수신 스레드
@@ -651,9 +707,11 @@ class NetworkManager:
 
             # 참가 요청 패킷 전송 (최대 5회 시도)
             join_msg = {
-                "type": "JOIN_REQ",
+                "type": MsgType.JOIN_REQ,
                 "name": player_name,
-                "color": self.my_color
+                "color": self.my_color,
+                "proto": PROTOCOL_VERSION,
+                "app": APP_VERSION
             }
             data = json.dumps(join_msg).encode('utf-8')
             for _ in range(5):
@@ -678,7 +736,7 @@ class NetworkManager:
             return
         self._last_ping = now
         try:
-            self.sock.sendto(b'{"type": "PING"}', self.server_addr)
+            self.sock.sendto(json.dumps({"type": MsgType.PING}).encode('utf-8'), self.server_addr)
         except Exception:
             pass
 
@@ -687,7 +745,7 @@ class NetworkManager:
         if self.mode != "CLIENT" or not self.running or self.connected or not self.sock or self.join_rejected:
             return
         try:
-            data = json.dumps({"type": "JOIN_REQ", "name": getattr(self, "_join_name", "Player"), "color": self.my_color}).encode('utf-8')
+            data = json.dumps({"type": MsgType.JOIN_REQ, "name": getattr(self, "_join_name", "Player"), "color": self.my_color, "proto": PROTOCOL_VERSION, "app": APP_VERSION}).encode('utf-8')
             self.sock.sendto(data, self.server_addr)
         except Exception:
             pass
@@ -696,8 +754,10 @@ class NetworkManager:
         while self.running:
             try:
                 data, addr = self.sock.recvfrom(65535)
-            except socket.error:
-                break
+            except socket.error as e:
+                if _recv_should_stop(self.sock, self.running, e):
+                    break
+                continue
             except Exception:
                 continue
             try:
@@ -715,10 +775,10 @@ class NetworkManager:
                 self.last_server_packet = time.time()
                 mtype = msg.get("type")
 
-                if mtype == "HOST_LEFT":
+                if mtype == MsgType.HOST_LEFT:
                     self.host_left = True
 
-                elif mtype == "LOBBY_RETURN":
+                elif mtype == MsgType.LOBBY_RETURN:
                     # 호스트가 다시 대기실로 돌아옴: 지난 경기 상태를 비우고 다음 시작 신호를 기다림
                     self.lobby_return = True
                     self.host_view_of_me = None
@@ -729,7 +789,7 @@ class NetworkManager:
                     self.incoming_attacks.clear()
                     self._world_ts = {}
 
-                elif mtype == "ROSTER":
+                elif mtype == MsgType.ROSTER:
                     players = msg.get("players")
                     if isinstance(players, list):
                         clean = []
@@ -742,10 +802,10 @@ class NetworkManager:
                     if isinstance(tg, int) and not isinstance(tg, bool):
                         self.roster_target = max(0, min(100, tg))
 
-                elif mtype == "PROFILE_ACK":
+                elif mtype == MsgType.PROFILE_ACK:
                     self.profile_ack = {"name": _sanitize_name(msg.get("name"), "Player"), "color": _sanitize_color(msg.get("color"))}
 
-                elif mtype == "CHAT":
+                elif mtype == MsgType.CHAT:
                     seq = msg.get("seq")
                     text = _sanitize_chat_text(msg.get("text"))
                     if isinstance(seq, int) and not isinstance(seq, bool) and seq not in self._chat_seen and text:
@@ -756,7 +816,7 @@ class NetworkManager:
                             "color": _sanitize_color(msg.get("color")),
                         })
 
-                elif mtype == "JOIN_ACK":
+                elif mtype == MsgType.JOIN_ACK:
                     aid = msg.get("assigned_id")
                     if not isinstance(aid, str) or not aid:
                         continue
@@ -766,12 +826,12 @@ class NetworkManager:
                     self.room_settings = rs if isinstance(rs, dict) else {}
                     print(f"[Network] Joined successfully! Assigned ID: {self.my_player_id}")
 
-                elif mtype == "JOIN_NACK":
+                elif mtype == MsgType.JOIN_NACK:
                     reason = msg.get("reason")
-                    if reason in ("full", "started") and not self.connected:
+                    if reason in ("full", "started", "version") and not self.connected:
                         self.join_rejected = reason
 
-                elif mtype == "GAME_START":
+                elif mtype == MsgType.GAME_START:
                     plist = msg.get("players_list")
                     valid = (isinstance(plist, list) and 2 <= len(plist) <= 100 and self.connected and self.my_player_id and
                              all(isinstance(e, dict) and isinstance(e.get("id"), str) for e in plist) and
@@ -783,7 +843,7 @@ class NetworkManager:
                         self.game_started = True
                         print(f"[Network] Game start received from host! Total players: {len(self.initial_players)}")
 
-                elif mtype == "WORLD_SYNC":
+                elif mtype == MsgType.WORLD_SYNC:
                     # 전체 플레이어들의 최신 상태 수신 (순서가 뒤바뀐 오래된 패킷은 무시)
                     ts = msg.get("timestamp")
                     if isinstance(ts, (int, float)) and not isinstance(ts, bool):
@@ -817,7 +877,7 @@ class NetworkManager:
                             else:
                                 self.remote_players_state[pid[:32]] = clean
 
-                elif mtype == "ATTACK":
+                elif mtype == MsgType.ATTACK:
                     parsed = _sanitize_attack(msg)
                     if parsed is not None:
                         self.incoming_attacks.append(parsed)
@@ -830,7 +890,7 @@ class NetworkManager:
             return
         self.state_seq += 1
         msg = {
-            "type": "CLIENT_STATE",
+            "type": MsgType.CLIENT_STATE,
             "seq": self.state_seq,
             "state": state_dict
         }
@@ -842,7 +902,7 @@ class NetworkManager:
     def send_attack(self, from_id, to_id, lines):
         """공격 패킷 발송"""
         msg = {
-            "type": "ATTACK",
+            "type": MsgType.ATTACK,
             "from_id": from_id,
             "to_id": to_id,
             "lines": lines
@@ -873,12 +933,12 @@ class NetworkManager:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.settimeout(0.6)
-            s.sendto(json.dumps({"type": "PROBE"}).encode('utf-8'), (host, port))
+            s.sendto(json.dumps({"type": MsgType.PROBE}).encode('utf-8'), (host, port))
             deadline = time.time() + 0.8
             while time.time() < deadline:
                 data, addr = s.recvfrom(2048)
                 msg = json.loads(data.decode('utf-8'))
-                if isinstance(msg, dict) and msg.get("type") == "PROBE_ACK":
+                if isinstance(msg, dict) and msg.get("type") == MsgType.PROBE_ACK:
                     mp = msg.get("max_players")
                     pl = msg.get("players")
                     info = {
@@ -911,11 +971,11 @@ class NetworkManager:
         if not isinstance(msg, dict):
             return
         kind = msg.get("type")
-        if kind == "BEACON_CLOSED":
+        if kind == MsgType.BEACON_CLOSED:
             info = self.discovered_rooms.get(host_ip)
             if info is not None and info.get("port") == msg.get("port"):
                 self.discovered_rooms.pop(host_ip, None)          # 방이 닫혔음: 4초 만료를 기다리지 않고 바로 삭제
-        elif kind == "BEACON":
+        elif kind == MsgType.BEACON:
             self.discovered_rooms[host_ip] = {
                 "ip": host_ip,
                 "port": msg.get("port", DEFAULT_UDP_PORT),
@@ -963,11 +1023,11 @@ class NetworkManager:
             try:
                 if self.mode == "HOST" and self.clients:
                     for _ in range(3):
-                        self._host_broadcast({"type": "HOST_LEFT"})
+                        self._host_broadcast({"type": MsgType.HOST_LEFT})
                         time.sleep(0.02)
                 elif self.mode == "CLIENT" and self.connected and self.server_addr:
                     for _ in range(2):
-                        self.sock.sendto(json.dumps({"type": "LEAVE"}).encode('utf-8'), self.server_addr)
+                        self.sock.sendto(json.dumps({"type": MsgType.LEAVE}).encode('utf-8'), self.server_addr)
                         time.sleep(0.01)
             except Exception:
                 pass
@@ -993,7 +1053,7 @@ class NetworkManager:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            data = json.dumps({"type": "BEACON_CLOSED", "port": port}).encode('utf-8')
+            data = json.dumps({"type": MsgType.BEACON_CLOSED, "port": port}).encode('utf-8')
             for _ in range(3):
                 s.sendto(data, ("<broadcast>", DISCOVERY_BROADCAST_PORT))
                 time.sleep(0.05)

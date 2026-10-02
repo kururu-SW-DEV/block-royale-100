@@ -3,7 +3,7 @@ Block Royale 100 - 텍스트 입력(채팅/방 제목/이름) 처리 - 한글 IM
 BlockRoyaleApp(main.py)이 상속하는 믹스인: 메서드 본문은 원래 main.py에 있던 그대로이며 self로 앱 상태를 공유함
 """
 
-from app_common import pygame
+from app_common import CANVAS, pygame
 
 
 class TextInputMixin:
@@ -21,6 +21,9 @@ class TextInputMixin:
         self.h_dir = 0
         try:
             pygame.key.start_text_input()
+            rect = self.text_rects.get(field)
+            if rect is not None:                    # IME 후보창이 입력칸 근처에 뜨도록 (물리 좌표로 변환)
+                pygame.key.set_text_input_rect(CANVAS.rect(rect))
             pygame.key.set_repeat(400, 45)          # 지우기 키 반복
         except Exception:
             pass

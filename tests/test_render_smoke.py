@@ -16,7 +16,7 @@ import numpy as np
 import main as M
 from gfx import CANVAS
 
-RESOLUTIONS = [(1366, 768), (1920, 1080), (1000, 600)]
+RESOLUTIONS = [(1366, 768), (1920, 1080), (1000, 600), (1920, 1200), (2560, 1080), (1024, 768), (640, 360)]   # 16:9 / 16:10 / 21:9 / 4:3 / 최소 크기
 
 
 def _not_blank(label):

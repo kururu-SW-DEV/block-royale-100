@@ -10,6 +10,94 @@ from app_common import (
 
 
 class LobbyMixin:
+    def _handle_host_lobby_event(self, event):
+        """방장 대기실 입력 처리 (키보드/마우스)"""
+        if event.type == pygame.KEYDOWN:
+            if event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER):
+                self._host_start_game_action()
+            elif event.key == pygame.K_ESCAPE:
+                self.net_mgr.stop()
+                self.state = "MENU"
+            elif event.key in [pygame.K_LEFT, pygame.K_DOWN]:
+                self.adjust_player_count(-1)
+            elif event.key in [pygame.K_RIGHT, pygame.K_UP]:
+                self.adjust_player_count(1)
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mx, my = event.pos
+            for btn_id, rect in self.lobby_buttons.items():
+                if rect.collidepoint(mx, my):
+                    self.sound_mgr.play('move')
+                    if btn_id == "start_game":
+                        self._host_start_game_action()
+                    elif btn_id == "back_menu":
+                        self.net_mgr.stop()
+                        self.state = "MENU"
+                    elif btn_id == "dec_10":
+                        self.adjust_player_count(-10)
+                    elif btn_id == "dec_1":
+                        self.adjust_player_count(-1)
+                    elif btn_id == "inc_1":
+                        self.adjust_player_count(1)
+                    elif btn_id == "inc_10":
+                        self.adjust_player_count(10)
+                    break
+
+    def _handle_join_menu_event(self, event):
+        """접속 화면(IP 입력/방 목록) 입력 처리 (키보드/마우스)"""
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self.state = "MENU"
+            elif event.key == pygame.K_BACKSPACE:
+                self.join_ip_input = self.join_ip_input[:-1]
+            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                self._join_by_input()
+            elif event.key == pygame.K_v and (event.mod & pygame.KMOD_CTRL):
+                try:                                    # Ctrl+V 붙여넣기 (클립보드의 IP 주소)
+                    pygame.scrap.init()
+                    clip = pygame.scrap.get_text() or ""
+                    clip = "".join(ch for ch in clip.strip() if ch.isalnum() or ch in ".:-")
+                    self.join_ip_input = clip[:40] or self.join_ip_input
+                except Exception:
+                    pass
+            else:
+                if len(self.join_ip_input) < 40 and (event.unicode.isalnum() or event.unicode in ".:-"):
+                    self.join_ip_input += event.unicode
+                    
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mx, my = event.pos
+            # 뒤로가기 버튼
+            if hasattr(self, 'join_back_btn') and self.join_back_btn.collidepoint(mx, my):
+                self.sound_mgr.play('move')
+                self.state = "MENU"
+                return
+            # 접속 버튼
+            if hasattr(self, 'join_connect_btn') and self.join_connect_btn.collidepoint(mx, my):
+                self.sound_mgr.play('move')
+                self._join_by_input()
+                return
+            # 목록의 방 클릭 시 접속
+            for row in getattr(self, "join_rows", []):
+                rect = row.get("rect")
+                if rect and rect.collidepoint(mx, my):
+                    self.sound_mgr.play('move')
+                    self.join_ip_input = row["host"] if row["port"] == self.host_port else f"{row['host']}:{row['port']}"
+                    self._join_by_input()
+                    break
+
+    def _handle_client_lobby_event(self, event):
+        """참가자 대기실 입력 처리 (키보드/마우스)"""
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self.net_mgr.stop()
+                self.state = "MENU"
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mx, my = event.pos
+            if hasattr(self, 'client_leave_btn') and self.client_leave_btn.collidepoint(mx, my):
+                self.sound_mgr.play('move')
+                self.net_mgr.stop()
+                self.state = "MENU"
+                
+
     def _update_host_lobby(self, dt):
         self.menu_bg.update(dt)
         if self.net_mgr.mode == "HOST" and self.net_mgr.room_settings.get("target") != self.target_player_count:
@@ -48,7 +136,8 @@ class LobbyMixin:
                              [("ok_menu", "메인 메뉴로", "blue", "ENTER")])
         elif self.net_mgr.join_rejected and not self._notice_shown:
             self._notice_shown = True
-            why = {"full": "방이 가득 찼습니다.", "started": "이미 경기가 진행 중입니다. 다음 경기를 기다려 주세요."}[self.net_mgr.join_rejected]
+            why = {"full": "방이 가득 찼습니다.", "started": "이미 경기가 진행 중입니다. 다음 경기를 기다려 주세요.",
+                   "version": "게임 버전이 호스트와 달라 입장할 수 없습니다. 같은 버전으로 맞춰 주세요."}[self.net_mgr.join_rejected]
             self._open_modal("입장할 수 없습니다", [why], [("ok_menu", "메인 메뉴로", "blue", "ENTER")])
         elif self.net_mgr.connected and not self._notice_shown and self.net_mgr.seconds_since_host_packet() > 8.0:
             self._notice_shown = True                   # 호스트가 사라졌는데 대기실에 영원히 남는 것 방지

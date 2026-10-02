@@ -108,6 +108,10 @@ class SettingsMixin:
                 if event.key == pygame.K_ESCAPE:
                     self.sound_mgr.play('move')
                     self.rebinding_action = None
+                elif event.key in (pygame.K_m, pygame.K_F11):                  # 음소거/전체 화면은 앱이 먼저 가로채므로 조작키로 쓸 수 없음
+                    self.sound_mgr.play('move')
+                    self.rebind_notice = (f"{short_key_name(event.key)} 키는 {'음소거' if event.key == pygame.K_m else '전체 화면'} 전용이라 조작키로 쓸 수 없습니다", time.time() + 5.0)
+                    self.rebinding_action = None
                 else:
                     moved = self.settings.set_action_key(self.rebinding_action, event.key)
                     self.sound_mgr.play('rotate')
@@ -121,6 +125,15 @@ class SettingsMixin:
 
         if event.type == pygame.MOUSEMOTION:
             self._kb_nav = False                                          # 마우스를 쓰면 키보드 포커스 표시를 숨김
+            drag = getattr(self, "_vol_drag", None)
+            if drag and event.buttons[0]:                                  # 음량 막대를 누른 채 끌면 따라 움직임
+                which, rect = drag
+                self._settings_set_volume(which, (event.pos[0] - rect.x) / max(1, rect.w), only_if_changed=True)
+            elif drag:
+                self._vol_drag = None
+            return
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self._vol_drag = None
             return
 
         if event.type == pygame.KEYDOWN:
@@ -148,12 +161,15 @@ class SettingsMixin:
                 if rect.collidepoint(mx, my):
                     if btn_id in ("bgm_bar", "sfx_bar"):                  # 슬라이더 막대를 직접 클릭하면 그 위치의 음량으로
                         self._settings_set_volume(btn_id[:3], (mx - rect.x) / max(1, rect.w))
+                        self._vol_drag = (btn_id[:3], rect.copy())
                     else:
                         self._settings_activate(btn_id)
                     break
 
-    def _settings_set_volume(self, which, ratio):
+    def _settings_set_volume(self, which, ratio, only_if_changed=False):
         value = max(0, min(100, int(round(ratio * 10)) * 10))
+        if only_if_changed and self.settings.get("bgm_volume" if which == "bgm" else "sfx_volume") == value:
+            return
         if which == "bgm":
             self.settings.set("bgm_volume", value)
             self.sound_mgr.set_bgm_volume(value / 100.0)

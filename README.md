@@ -144,7 +144,7 @@ python main.py
 ## 🧪 개발 · 테스트
 
 - 전체 테스트: `python run_all_tests.py` (엔진, 배틀 로직, 네트워크 루프백, 설정/전적 손상 복구, 화면 렌더링 스모크 테스트 + 정적 검사). 하나라도 실패하면 종료 코드 1.
-- 개별 실행: `tests/test_engine_fixes.py`, `tests/test_royale.py`, `tests/test_v24_perfect_score.py`, `tests/test_review_fixes.py`, `tests/test_render_smoke.py` (프로젝트 루트에서 실행).
+- 개별 실행: `tests/test_engine_fixes.py`, `tests/test_royale.py`, `tests/test_v24_perfect_score.py`, `tests/test_review_network.py`/`bot`/`ui`/`data`/`rules`, `tests/test_opus_review2.py`, `tests/test_render_smoke.py` (프로젝트 루트에서 실행).
 - GitHub에 올리면 `.github/workflows/tests.yml`이 push마다 테스트를 자동 실행합니다.
 
 ---
