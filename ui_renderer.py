@@ -901,13 +901,25 @@ class UIRenderer:
         if not tip or not tip[0]:
             return
         text, anchor = tip
-        surf = self._text(text, self.font_small, (225, 232, 250))
-        w, h = surf.get_width() + 20, surf.get_height() + 12
+        max_w = min(340, self.width - 16 - 20)                                  # 화면 폭을 넘지 않게 줄바꿈 (한글은 글자 단위)
+        lines, cur = [], ""
+        for ch in text:
+            if cur and self.font_small.size(cur + ch)[0] > max_w:
+                lines.append(cur)
+                cur = ch.lstrip()
+            else:
+                cur += ch
+        if cur:
+            lines.append(cur)
+        surfs = [self._text(ln, self.font_small, (225, 232, 250)) for ln in lines]
+        lh = surfs[0].get_height() + 2
+        w, h = max(sf.get_width() for sf in surfs) + 20, lh * len(surfs) + 10
         x = max(8, min(self.width - w - 8, anchor.x - 8))
         r = pygame.Rect(x, anchor.bottom + 10, w, h)
         pygame.draw.rect(self.screen, (14, 18, 32), r, border_radius=8)
         pygame.draw.rect(self.screen, C_ACCENT, r, 1, border_radius=8)
-        self.screen.blit(surf, (r.x + 10, r.y + 6))
+        for i, sf in enumerate(surfs):
+            self.screen.blit(sf, (r.x + 10, r.y + 5 + i * lh))
 
     def _render_top_banner(self, match, ox=0, oy=0):
         """상단 3분할 HUD: 생존자 / 조준(모드 칩 + 대상) / 배지·K.O."""
@@ -957,11 +969,11 @@ class UIRenderer:
         tag = "수동 지정" if manual else "TAB으로 변경"
         if aim_on:
             self._draw_text(f"● {name}" + ("  (사람)" if is_human else ""), self.font_hud,
-                            C_GREEN if is_human else C_TEXT, r2.x + 12, r2.y + 31)
+                            C_GREEN if is_human else C_TEXT, r2.x + 12, r2.y + 37, "midleft")
             if target_p:                                           # 대상의 위험도(쌓인 높이 + 곧 올라올 쓰레기): 한 방 더로 K.O.가 가능한지 한눈에
                 dg = min(1.0, match._danger(target_p) / float(BOARD_HEIGHT))
                 dcol = C_DANGER if dg >= 0.75 else (C_ORANGE if dg >= 0.5 else C_GREEN)
-                self._draw_bar((r2.x + 14, r2.bottom - 9, w2 - 28, 3), dg, dcol)
+                self._draw_bar((r2.x + 14, r2.bottom - 5, w2 - 28, 3), dg, dcol)
         else:
             self._draw_text("연습 모드" if getattr(match, "practice", False) else "공격 없이 끝까지 생존", self.font_hud, C_TEXT, r2.centerx, r2.y + 10, "midtop")
         att_count = match.get_attackers_count_for(match.local_player_id)
@@ -977,11 +989,11 @@ class UIRenderer:
                 self._draw_text("서바이벌 모드", self.font_small, C_GREEN, r2.centerx, r2.y + 36, "midtop")
         elif att_count >= 2:
             self._draw_text(f"피조준 {att_count}명  반격 +{match.get_attacker_bonus(att_count)}", self.font_small,
-                            C_DANGER, r2.right - 12, r2.y + 34, "topright")
+                            C_DANGER, r2.right - 12, r2.y + 37, "midright")
         elif att_count == 1:
-            self._draw_text("피조준 1명", self.font_small, C_ORANGE, r2.right - 12, r2.y + 34, "topright")
+            self._draw_text("피조준 1명", self.font_small, C_ORANGE, r2.right - 12, r2.y + 37, "midright")
         else:
-            self._draw_text(tag, self.font_tiny, C_DIM, r2.right - 12, r2.y + 36, "topright")
+            self._draw_text(tag, self.font_tiny, C_DIM, r2.right - 12, r2.y + 37, "midright")
 
         if not getattr(match, "attacks_enabled", True):
             return                                                  # 서바이벌: 배지/K.O. 칸 없음
