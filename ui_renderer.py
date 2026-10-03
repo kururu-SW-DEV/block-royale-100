@@ -1284,7 +1284,10 @@ class UIRenderer:
             self._render_preview_piece(engine.hold_piece, rect.centerx, rect.y + 64, scale=20, dim=not engine.can_hold)
 
     def _render_stats_box(self, match, ox=0, oy=0):
-        rect = pygame.Rect(self._left_x(ox), self.main_board_y + 114 + oy, 108, 148)
+        battle = not getattr(match, 'is_spectating', False) and match.attacks_enabled
+        n_rows = 5 if battle else 4                              # 배틀: 시간 · APM · LPM · 보낸 줄 · 막은 줄
+        rect = pygame.Rect(self._left_x(ox), self.main_board_y + 114 + oy, 108, 8 + n_rows * 34 + 4)
+        self._stats_h = rect.h                                   # 아래 상태 칸(콤보/B2B)이 이 높이만큼 내려가 겹치지 않게
         spectating = getattr(match, 'is_spectating', False) and match.spectate_target_id in match.players
         self._panel(rect, border=C_GOLD if spectating else C_PANEL_BORDER, border_w=2 if spectating else 1)
         if spectating:
@@ -1301,16 +1304,18 @@ class UIRenderer:
         score_str = f"{score:,}" if score < 100000 else f"{score // 1000}k"
         rows = [("시간", time_str, C_TEXT), ("APM", f"{apm:.1f}", C_GOLD),
                 ("LPM", f"{lpm:.1f}", C_GREEN), ("점수", score_str, C_ACCENT)]
-        if not spectating and match.attacks_enabled:
-            # 배틀: 점수/LPM은 순위와 관계가 적어서, 규칙을 숫자로 보여 주는 두 값으로 (줄을 지우면 받을 공격이 깎임)
-            rows[2] = ("보낸 줄", str(int(match.total_attacks_sent)), C_GREEN)
-            rows[3] = ("막은 줄", str(int(match.local_engine.garbage_canceled_total)), C_ACCENT)
+        time_row = 0                                             # 시간(후반 배율 표시)이 있는 행 번호 (항상 맨 위)
+        if battle:
+            # 배틀: 시간 · APM · LPM · 보낸 줄 · 막은 줄 (점수 대신 규칙을 숫자로 보여 줌: 줄을 지우면 받을 공격이 깎임)
+            rows = [("시간", time_str, C_TEXT), ("APM", f"{apm:.1f}", C_GOLD), ("LPM", f"{lpm:.1f}", C_GREEN),
+                    ("보낸 줄", str(int(match.total_attacks_sent)), C_GREEN),
+                    ("막은 줄", str(int(match.local_engine.garbage_canceled_total)), C_ACCENT)]
         esc = 1.0
-        if not spectating and match.attacks_enabled and not match.practice:
+        if battle and not match.practice:
             esc = match.attack_multiplier()                      # 5분 뒤부터 매분 올라가는 공격력 배율 (예전에는 화면에 전혀 안 보였음)
         for i, (label, value, col) in enumerate(rows):
             cy = rect.y + 8 + i * 34 + 17                       # 행 중앙: 라벨과 값을 같은 높이에 맞춤
-            if i == 0 and esc > 1.0:
+            if i == time_row and esc > 1.0:
                 self._draw_text(label, self.font_small, C_ORANGE, rect.x + 12, cy - 6, "midleft")
                 self._draw_text(f"×{esc:.1f}", self.font_tiny, C_ORANGE, rect.x + 12, cy + 9, "midleft")      # 값(시계)과 겹치지 않게 짧게. 설명은 후반전 알림에 있음
                 self._draw_text(value, self.font_hud, C_ORANGE, rect.right - 12, cy, "midright")
@@ -1322,7 +1327,7 @@ class UIRenderer:
                 pygame.draw.line(self.screen, (38, 46, 72), (rect.x + 10, cy + 17), (rect.right - 10, cy + 17), 1)
 
     def _render_status_box(self, engine, ox=0, oy=0):
-        rect = pygame.Rect(self._left_x(ox), self.main_board_y + 272 + oy, 108, 96)
+        rect = pygame.Rect(self._left_x(ox), self.main_board_y + 114 + getattr(self, '_stats_h', 148) + 10 + oy, 108, 96)
         self._panel(rect)
         combo = max(0, engine.combo)
         self._draw_text("콤보", self.font_tiny, C_DIM, rect.x + 12, rect.y + 10)
