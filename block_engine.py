@@ -319,6 +319,7 @@ class BlockEngine:
         attack_lines = 0
         is_b2b = False
         is_pc = False
+        canceled = 0                                   # 이번 클리어로 상쇄(막은)한 받을 공격 줄 수 (도전 과제 판정용)
 
         if cleared_lines > 0:
             self.combo += 1
@@ -383,6 +384,7 @@ class BlockEngine:
             'b2b_chain': self.b2b_chain,
             'is_pc': is_pc,
             'attack': attack_lines,
+            'canceled': canceled,
             'combo': self.combo,
             'cleared_rows': list(self.cleared_row_indices)
         }

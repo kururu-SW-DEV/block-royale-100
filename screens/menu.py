@@ -333,7 +333,8 @@ class MenuMixin:
         x = self._menu_pill("weekly", x, 18, "주간 변형", "W", C_ORANGE, dot=None if wk_done else C_ORANGE) - PILL_GAP
         today = datetime.date.today().strftime("%Y%m%d")
         done = self.stats_mgr.daily_best(today) > 0                                  # 오늘의 도전을 이미 했으면 점 없음, 아직이면 초록 점
-        x = self._menu_pill("daily", x, 18, "오늘의 도전", "C", C_GREEN, dot=None if done else C_GREEN) - PILL_GAP
+        n_star = self.stats_mgr.daily_stars_today(today)
+        x = self._menu_pill("daily", x, 18, f"오늘의 도전 ★{n_star}/3" if n_star else "오늘의 도전", "C", C_GREEN, dot=None if (done or n_star) else C_GREEN) - PILL_GAP
         self._menu_pill("practice", x, 18, "연습", "P", C_ACCENT)
 
         # 2. 로고 + 한 줄 소개

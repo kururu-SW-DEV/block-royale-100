@@ -7,6 +7,7 @@ import os
 import copy
 import json
 import datetime
+import challenges as _ch
 
 from app_paths import data_path
 from config import BADGE_TIERS
@@ -45,7 +46,11 @@ ACHIEVEMENTS = (
     ("ladder_all", "사다리 정복", "난이도 사다리 4단계 모두 클리어", lambda c: c["ladder_n"] >= 4),
     ("daily3", "꾸준한 도전자", "오늘의 도전을 3일 이상 플레이", lambda c: c["daily_n"] >= 3),
     ("revenge", "복수의 화신", "나를 자주 탈락시킨 라이벌 봇을 처치", lambda c: c.get("revenge_n", 0) >= 1),
+    ("star_collector", "별 수집가", "오늘의 도전 별(★) 누적 30개", lambda c: c.get("daily_stars", 0) >= 30),
+    ("variant_master", "변형 정복자", "주간 변형 규칙 네 가지 모두에서 별 1개 이상", lambda c: c.get("weekly_rules_n", 0) >= 4),
+    ("practice_all", "수련 완료", "연습 과제 12개를 모두 완료", lambda c: c.get("practice_n", 0) >= 12),
 )
+CHALLENGE_ACHIEVEMENTS = ("star_collector", "variant_master", "practice_all")      # 도전 과제를 저장할 때 따로 판정하는 업적
 ACHIEVEMENT_IDS = tuple(a[0] for a in ACHIEVEMENTS)
 
 DEFAULT_STATS = {
@@ -102,6 +107,51 @@ def next_goal_text(rank, kos, total_players, best_in_size, difficulty=None, clea
     return "우승 연속 도전"
 
 
+def _clean_challenges(v):
+    """저장된 challenges를 검증해 알려진 id와 올바른 형식만 남김 (날짜 30일, 주 20주까지)"""
+    def ids(lst, valid):
+        return [x for x in (lst if isinstance(lst, list) else []) if isinstance(x, str) and x in valid]
+
+    def nn(x):
+        return int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) and x >= 0 else 0
+    out = {"v": 1, "practice": {"done": [], "ta_best": 0}, "daily": {}, "weekly": {},
+           "daily_streak": {"cur": 0, "best": 0, "last": ""}, "stars": {"daily": 0, "weekly": 0, "practice": 0}, "weekly_rules": []}
+    p = v.get("practice")
+    if isinstance(p, dict):
+        out["practice"]["done"] = [g for g in _ch.PRACTICE_IDS if g in ids(p.get("done"), set(_ch.PRACTICE_IDS))]
+        out["practice"]["ta_best"] = nn(p.get("ta_best"))
+    dd = v.get("daily")
+    if isinstance(dd, dict):
+        for k, rec in dd.items():
+            if isinstance(k, str) and len(k) == 8 and k.isdigit() and isinstance(rec, dict):
+                out["daily"][k] = {"ids": ids(rec.get("ids"), set(_ch.DAILY_BY_ID))[:3], "done": ids(rec.get("done"), set(_ch.DAILY_BY_ID)), "tries": nn(rec.get("tries"))}
+        for old in sorted(out["daily"])[:-30]:
+            del out["daily"][old]
+    wk = v.get("weekly")
+    if isinstance(wk, dict):
+        for k, rec in wk.items():
+            if isinstance(k, str) and len(k) == 7 and k[4] == "W" and isinstance(rec, dict):
+                rule = rec.get("rule") if rec.get("rule") in _ch.WEEKLY_GOALS else ""
+                out["weekly"][k] = {"rule": rule, "done": ids(rec.get("done"), set(_ch.WEEKLY_BY_ID))}
+        for old in sorted(out["weekly"])[:-20]:
+            del out["weekly"][old]
+    st = v.get("daily_streak")
+    if isinstance(st, dict):
+        last = st.get("last")
+        out["daily_streak"] = {"cur": nn(st.get("cur")), "best": nn(st.get("best")),
+                               "last": last if isinstance(last, str) and len(last) == 8 and last.isdigit() else ""}
+    sr = v.get("stars")
+    if isinstance(sr, dict):
+        out["stars"] = {k: nn(sr.get(k)) for k in ("daily", "weekly", "practice")}
+    out["weekly_rules"] = [r for r in (v.get("weekly_rules") if isinstance(v.get("weekly_rules"), list) else []) if r in _ch.WEEKLY_GOALS]
+    return out
+
+
+def _stars_of(d):
+    s = d.get("challenges", {}).get("stars", {}) if isinstance(d.get("challenges"), dict) else {}
+    return sum(int(s.get(k, 0)) for k in ("daily", "weekly", "practice"))
+
+
 class StatsManager:
     def __init__(self, filepath=STATS_FILE):
         self.filepath = filepath
@@ -123,6 +173,9 @@ class StatsManager:
                 if isinstance(v, dict):
                     target[k] = {kk: int(vv) for kk, vv in v.items()
                                  if isinstance(kk, str) and len(kk) == 8 and kk.isdigit() and isinstance(vv, (int, float)) and not isinstance(vv, bool) and vv >= 1}
+            elif k == "challenges":
+                if isinstance(v, dict):
+                    target[k] = _clean_challenges(v)
             elif k == "daily_meta":
                 if isinstance(v, dict):
                     clean = {}
@@ -206,6 +259,112 @@ class StatsManager:
         mk, cb = d.get("max_ko", 0), d.get("max_combo", 0)
         return {"first_ko": (min(mk, 1), 1), "ko5": (min(mk, 5), 5), "ko10": (min(mk, 10), 10), "combo8": (min(cb, 8), 8),
                 "marathon": (min(int(best_secs), 420), 420), "ladder_all": (len(d.get("ladder", [])), 4), "daily3": (min(len(d.get("daily", {})), 3), 3)}
+
+    # ------------------------------------------------------------------ 도전 과제 (연습 / 오늘의 도전 / 주간 변형)
+    def ch(self):
+        """도전 과제 저장 영역 (없으면 기본값으로 만들어 둠). 배틀로얄 버킷(최상위)에만 있음"""
+        d = self.data
+        c = d.get("challenges")
+        if not isinstance(c, dict):
+            c = d["challenges"] = _clean_challenges({})
+        return c
+
+    def challenge_done(self, kind, key=None):
+        """이미 달성해 저장된 과제 id 집합. kind: practice / daily(key=날짜) / weekly(key=주 키)"""
+        c = self.ch()
+        if kind == "practice":
+            return set(c["practice"]["done"])
+        return set(c[kind].get(key, {}).get("done", []))
+
+    def daily_goal_ids(self, date_key):
+        """오늘의 목표 id 3개. 그날 한 번 정해지면 저장해 두고 그 뒤로는 풀이 바뀌어도 같은 목표를 씀"""
+        c = self.ch()
+        rec = c["daily"].get(date_key)
+        if rec and rec.get("ids"):
+            return list(rec["ids"])
+        ids = _ch.pick_daily(date_key)
+        c["daily"][date_key] = {"ids": ids, "done": [], "tries": 0}
+        for old in sorted(c["daily"])[:-30]:
+            del c["daily"][old]
+        return ids
+
+    def weekly_goal_state(self, week_key, rule_id):
+        c = self.ch()
+        rec = c["weekly"].setdefault(week_key, {"rule": rule_id, "done": []})
+        for old in sorted(c["weekly"])[:-20]:
+            del c["weekly"][old]
+        return rec
+
+    def stars_total(self):
+        s = self.ch()["stars"]
+        return int(s["daily"]) + int(s["weekly"]) + int(s["practice"])
+
+    def mark_challenges(self, kind, key, ids):
+        """새로 달성한 과제 id들을 저장하고 별/스트릭/업적을 갱신. 이미 저장된 id는 무시. 새로 반영된 id 목록을 돌려줌"""
+        c = self.ch()
+        new = []
+        if kind == "practice":
+            done = c["practice"]["done"]
+            for gid in ids:
+                if gid in _ch.PRACTICE_IDS and gid not in done:
+                    done.append(gid)
+                    new.append(gid)
+            c["stars"]["practice"] = len(done)
+        elif kind == "daily":
+            rec = c["daily"].setdefault(key, {"ids": [], "done": [], "tries": 0})
+            for gid in ids:
+                if gid in _ch.DAILY_BY_ID and gid not in rec["done"]:
+                    rec["done"].append(gid)
+                    new.append(gid)
+            if new:
+                c["stars"]["daily"] += len(new)
+                st = c["daily_streak"]
+                if st["last"] != key:                                   # 그날 첫 별 = 출석: 어제까지 이어졌으면 +1, 아니면 1부터
+                    yesterday = (datetime.datetime.strptime(key, "%Y%m%d") - datetime.timedelta(days=1)).strftime("%Y%m%d")
+                    st["cur"] = st["cur"] + 1 if st["last"] == yesterday else 1
+                    st["best"] = max(st["best"], st["cur"])
+                    st["last"] = key
+        elif kind == "weekly":
+            rec = c["weekly"].setdefault(key, {"rule": "", "done": []})
+            for gid in ids:
+                if gid in _ch.WEEKLY_BY_ID and gid not in rec["done"]:
+                    rec["done"].append(gid)
+                    new.append(gid)
+            if new:
+                c["stars"]["weekly"] += len(new)
+                rule = next((r for r, gl in _ch.WEEKLY_GOALS.items() if any(g["id"] == new[0] for g in gl)), "")
+                rec["rule"] = rule or rec.get("rule", "")
+                if rule and rule not in c["weekly_rules"]:
+                    c["weekly_rules"].append(rule)
+        if new:
+            self.grant_challenge_achievements()
+            self.save()
+        return new
+
+    def daily_stars_today(self, date_key):
+        return len(self.ch()["daily"].get(date_key, {}).get("done", []))
+
+    def streak(self):
+        """(현재 연속 일수, 최고 연속 일수). 어제도 오늘도 별이 없으면 현재는 0으로 봄"""
+        st = self.ch()["daily_streak"]
+        today = datetime.date.today().strftime("%Y%m%d")
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y%m%d")
+        return (st["cur"] if st["last"] in (today, yesterday) else 0), st["best"]
+
+    def grant_challenge_achievements(self):
+        """도전 과제 저장 직후 업적 판정 (경기 기록 없이도 연습/도전으로 달성 가능). 새로 달성한 id 목록"""
+        c = self.ch()
+        ctx = {"daily_stars": c["stars"]["daily"], "weekly_rules_n": len(c["weekly_rules"]), "practice_n": len(c["practice"]["done"])}
+        have = self.data.setdefault("achievements", [])
+        got = []
+        for aid, _t, _d, ok in ACHIEVEMENTS:
+            if aid in CHALLENGE_ACHIEVEMENTS and aid not in have and ok(ctx):
+                have.append(aid)
+                got.append(aid)
+        if got:
+            self.data["achievements"] = [x for x in ACHIEVEMENT_IDS if x in have]
+            self.last_new_achievements = list(getattr(self, "last_new_achievements", [])) + got
+        return got
 
     def rival_id(self):
         """나를 가장 많이 탈락시킨 봇 id (2번 이상일 때만 라이벌로 인정). 없으면 None"""
@@ -296,7 +455,9 @@ class StatsManager:
         if mode == "battle":
             ctx = {"rank": rank, "total": total_players, "kos": kos, "lines": lines, "combo": max_combo, "secs": survival_sec,
                    "ladder_n": len(d.get("ladder", [])), "daily_n": len(d.get("daily", {})),
-                   "revenge_n": d.get("rivals", {}).get("revenges", 0)}
+                   "revenge_n": d.get("rivals", {}).get("revenges", 0),
+                   "daily_stars": self.ch()["stars"]["daily"], "weekly_rules_n": len(self.ch()["weekly_rules"]),
+                   "practice_n": len(self.ch()["practice"]["done"])}
             have = d.setdefault("achievements", [])
             for aid, _title, _desc, ok in ACHIEVEMENTS:
                 if aid not in have and ok(ctx):
@@ -406,6 +567,7 @@ class StatsManager:
 SKIN_UNLOCKS = {
     "pixel": ("업적 3개 달성", lambda d: len(d.get("achievements", [])) >= 3),
     "glass": ("로열 빅토리(우승) 1회", lambda d: d.get("victories", 0) >= 1),
+    "starlight": ("도전 과제 별(★) 누적 60개", lambda d: _stars_of(d) >= 60),
 }
 
 

@@ -57,7 +57,7 @@ SHAKE_SCALE = {"off": 0.0, "low": 0.4, "normal": 1.0}
 SHAKE_LABELS = {"off": "끔", "low": "약하게", "normal": "보통"}
 
 # 블록 스킨: 게임 화면의 블록 모양 (색은 색상 모드 설정을 따름)
-BLOCK_SKIN_OPTIONS = ["classic", "neon", "flat", "jelly", "pixel", "glass"]      # pixel/glass는 해금 스킨 (stats_manager.SKIN_UNLOCKS)
+BLOCK_SKIN_OPTIONS = ["classic", "neon", "flat", "jelly", "pixel", "glass", "starlight"]      # pixel/glass는 해금 스킨 (stats_manager.SKIN_UNLOCKS)
 BLOCK_SKIN_LABELS = {
     "classic": "클래식",
     "neon": "네온",
@@ -65,6 +65,7 @@ BLOCK_SKIN_LABELS = {
     "jelly": "젤리",
     "pixel": "픽셀 (해금)",
     "glass": "유리 (해금)",
+    "starlight": "별빛 (해금)",
 }
 BLOCK_SKIN_DESCS = {
     "classic": "입체감 있는 기본 블록",
@@ -73,6 +74,7 @@ BLOCK_SKIN_DESCS = {
     "jelly": "둥글고 윤기 나는 블록",
     "pixel": "8비트 느낌의 각진 픽셀 블록",
     "glass": "투명하게 비치는 유리 블록",
+    "starlight": "어두운 몸통에 별이 반짝이는 블록",
 }
 
 # 기본 조작키 프리셋

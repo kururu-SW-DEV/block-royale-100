@@ -942,17 +942,19 @@ def test_v1013_result_flow_autolock_assist_tasks():
         app.renderer.font_small = app.renderer.font_small.f
     assert "[피격 경고] +3줄" in drawn and "[공격 발송] +2줄" in drawn and "[3연속 콤보!]" not in drawn, drawn
 
-    # 연습 과제: 순서대로 완료
-    m = BattleRoyaleMatch(total_players=2, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy", practice=True)
-    assert m.practice_current_task()[0] == 0
-    m.local_engine.garbage_canceled_total = 2
-    m._practice_check({"cleared": 1})
+    # 연습 과제: 순서대로 완료 (과제 12개, 추적기 이벤트로 판정)
+    import challenges as CH
+    m = BattleRoyaleMatch(total_players=2, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy", practice=True,
+                          challenge=CH.ChallengeTracker(CH.PRACTICE_GOALS))
+    m.challenge_kind = "practice"
+    assert m.practice_current_task()[0] == 0 and len(m.PRACTICE_TASKS) == 12
+    m._practice_check({"cleared": 1, "canceled": 2})
     assert m.practice_current_task()[0] == 1
     m._practice_check({"cleared": 4})
-    m.local_engine.combo = 3
-    m._practice_check({"cleared": 1})
+    m._practice_check({"cleared": 1, "combo": 3})
     m._practice_check({"cleared": 2, "is_tspin": True})
-    assert m.practice_current_task() is None
+    assert m.practice_current_task()[0] == 4, m.practice_current_task()        # 상쇄/쿼드/콤보 3/T-스핀 4개 완료
+    assert set(m.challenge_saved) == {"p_cancel2", "p_quad", "p_combo3", "p_tspin", "p_tsd"}      # 2줄 T-스핀은 T-스핀 더블 과제도 같이 달성
     print("  OK v1.0.13")
 
 

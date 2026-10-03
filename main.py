@@ -37,12 +37,12 @@ from screens.records import RecordsMixin
 from screens.widgets import WidgetsMixin
 from screens.text_input import TextInputMixin
 from screens.modal import ModalMixin
-from screens.rules import RulesMixin
+from screens.rules import RulesMixin, BriefMixin
 from screens.menu import MenuMixin
 from screens.lobby import LobbyMixin
 
 
-class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsMixin, TextInputMixin, ModalMixin, MenuMixin, LobbyMixin, RulesMixin):
+class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsMixin, TextInputMixin, ModalMixin, MenuMixin, LobbyMixin, RulesMixin, BriefMixin):
     def __init__(self):
         pygame.init()
         pygame.display.set_caption("BLOCK ROYALE 100 (배틀로얄 블록 퍼즐)")
@@ -236,6 +236,9 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                         self._confirm_quit_app()                 # 창 X 버튼도 바로 끄지 않고 확인
                     elif not any(b[0] == "quit_app" for b in self.modal["buttons"]):
                         self._pending_quit = True                # 떠 있는 다른 알림 창을 덮어쓰지 않고, 닫은 뒤에 종료 확인
+                elif (self.state == "GAME" and self.match is not None and getattr(self.match, "brief_open", False)
+                      and event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION, pygame.MOUSEBUTTONUP, pygame.MOUSEWHEEL)):
+                    self._handle_brief_event(event)
                 elif self.rules_open and event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
                     self._handle_rules_event(event)
                 elif self.rules_open and event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONUP, pygame.MOUSEWHEEL):
@@ -290,6 +293,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                 self._render_modal()
             if self.rules_open:
                 self._render_rules()
+            if self.state == "GAME" and self.match is not None and getattr(self.match, "brief_open", False):
+                self._render_brief()
             pygame.display.flip()
             
         self.settings.save()

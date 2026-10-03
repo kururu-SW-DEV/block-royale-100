@@ -6,6 +6,7 @@ Block Royale 100 - Battle Royale Manager
 import time
 import math
 import random
+import challenges
 from block_engine import BlockEngine
 from ai_bot import AIBot
 import bot_brain
@@ -42,12 +43,21 @@ BOT_SEARCH_BUDGET = 0.008      # 프레임당 봇 전원의 탐색 시간 상한
 
 class BattleRoyaleMatch:
     def __init__(self, total_players=100, local_player_id="P1", local_player_name="Player", net_mgr=None, initial_players=None, sound_mgr=None, bot_difficulty="mixed", attacks_enabled=True,
-                 practice=False, seed=None, daily=None, weekly=None, mutator=None, rival_id=None, ghost=None):
+                 practice=False, seed=None, daily=None, weekly=None, mutator=None, rival_id=None, ghost=None, challenge=None):
         self.practice = bool(practice)                 # 연습 모드: 봇 없이 혼자 (쓰레기 줄을 직접 넣어 보며 연습), 전적에 기록 안 함, 죽으면 판이 초기화
         self.daily = daily                             # 오늘의 도전 날짜 키("YYYYMMDD") 또는 None. 같은 날은 같은 블록 순서와 상대 구성
         self.weekly = weekly                           # 주간 변형 규칙의 주 키("2026W40") 또는 None
         self.mutator = dict(mutator) if mutator else None   # 이번 경기에 적용 중인 변형 규칙 (config.WEEKLY_MUTATORS 항목)
         self.rival_id = rival_id                       # 나를 자주 탈락시킨 라이벌 봇 id (없으면 None)
+        self.challenge = challenge                     # challenges.ChallengeTracker (연습/오늘의 도전/주간 변형일 때만, 없으면 None)
+        self.challenge_kind = None                     # "practice" / "daily" / "weekly" (앱이 지정)
+        self.brief_open = False                        # 시작 전 브리핑 카드가 열려 있는 동안 경기는 시작하지 않음
+        self.practice_focus = None                     # 연습: N 키로 고른 과제 id (없으면 못 깬 첫 과제)
+        self.ta_t0 = None                              # 연습 타임어택 시작 시각 (모든 과제를 깬 뒤)
+        self.challenge_saved = []                       # 새로 달성해 앱이 저장해야 하는 과제 id 목록
+        self.ta_quads = 0
+        self.ta_last = None                            # 방금 끝난 타임어택 기록(초)
+        self.ta_best = 0
         self.rival_defeated = False                    # 이번 경기에서 라이벌을 내가 처치했는가 (복수 성공)
         self.ghost = ghost                             # 오늘의 도전 지난 최고 기록 {"rank","secs","tries"} 또는 None (경기 중 비교 표시용)
         if seed is not None:
@@ -776,6 +786,9 @@ class BattleRoyaleMatch:
         if killer_id and killer_id in self.players:
             old_lvl, _, _ = get_badge_info(self.players[killer_id]["ko_count"])
             self.players[killer_id]["ko_count"] += 1
+            if killer_id == self.local_player_id and self.challenge is not None:
+                self.challenge.on_ko()
+                self._challenge_events()
             if killer_id == self.local_player_id:
                 self.local_ko_count += 1
                 self.ko_orbs.append({"victim": victim_id, "t0": time.time()})
@@ -881,34 +894,86 @@ class BattleRoyaleMatch:
         self.drill_t0 = self.elapsed
         self.drill_next = self.elapsed + 8.0
 
-    PRACTICE_TASKS = ("G로 받은 줄 상쇄하기", "4줄 한 번에 지우기(쿼드)", "3연속 콤보 만들기", "T-스핀 한 번 성공하기")
+    PRACTICE_TASKS = tuple(g["text"] for g in challenges.PRACTICE_GOALS)       # 연습 과제 12개 (쉬운 순서, 앱이 달성 기록을 저장)
 
     def practice_current_task(self):
-        """연습 과제: 아직 못 한 첫 과제의 (번호, 문구). 모두 끝났으면 None"""
-        for i, label in enumerate(self.PRACTICE_TASKS):
-            if i not in self.practice_done:
-                return i, label
-        return None
+        """연습 과제: (번호, 문구). N 키로 고른 과제가 아직 안 끝났으면 그것, 아니면 못 깬 첫 과제. 모두 끝났으면 None"""
+        ch = self.challenge
+        if ch is None or self.challenge_kind != "practice":
+            return None
+        ids = ch.order
+        if self.practice_focus in ids and self.practice_focus not in ch.done:
+            i = ids.index(self.practice_focus)
+        else:
+            i = next((k for k, gid in enumerate(ids) if gid not in ch.done), None)
+        return None if i is None else (i, ch.by_id[ids[i]]["text"])
+
+    def practice_next_task(self, step=1):
+        """N 키: 아직 못 깬 과제 중 다음/이전 과제로 (연습)"""
+        ch = self.challenge
+        if ch is None or self.challenge_kind != "practice":
+            return
+        todo = [gid for gid in ch.order if gid not in ch.done]
+        if not todo:
+            return
+        cur = self.practice_current_task()
+        cur_id = ch.order[cur[0]] if cur else todo[0]
+        i = todo.index(cur_id) if cur_id in todo else 0
+        self.practice_focus = todo[(i + step) % len(todo)]
+
+    def practice_all_done(self):
+        ch = self.challenge
+        return ch is not None and self.challenge_kind == "practice" and len(ch.done) >= len(ch.order)
 
     def _practice_check(self, info=None):
-        """연습 과제 완료 판정 (줄을 지울 때마다 + 매 프레임 상쇄량 확인)"""
-        if not self.practice or self.practice_current_task() is None:
+        """연습: 줄을 지울 때마다 과제 지표를 갱신하고 새로 달성한 과제를 알림. 모두 깬 뒤에는 타임어택(쿼드 5번)을 잼"""
+        if not self.practice or self.challenge is None:
             return
-        i, label = self.practice_current_task()
-        eng = self.local_engine
-        ok = False
-        if i == 0:
-            ok = eng.garbage_canceled_total >= 2
-        elif i == 1:
-            ok = bool(info) and info.get("cleared", 0) >= 4
-        elif i == 2:
-            ok = eng.combo >= 3
-        elif i == 3:
-            ok = bool(info) and bool(info.get("is_tspin")) and info.get("cleared", 0) >= 1
-        if ok:
-            self.practice_done.add(i)
-            nxt = self.practice_current_task()
-            self.add_floating_text(f"★ 과제 완료!  {label}" + (f"  → 다음: {nxt[1]}" if nxt else "  (모든 과제 완료!)"), (140, 255, 170), duration=2.8, size=26, category="action")
+        if info:
+            self.challenge.on_clear(info)
+            if self.practice_all_done():
+                if self.ta_t0 is None:
+                    self.ta_t0 = self.elapsed
+                    self.ta_quads = 0
+                    self.add_floating_text(f"수련 완료!  타임어택: 쿼드 {challenges.TA_QUADS}번을 가장 빨리", (255, 215, 90), duration=3.2, size=24, category="action")
+                elif info.get("cleared", 0) >= 4:
+                    self.ta_quads += 1
+                    if self.ta_quads >= challenges.TA_QUADS:
+                        secs = max(1, int(self.elapsed - self.ta_t0))
+                        self.ta_last = secs
+                        new_best = self.ta_best == 0 or secs < self.ta_best
+                        if new_best:
+                            self.ta_best = secs
+                        self.add_floating_text(f"타임어택 {secs}초" + ("  ★ 최고 기록!" if new_best else f"  (최고 {self.ta_best}초)"),
+                                               (255, 215, 90) if new_best else (140, 230, 255), duration=3.2, size=26, category="action")
+                        self.ta_t0, self.ta_quads = self.elapsed, 0
+        self._challenge_events()
+
+    def challenge_summary(self):
+        """결과 화면용 (긴 문구, 짧은 문구). 오늘의 도전/주간 변형이 아니면 None. 예: ('오늘의 도전 ★★☆  쿼드 2회 ✓ · K.O. 3 ✓ · 10위 안 ✗', '오늘의 도전 ★2/3')"""
+        ch = self.challenge
+        if ch is None or self.challenge_kind not in ("daily", "weekly"):
+            return None
+        label = "오늘의 도전" if self.challenge_kind == "daily" else f"주간 변형 · {(self.mutator or {}).get('name', '')}"
+        stars = "".join("★" if gid in ch.done else "☆" for gid in ch.order)
+        items = " · ".join(f"{ch.by_id[gid]['short']} {'✓' if gid in ch.done else '✗'}" for gid in ch.order)
+        return f"{label} {stars}  {items}", f"{label} ★{len(ch.done)}/{len(ch.order)}"
+
+    def _challenge_events(self):
+        """추적기가 새로 달성한 과제를 꺼내 알림 (토스트/효과음). 저장은 앱이 challenge_saved 목록을 비우며 처리"""
+        ch = self.challenge
+        if ch is None:
+            return
+        for gid in ch.pop_new():
+            g = ch.by_id[gid]
+            self.challenge_saved.append(gid)
+            if self.challenge_kind == "practice":
+                nxt = self.practice_current_task()
+                self.add_floating_text(f"★ 과제 완료!  {g['text']}" + (f"  → 다음: {nxt[1]}" if nxt else "  (모든 과제 완료!)"), (140, 255, 170), duration=2.8, size=26, category="action")
+            else:
+                n = len(ch.done)
+                self.add_floating_text(f"★ 도전 달성!  {g['text']}  ({n}/{len(ch.order)})", (140, 255, 170), duration=3.0, size=26, category="action")
+                self.add_commentary(f"{self._short_name(self.local_player_id)}  도전 달성! {g['short']}", (140, 255, 170), mine=True)
             if self.sound_mgr:
                 self.sound_mgr.play('badge_up')
 
@@ -916,6 +981,8 @@ class BattleRoyaleMatch:
         """연습 모드: 보드를 새로 시작 (직접 초기화하거나 블록이 끝까지 쌓였을 때)"""
         self.local_engine = BlockEngine()
         self._danger_since = None
+        if self.ta_t0 is not None:
+            self.ta_t0, self.ta_quads = self.elapsed, 0         # 보드를 초기화하면 타임어택도 처음부터
         if announce:
             self.add_floating_text("연습 보드를 새로 시작했습니다", (140, 230, 255), duration=1.8, size=24, category="action")
 
@@ -951,6 +1018,9 @@ class BattleRoyaleMatch:
             return
         self._last_clutch = self.elapsed
         self._danger_since = None
+        if self.challenge is not None:
+            self.challenge.on_clutch()
+            self._challenge_events()
         if self.attacks_enabled:
             self.local_engine.garbage_to_send += self.CLUTCH_BONUS
         bonus = f" +{self.CLUTCH_BONUS}줄" if self.attacks_enabled else ""
@@ -968,7 +1038,11 @@ class BattleRoyaleMatch:
         is_tspin = info.get('is_tspin', False)
         is_b2b = info.get('is_b2b', False)
         chain = info.get('b2b_chain', 0)
-        self._practice_check(dict(info, cleared=cleared))
+        if self.practice:
+            self._practice_check(dict(info, cleared=cleared))
+        elif self.challenge is not None:
+            self.challenge.on_clear(dict(info, cleared=cleared))
+            self._challenge_events()
         
         if self.sound_mgr:
             combo = max(0, self.local_engine.combo)          # 0 = 첫 클리어, 이어질수록 증가 -> 삭제음이 한 음씩 올라감
@@ -1064,8 +1138,9 @@ class BattleRoyaleMatch:
             return
         if not getattr(self, "_esc_warned", False) and self.elapsed >= self.ESCALATION_START - self.ESCALATION_WARN_LEAD:
             self._esc_warned = True
-            self.add_commentary("곧 후반전: 5분부터 매분 공격력 +20% (최대 3배)", (255, 190, 90), prio=1)
-            self.add_floating_text("곧 후반전! 5분부터 매분 공격력이 20%씩 강해집니다", (255, 190, 90), duration=4.0, size=22, category="pin")
+            start_min = f"{self.ESCALATION_START / 60:.0f}" if self.ESCALATION_START % 60 == 0 else f"{self.ESCALATION_START / 60:.1f}"
+            self.add_commentary(f"곧 후반전: {start_min}분부터 매분 공격력 +20% (최대 3배)", (255, 190, 90), prio=1)
+            self.add_floating_text(f"곧 후반전! {start_min}분부터 매분 공격력이 20%씩 강해집니다", (255, 190, 90), duration=4.0, size=22, category="pin")
         mult = self.attack_multiplier()
         lvl = int((mult - 1.0) / self.ESCALATION_PER_MIN + 1e-9) if mult > 1.0 else 0      # 20% 단계가 오를 때만 알림
         if lvl > getattr(self, "_esc_level", 0):
@@ -1104,7 +1179,13 @@ class BattleRoyaleMatch:
         # 2. 로컬 플레이어 타겟 갱신
         self.players[self.local_player_id]["target_id"] = self.get_target_for(self.local_player_id, self.local_target_mode)
         
+        if self.challenge is not None and not self.practice:
+            self.challenge.tick(self.elapsed, self.local_is_alive, self.alive_count, self.attack_multiplier())
+            self._challenge_events()
         self._drill_tick()
+        if self.practice and self.challenge is not None and self.drill_on:
+            self.challenge.on_drill(self.drill_seconds(), self.drill_level() + 1)
+            self._challenge_events()
         # 3. 로컬 플레이어 게임 오버 검사
         if self.local_is_alive and self.local_engine.game_over:
             if self.practice:
@@ -1143,6 +1224,8 @@ class BattleRoyaleMatch:
                 for i, t in enumerate(targets):
                     self.apply_attack(self.local_player_id, t, total_attack, multi=len(targets), order=i)
                 self.total_attacks_sent += total_attack * len(targets)
+                if self.challenge is not None:
+                    self.challenge.on_attack(shown_attack, len(targets))
                 if self.sound_mgr:
                     self.sound_mgr.play('attack')
                 if len(targets) >= 2:

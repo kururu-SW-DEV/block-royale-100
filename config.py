@@ -2,7 +2,7 @@
 Block Royale 100 - Configuration & Constants
 """
 
-APP_VERSION = "1.1.3"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
+APP_VERSION = "1.1.4"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
 
 # 화면 해상도 설정
 SCREEN_WIDTH = 1366
@@ -158,9 +158,12 @@ def week_key(day=None):
 
 
 def weekly_mutator(day=None):
-    """그 주의 변형 규칙 dict. 주차 번호로 돌아가며 정해짐"""
-    key = week_key(day)
-    return WEEKLY_MUTATORS[int(key[5:]) % len(WEEKLY_MUTATORS)]
+    """그 주의 변형 규칙 dict. 기준 월요일(2026-01-05)로부터 지난 주 수로 돌아가며 정해짐 (ISO 주차 번호는 연말에 53->1로 이어져 규칙이 겹치므로 쓰지 않음)"""
+    import datetime
+    d = day or datetime.date.today()
+    monday = d - datetime.timedelta(days=d.weekday())
+    weeks = (monday - datetime.date(2026, 1, 5)).days // 7
+    return WEEKLY_MUTATORS[weeks % len(WEEKLY_MUTATORS)]
 
 
 def weekly_seed(key):

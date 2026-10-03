@@ -1125,6 +1125,18 @@ class UIRenderer:
                 hl = pygame.Rect(outer.x + sc(3), outer.y + sc(3), outer.w - 2 * sc(3), max(sc(2), outer.h // 4))
                 pygame.draw.rect(glass, (255, 255, 255, 80), hl, border_radius=max(1, radius - sc(2)))
             surf.blit(glass, (0, 0))
+        elif skin == "starlight":                                               # 별빛: 어두운 몸통 + 은은한 테두리 + 가운데 4갈래 별
+            radius = int(round(max(2, size // 6) * S))
+            pygame.draw.rect(surf, _mix(color, (8, 10, 24), 0.72), outer, border_radius=radius)
+            pygame.draw.rect(surf, _mix(color, (255, 255, 255), 0.25), outer, max(1, sc(1)), border_radius=radius)
+            if size >= 10:
+                cx, cy = outer.center
+                arm = max(sc(2), n // 3)
+                thin = max(1, sc(1))
+                star = _mix(color, (255, 255, 255), 0.75)
+                pygame.draw.line(surf, star, (cx - arm, cy), (cx + arm, cy), thin)
+                pygame.draw.line(surf, star, (cx, cy - arm), (cx, cy + arm), thin)
+                pygame.draw.circle(surf, (255, 255, 255), (cx, cy), max(1, sc(1)))
         elif skin == "flat":
             radius = int(round(max(1, size // 10) * S))
             pygame.draw.rect(surf, color, outer, border_radius=radius)
@@ -1352,6 +1364,7 @@ class UIRenderer:
         self._render_next_box(engine, ox, oy)
         if getattr(match, "attacks_enabled", True):
             self._render_incoming_box(engine, ox, oy)               # 서바이벌: 받을 공격 칸 없음
+        self._render_challenge_panel(match, ox, oy)
 
     # ---------------------------------------------------------------- 사이드 패널
     def _left_x(self, ox):
@@ -1436,6 +1449,69 @@ class UIRenderer:
             scale = 22 if i == 0 else 15
             cy = rect.y + 56 if i == 0 else rect.y + 108 + (i - 1) * 40
             self._render_preview_piece(engine.next_queue[i], rect.centerx, cy, scale=scale, dim=(i > 0))
+
+    @staticmethod
+    def _fmt_goal_value(metric, v):
+        if metric in ("survive", "esc_survive", "drill_secs"):
+            v = int(v)
+            return f"{v // 60}:{v % 60:02d}"
+        return str(int(v))
+
+    def _render_challenge_panel(self, match, ox=0, oy=0):
+        """오른쪽 열 아래(받을 공격 칸 밑): 연습 과제 / 오늘의 도전 / 주간 변형의 목표와 진행도. 탈락·관전 중에는 그리지 않음"""
+        ch = getattr(match, "challenge", None)
+        if ch is None or not match.local_is_alive or match.match_finished or getattr(match, "is_spectating", False):
+            return
+        x, y, w = self._right_x(ox), self.main_board_y + 390 + oy, 108
+        kind = match.challenge_kind
+        if kind == "practice":
+            h = 176
+            rect = pygame.Rect(x, y, w, h)
+            self._panel(rect, border=C_GREEN)
+            self._draw_text(f"과제 {len(ch.done)}/{len(ch.order)}", self.font_tiny, C_GREEN, rect.centerx, rect.y + 7, "midtop")
+            cur = match.practice_current_task()
+            if cur:
+                lines = self.wrap(cur[1], self.font_tiny, w - 16)[:4]
+                col = C_TEXT
+            else:
+                lines = ["타임어택", f"쿼드 {match.ta_quads}/{__import__('challenges').TA_QUADS}",
+                         f"{int(match.elapsed - match.ta_t0) if match.ta_t0 is not None else 0}초", f"최고 {match.ta_best}초" if match.ta_best else "최고 -"]
+                col = C_GOLD
+            for i, ln in enumerate(lines):
+                self._draw_text(ln, self.font_tiny, col, rect.x + 8, rect.y + 30 + i * 16)
+            sq, gap = 12, 4
+            gx0 = rect.x + (w - (6 * sq + 5 * gap)) // 2
+            for i, gid in enumerate(ch.order):
+                cx, cy = gx0 + (i % 6) * (sq + gap), rect.y + 100 + (i // 6) * (sq + gap)
+                if gid in ch.done:
+                    pygame.draw.rect(self.screen, C_GOLD, (cx, cy, sq, sq), border_radius=3)
+                else:
+                    pygame.draw.rect(self.screen, (60, 72, 104), (cx, cy, sq, sq), 1, border_radius=3)
+            self._draw_text("N: 다음 과제", self.font_tiny, C_DIM, rect.centerx, rect.bottom - 22, "midtop")
+            return
+        n = len(ch.order)
+        rect = pygame.Rect(x, y, w, 28 + n * 34 + 6)
+        accent = C_ORANGE if kind == "weekly" else C_GREEN
+        self._panel(rect, border=accent)
+        self._draw_text(f"도전 ★{len(ch.done)}/{n}", self.font_tiny, accent, rect.centerx, rect.y + 7, "midtop")
+        for i, gid in enumerate(ch.order):
+            g = ch.by_id[gid]
+            got = gid in ch.done
+            ry = rect.y + 28 + i * 34
+            self._draw_text(("✓ " if got else "· ") + g["short"], self.font_tiny, C_GREEN if got else C_TEXT, rect.x + 8, ry)
+            if got:
+                continue
+            prog = ch.progress(gid)
+            if prog is None:                                            # 순위 목표: 지금 생존자 수와 비교
+                txt = f"{match.alive_count}명 남음 → {g['goal']}"
+                ratio = 0.0 if match.alive_count <= 0 else min(1.0, g["goal"] / max(1, match.alive_count))
+            else:
+                txt = f"{self._fmt_goal_value(g['metric'], prog[0])}/{self._fmt_goal_value(g['metric'], prog[1])}"
+                ratio = prog[0] / max(1, prog[1])
+            self._draw_text(txt, self.font_tiny, C_DIM, rect.x + 8, ry + 15)
+            pygame.draw.rect(self.screen, (28, 34, 56), (rect.x + 8, ry + 29, w - 16, 3), border_radius=1)
+            if ratio > 0:
+                pygame.draw.rect(self.screen, accent, (rect.x + 8, ry + 29, max(2, int((w - 16) * ratio)), 3), border_radius=1)
 
     def _render_incoming_box(self, engine, ox=0, oy=0):
         rect = pygame.Rect(self._right_x(ox), self.main_board_y + 276 + oy, 108, 104)
@@ -2283,6 +2359,9 @@ class UIRenderer:
         if ach:
             titles = {a[0]: a[1] for a in ACHIEVEMENTS}
             parts.append("업적 달성!  " + " · ".join(titles.get(x, x) for x in ach[:2]) + (f" 외 {len(ach) - 2}개" if len(ach) > 2 else ""))
+        csum = match.challenge_summary() if hasattr(match, "challenge_summary") else None
+        if csum:
+            parts.append(csum[0] if self.font_small.size(csum[0])[0] < 700 else csum[1])
         if parts:
             lines.append(("★ " + "   ★ ".join(parts), C_GOLD))
         goal = getattr(match, "next_goal", None)
@@ -2334,9 +2413,10 @@ class UIRenderer:
         records = tuple(getattr(match, "new_records", ()) or ())
         ladder_clear = getattr(match, "ladder_clear", None)
         ach = tuple(getattr(match, "new_achievements", ()) or ())
+        csum = match.challenge_summary() if hasattr(match, "challenge_summary") else None
         lh = self.font_small.get_height()
         # 최고 기록 줄이 있으면 그 줄 + 배지 줄 + 버튼 발광(위로 8px)이 겹치지 않도록 패널을 그만큼 늘림 (글자 크기 옵션에도 맞춰짐)
-        extra = max(0, 178 + lh + 4 + lh + 12 - 226) if (records or ladder_clear or ach) else 0
+        extra = max(0, 178 + lh + 4 + lh + 12 - 226) if (records or ladder_clear or ach or csum) else 0
         loss_lines = None if won else match.defeat_summary()          # 패인 한 줄 + 다음에 해 볼 한 줄: 그만큼 패널을 늘림
         if loss_lines:
             extra += (lh + 4) * len(loss_lines)
@@ -2399,9 +2479,11 @@ class UIRenderer:
                 pygame.draw.rect(self.screen, C_GOLD, pill, border_radius=8)
                 self._draw_text("NEW", self.font_tiny, (24, 18, 4), pill.centerx, pill.centery, "center")
         badge_y = by + 188
-        if (records or ladder_clear or ach) and t >= rec_t:
+        if (records or ladder_clear or ach or csum) and t >= rec_t:
             names = {"rank": "순위", "ko": "K.O.", "combo": "최대 콤보"}
             parts = []
+            if csum:
+                parts.append(csum[0] if self.font_small.size(csum[0])[0] < box_w - 50 else csum[1])
             if records:
                 parts.append("최고 기록 갱신!  " + " · ".join(names[k] for k in records if k in names))
             if ladder_clear:
@@ -2419,9 +2501,11 @@ class UIRenderer:
                     short.append(f"난이도 클리어!  {LADDER_NAMES.get(ladder_clear, ladder_clear)}")
                 if ach:
                     short.append(f"업적 {len(ach)}개 달성!")
+                if csum:
+                    short.insert(0, csum[1])
                 line = "★ " + "   ★ ".join(short)
             self._draw_text(line, self.font_small, C_GOLD, bx + box_w // 2, by + 178, "midtop")
-        if records or ladder_clear or ach:
+        if records or ladder_clear or ach or csum:
             badge_y = by + 178 + lh + 4
         badge_txt = f"최종 배지 Lv.{tier} (공격력 +{pct})" if tier > 0 else "최종 배지 Lv.0"
         if getattr(match, "local_assists", 0) > 0:

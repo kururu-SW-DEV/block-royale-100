@@ -166,7 +166,7 @@ def test_achievements():
     from stats_manager import StatsManager, ACHIEVEMENTS, ACHIEVEMENT_IDS
     path = os.path.join(tempfile.mkdtemp(), "stats.json")
     sm = StatsManager(path)
-    assert len(ACHIEVEMENTS) == 11 and len(set(ACHIEVEMENT_IDS)) == 11      # 11번째: 복수의 화신(라이벌 처치)
+    assert len(ACHIEVEMENTS) == 14 and len(set(ACHIEVEMENT_IDS)) == 14      # 11번째 복수의 화신, 12~14번째 도전 과제 업적(별 수집가/변형 정복자/수련 완료)
     sm.record_match(40, 100, 0, 5, 1, 60)
     assert sm.last_new_achievements == [] and sm.achievements_done() == []
     sm.record_match(1, 100, 6, 50, 3, 300)

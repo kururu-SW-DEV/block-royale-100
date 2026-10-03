@@ -67,7 +67,7 @@ class RecordsMixin:
                         self.sound_mgr.play('move')
                         self.state = "MENU"
                     elif btn_id == "reset_stats":
-                        self._open_modal("전적 기록을 초기화할까요?", ["배틀로얄·서바이벌 전적이 모두 삭제됩니다.", "되돌릴 수 없습니다."],
+                        self._open_modal("전적 기록을 초기화할까요?", ["배틀로얄·서바이벌 전적과 도전 과제(별·연습 과제) 기록이 모두 삭제됩니다.", "되돌릴 수 없습니다."],
                                          [("stay", "취소", "blue", "ESC"), ("reset_stats_ok", "초기화", "red", "Y")])
                     break
 
@@ -314,12 +314,12 @@ class RecordsMixin:
         self._t("● 우승   파란 선: 5판 이동 평균", self.font_tiny, C_DIM, ix + iw, gy + gh + 34, "topright")
 
     def _render_achievements(self, box_x, box_y, box_w):
-        """업적 탭: 카드 (한 줄 6개) (달성은 밝게, 미달성은 흐리게 + 조건 표시)"""
+        """업적 탭: 카드 (한 줄 7개) (달성은 밝게, 미달성은 흐리게 + 조건 표시)"""
         done = set(self.stats_mgr.achievements_done())
         prog = self.stats_mgr.achievement_progress()
         self._t(f"달성한 업적  {len(done)} / {len(ACHIEVEMENTS)}", self.font_mid, C_TEXT, box_x + 25, box_y + 20)
         self._t("배틀로얄 경기에서 달성하면 기록됩니다 (서바이벌/연습은 해당 없음)", self.font_tiny, C_DIM, box_x + box_w - 25, box_y + 26, "topright")
-        cols, rows = 6, 2                                              # 업적이 11개라 한 줄에 6개
+        cols, rows = 7, 2                                              # 업적이 14개라 한 줄에 7개
         gap = 12
         cw = (box_w - 50 - gap * (cols - 1)) // cols
         ch = 168

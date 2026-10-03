@@ -211,7 +211,7 @@ class CoreMixin:
         except Exception:
             return "127.0.0.1"
 
-    def start_game(self, mode="SOLO", total_players=100, initial_players=None, practice=False, daily=None, weekly=None):
+    def start_game(self, mode="SOLO", total_players=100, initial_players=None, practice=False, daily=None, weekly=None, brief=True):
         """practice=True: 연습 모드(혼자, 전적 없음). daily="YYYYMMDD": 오늘의 도전(같은 날은 같은 블록 순서/상대 구성, 100인 혼합 난이도 배틀로얄)"""
         self._end_text(commit=False)
         self.renderer.reset_standings()
@@ -250,6 +250,16 @@ class CoreMixin:
         solo_rules = (mode == "SOLO" and not practice)
         rival = self.stats_mgr.rival_id() if solo_rules and not daily else None
         ghost = self.stats_mgr.daily_ghost(daily) if daily else None
+        import challenges as _chl
+        tracker, kind = None, None                                        # 도전 과제: 연습/오늘의 도전/주간 변형(혼자 하는 경기)만
+        if mode == "SOLO":
+            if practice:
+                tracker, kind = _chl.ChallengeTracker(_chl.PRACTICE_GOALS, self.stats_mgr.challenge_done("practice")), "practice"
+            elif daily:
+                ids = self.stats_mgr.daily_goal_ids(daily)
+                tracker, kind = _chl.ChallengeTracker([_chl.DAILY_BY_ID[i] for i in ids], self.stats_mgr.challenge_done("daily", daily)), "daily"
+            elif weekly and mutator:
+                tracker, kind = _chl.ChallengeTracker(_chl.WEEKLY_GOALS[mutator["id"]], self.stats_mgr.challenge_done("weekly", weekly)), "weekly"
         self.match = BattleRoyaleMatch(
             total_players=2 if practice else (100 if daily else total_players),
             local_player_id=my_id,
@@ -260,15 +270,21 @@ class CoreMixin:
             bot_difficulty="mixed" if daily else (mutator.get("difficulty", self.bot_difficulty) if mutator else ((self.net_mgr.match_difficulty or self.bot_difficulty) if mode == "CLIENT" else self.bot_difficulty)),      # 참가자는 호스트가 정한 봇 난이도로 기록(전적/사다리가 자기 설정으로 잘못 기록되던 문제)
             # 게임 모드: 참가자는 호스트가 정한 값을 따르고, 그 외에는 내 설정을 씀 (오늘의 도전은 항상 배틀로얄)
             attacks_enabled=True if (daily or weekly) else (self.net_mgr.match_attacks if mode == "CLIENT" else self.settings.get("game_mode") != "survival"),
-            practice=practice, seed=seed, daily=daily, weekly=weekly, mutator=mutator, rival_id=rival, ghost=ghost
+            practice=practice, seed=seed, daily=daily, weekly=weekly, mutator=mutator, rival_id=rival, ghost=ghost, challenge=tracker
         )
+        self.match.challenge_kind = kind
+        if practice:
+            self.match.ta_best = int(self.stats_mgr.ch()["practice"]["ta_best"])
         self.match.local_color = self.name_color
         self.match.drill_best = int(self.settings.get("drill_best", 0) or 0)
         self.match.set_target_mode(self.settings.get("target_mode"))        # 마지막으로 쓴 조준 모드를 이어서 사용
         self.match.novice = (not practice) and self.stats_mgr.data.get("total_games", 0) < 3        # 처음 3판: 조준 칩은 자동만 또렷하게
         self.match.log_enabled = bool(self.settings.get("match_log", False)) and not practice
         lead = 0.0
-        if mode == "SOLO" and not practice and getattr(self, "use_bot_pool", False):                                                  # 혼자 하는 경기: 3-2-1 동안 경기를 멈추고 화면을 먼저 보여 줌 (네트워크는 동기화 때문에 제외, 테스트/헤드리스 실행은 건너뜀)
+        show_brief = bool(kind in ("daily", "weekly") and brief and getattr(self, "use_bot_pool", False))
+        if show_brief:                                                   # 오늘의 도전/주간 변형: 규칙과 목표를 먼저 보여 주고, 아무 키나 누르면 카운트다운 시작
+            self.match.brief_open = True
+        elif mode == "SOLO" and not practice and getattr(self, "use_bot_pool", False):                                                  # 혼자 하는 경기: 3-2-1 동안 경기를 멈추고 화면을 먼저 보여 줌 (네트워크는 동기화 때문에 제외, 테스트/헤드리스 실행은 건너뜀)
             lead = self.match.COUNTDOWN_SECS
             self.match.countdown_until = time.time() + lead
         if not practice and not self.settings.get("coach_done"):                             # 처음 하는 경기: HUD 핵심 3곳을 15초 동안 설명 (한 번만, 카운트다운 동안에도 보임)
@@ -291,9 +307,9 @@ class CoreMixin:
             daily = getattr(self.match, "daily", None) if self.match is not None else None
             weekly = getattr(self.match, "weekly", None) if self.match is not None else None
             if daily:
-                self.start_game(mode="SOLO", daily=daily)             # 오늘의 도전은 재도전도 같은 도전(같은 블록 순서/상대)
+                self.start_game(mode="SOLO", daily=daily, brief=False)             # 오늘의 도전은 재도전도 같은 도전(같은 블록 순서/상대), 브리핑은 건너뜀
             elif weekly:
-                self.start_game(mode="SOLO", weekly=(weekly, self.match.mutator["id"]))      # 주간 변형 규칙도 같은 규칙으로 재도전
+                self.start_game(mode="SOLO", weekly=(weekly, self.match.mutator["id"]), brief=False)      # 주간 변형 규칙도 같은 규칙으로 재도전
             else:
                 self.start_game(mode="SOLO", total_players=self.target_player_count)
         elif self.match is not None and self.match.match_finished:

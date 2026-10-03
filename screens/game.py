@@ -45,9 +45,12 @@ class GameMixin:
                 self.match.coach_until = 0.0
                 return
             # 연습 모드: G = 쓰레기 줄 받기(Shift+G는 8줄), B = 보드 초기화. 조작키로 쓰고 있는 키는 조작키가 우선
-            if (self.match.practice and event.key in (pygame.K_g, pygame.K_b, pygame.K_v) and self.text_focus is None
+            if (self.match.practice and event.key in (pygame.K_g, pygame.K_b, pygame.K_v, pygame.K_n) and self.text_focus is None
                     and not any(event.key in self.settings.get_action_keys(a) for a, _n in ACTION_NAMES)):
-                if event.key == pygame.K_v:
+                if event.key == pygame.K_n:
+                    self.match.practice_next_task(-1 if (event.mod & pygame.KMOD_SHIFT) else 1)
+                    self.sound_mgr.play('rotate')
+                elif event.key == pygame.K_v:
                     self.match.practice_toggle_drill()
                     self.sound_mgr.play('rotate')
                 elif event.key == pygame.K_b:
@@ -332,6 +335,25 @@ class GameMixin:
                         self.sound_mgr.play('attack')        # 실제로 조준이 바뀐 경우에만 소리
                     break
 
+    def _save_challenges(self):
+        """매치가 새로 달성한 도전 과제를 저장하고, 그 덕에 새로 달성한 업적/타임어택 기록도 반영"""
+        m = self.match
+        if m.challenge is None:
+            return
+        if m.challenge_saved:
+            ids, m.challenge_saved = list(m.challenge_saved), []
+            before = set(self.stats_mgr.achievements_done())
+            kind = m.challenge_kind
+            key = m.daily if kind == "daily" else (m.weekly if kind == "weekly" else None)
+            self.stats_mgr.mark_challenges(kind, key, ids)
+            for aid in [a for a in self.stats_mgr.achievements_done() if a not in before]:
+                from stats_manager import ACHIEVEMENTS
+                title = next((a[1] for a in ACHIEVEMENTS if a[0] == aid), aid)
+                m.add_floating_text(f"★ 업적 달성!  {title}", (255, 215, 90), duration=3.2, size=26, category="action")
+        if m.challenge_kind == "practice" and m.ta_best and (m.ta_best < self.stats_mgr.ch()["practice"]["ta_best"] or self.stats_mgr.ch()["practice"]["ta_best"] == 0):
+            self.stats_mgr.ch()["practice"]["ta_best"] = int(m.ta_best)
+            self.stats_mgr.save()
+
     TIPS = [
         ("garbage", "받은 공격은 잠시 '차징' 중이에요. 그 사이에 줄을 지우면 먼저 깎입니다! (초록→빨강으로 차오르면 위험)"),
         ("multi", "여러 명이 나를 노리면 내 공격에 '역습 보너스'가 붙어요."),
@@ -410,7 +432,7 @@ class GameMixin:
             if self.match.match_finished or not self.match.local_is_alive:
                 self._restart_after_match()                         # 이미 끝난 판/탈락 뒤 관전 중이면 확인 없이 새 판
             else:
-                self._open_modal("처음부터 다시 시작할까요?", ["진행 중인 판은 전적에 기록되지 않습니다.", "(오늘의 도전은 같은 도전으로 다시 시작합니다)"],
+                self._open_modal("처음부터 다시 시작할까요?", ["진행 중인 판은 전적에 기록되지 않습니다. 이미 달성한 도전 과제(★)는 유지됩니다.", "(오늘의 도전/주간 변형은 같은 도전으로 다시 시작합니다)"],
                                  [("stay", "계속하기", "blue", "ESC"), ("restart_ok", "다시 시작", "red", "Y")])
         elif idx == 2:
             self.previous_state = "GAME"
@@ -478,6 +500,8 @@ class GameMixin:
             
         if self.is_paused:
             return
+        if getattr(self.match, "brief_open", False):
+            return                                           # 도전 브리핑 카드가 열려 있는 동안은 경기를 시작하지 않음
         if self.match.countdown_left() > 0:
             return                                           # 시작 카운트다운: 블록/봇/시간 모두 정지 (화면만 그림)
 
@@ -534,6 +558,7 @@ class GameMixin:
                 break
         if self.match.match_finished or self.match.local_is_alive:
             self.match.spectate_speed = 1
+        self._save_challenges()
         self._check_tips()
         if self.match.practice and self.match.drill_best > self.settings.get("drill_best", 0):
             self.settings.set("drill_best", int(self.match.drill_best), autosave=False)      # 최고 기록은 메뉴로 나갈 때 저장
