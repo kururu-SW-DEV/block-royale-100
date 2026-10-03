@@ -281,6 +281,71 @@ def test_client_returns_to_lobby_without_render_crash():
         app.net_mgr = real
 
 
+def _grounded(piece="T", fall_speed=1.0):
+    e = _empty_engine(piece)
+    e.fall_speed = fall_speed
+    while e.move(0, 1, auto=True):
+        pass
+    e.lock_timer, e.lock_resets, e.lowest_y = 0.0, 0, e.current_y
+    return e
+
+
+def _locked_within(e, act, frames, dt=1 / 60):
+    """frames 안에 블록이 고정되면 그 프레임 번호, 아니면 None"""
+    n = []
+    orig = e.lock_down
+    e.lock_down = lambda *a, **k: (n.append(1), orig(*a, **k))[1]
+    for f in range(frames):
+        act(e, f)
+        e.update(dt)
+        if n:
+            return f
+    return None
+
+
+def test_lock_reset_cap_move_reset_guideline():
+    """바닥에서 아무리 조작해도 같은 줄에서는 15번까지만 락 타이머가 되돌아가고 그 뒤에는 고정됨 (회전으로 떴다 내려앉는 반복이 영원히 이어지던 버그의 회귀 테스트)"""
+    # 평지 좌우 연타
+    e = _grounded()
+    f = _locked_within(e, lambda e, i: e.move(1 if (i // 10) % 2 == 0 else -1, 0) if i % 10 == 0 else None, 600)
+    assert f is not None and f < 60 * 4, f
+    # 회전 연타
+    e = _grounded()
+    f = _locked_within(e, lambda e, i: e.rotate(True) if i % 10 == 0 else None, 600)
+    assert f is not None and f < 60 * 4, f
+    # 좌우+회전(떴다 내려앉기 포함) 반복: 낙하가 느려도(1초) 몇 번의 착지 안에 고정
+    e = _grounded()
+
+    def act(e, i):
+        if i % 6 == 0:
+            e.move(1, 0); e.move(-1, 0); e.rotate(True); e.rotate(False)
+    f = _locked_within(e, act, 60 * 30)
+    assert f is not None and f < 60 * 8, f
+    # 15번을 다 쓴 뒤의 조작은 타이머를 되돌리지 못하고, 다음 업데이트에서 바로 고정
+    e = _grounded()
+    e.lock_resets = 15
+    e.lock_timer = 0.3
+    assert e.rotate(True)
+    assert e.lock_timer == 0.3 and e.lock_resets == 16
+    e.update(1 / 60)
+    assert e.current_y <= 1 or e.lock_resets == 0, "고정되어 새 블록이 나옴"
+
+
+def test_lock_resets_refill_on_lower_row():
+    """더 낮은 줄로 내려가면 조작 횟수를 다시 15번 줌 (계단식 지형), 같은 줄로 되돌아온 것은 새로 주지 않음"""
+    e = _grounded()
+    bottom = e.current_y
+    e.current_y = bottom - 1
+    e.lowest_y = bottom - 1
+    e.lock_resets = 15
+    assert e.move(0, 1, auto=True)
+    assert e.lowest_y == bottom and e.lock_resets == 0
+    e.lock_resets = 15
+    e.current_y = bottom - 1              # 떴다가 같은 줄로 내려앉음: 새 최저 줄이 아님
+    assert e.move(0, 1, auto=True)
+    assert e.lock_resets == 15
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

@@ -29,10 +29,13 @@ def _app():
 
 
 def test_definitions_are_consistent():
-    assert len(CH.PRACTICE_GOALS) == 12 and len(set(CH.PRACTICE_IDS)) == 12
+    assert len(CH.PRACTICE_GOALS) == 40 and len(set(CH.PRACTICE_IDS)) == 40
+    assert [sum(1 for g in CH.PRACTICE_GOALS if g['tier'] == t) for t in (1, 2, 3, 4)] == [10, 10, 10, 10], '기초/중급/고급/마스터 각 10개 (화면 한 페이지)'
+    assert len(CH.MASTER_IDS) == 10 and all(g['tier'] == 4 for g in CH.PRACTICE_GOALS if g['id'] in CH.MASTER_IDS)
+    assert [g['tier'] for g in CH.PRACTICE_GOALS] == sorted(g['tier'] for g in CH.PRACTICE_GOALS), '쉬운 순서(난이도 오름차순)'
     assert len({g["id"] for g in CH.ALL_GOALS.values()}) == len(CH.ALL_GOALS), "과제 id 중복 없음"
     for g in CH.ALL_GOALS.values():
-        assert g["tier"] in (1, 2, 3) and g["op"] in (">=", "<=") and len(g["short"]) <= 8, g
+        assert g["tier"] in (1, 2, 3, 4) and g["op"] in (">=", "<=") and len(g["short"]) <= 8, g
         assert g["metric"] in ChallengeMetrics, g
     for tier in (1, 2, 3):
         assert any(g["tier"] == tier for g in CH.DAILY_POOL), tier
@@ -73,7 +76,8 @@ def test_tracker_metrics_and_dedup():
     new = t.pop_new()
     assert len(new) == len(set(new)) and t.pop_new() == [], "새로 달성한 것은 한 번만 꺼냄"
     t.on_clear({"cleared": 4})
-    assert t.pop_new() == [], "이미 달성한 과제는 다시 나오지 않음"
+    again = set(t.pop_new())
+    assert not again & {"p_quad", "p_b2bquad", "p_tspin", "p_tsd", "p_pc", "p_combo5"}, "이미 달성한 과제는 다시 나오지 않음 (줄 수 누적 새 과제만 나올 수 있음)"
     t.on_drill(61, 2)
     assert "p_drill60" in t.done and "p_drill_lv5" not in t.done
     t.on_drill(125, 5)
@@ -158,13 +162,20 @@ def test_stats_challenge_storage_and_streak():
     st2 = SM.StatsManager(st.filepath)
     assert st2.challenge_done("practice") == {"p_quad", "p_pc"} and st2.ch()["daily"]["20261003"]["done"] == [ids[0]]
     raw = json.load(open(st.filepath, encoding="utf-8"))
-    raw["challenges"] = {"practice": {"done": ["p_quad", "zzz", 5], "ta_best": -3}, "daily": {"x": {}, "20261010": {"ids": ["d_ko1", "q"], "done": ["d_ko1", "p_quad"], "tries": "a"}},
+    raw["challenges"] = {"practice": {"done": ["p_quad", "zzz", 5], "ta": {"quad": 40, "sprint": -2, "zzz": 9, "tspin": "x"}}, "daily": {"x": {}, "20261010": {"ids": ["d_ko1", "q"], "done": ["d_ko1", "p_quad"], "tries": "a"}},
                          "weekly": {"2026W45": {"rule": "bad", "done": ["w_el_1", "d_ko1"]}}, "daily_streak": {"cur": "x", "best": 2, "last": "zz"},
                          "stars": {"daily": -1, "weekly": 2.9}, "weekly_rules": ["elite", "hax"]}
     json.dump(raw, open(st.filepath, "w", encoding="utf-8"))
     st3 = SM.StatsManager(st.filepath)
     c = st3.ch()
-    assert c["practice"] == {"done": ["p_quad"], "ta_best": 0}
+    assert c["practice"] == {"done": ["p_quad"], "ta": {"quad": 40}}, c["practice"]
+    raw["challenges"] = {"practice": {"done": [], "ta_best": 55}}               # v1.1.4 이전 형식: 쿼드 5번 기록 하나 -> 쿼드 타임어택으로 옮김
+    json.dump(raw, open(st.filepath, "w", encoding="utf-8"))
+    assert SM.StatsManager(st.filepath).ch()["practice"] == {"done": [], "ta": {"quad": 55}}
+    raw["challenges"] = {"practice": {"done": ["p_quad", "zzz", 5], "ta": {"quad": 40}}, "daily": {"x": {}, "20261010": {"ids": ["d_ko1", "q"], "done": ["d_ko1", "p_quad"], "tries": "a"}},
+                         "weekly": {"2026W45": {"rule": "bad", "done": ["w_el_1", "d_ko1"]}}, "daily_streak": {"cur": "x", "best": 2, "last": "zz"},
+                         "stars": {"daily": -1, "weekly": 2.9}, "weekly_rules": ["elite", "hax"]}
+    json.dump(raw, open(st.filepath, "w", encoding="utf-8"))
     assert c["daily"] == {"20261010": {"ids": ["d_ko1"], "done": ["d_ko1"], "tries": 0}}
     assert c["weekly"] == {"2026W45": {"rule": "", "done": ["w_el_1"]}}
     assert c["daily_streak"] == {"cur": 0, "best": 2, "last": ""} and c["stars"]["daily"] == 0 and c["stars"]["weekly"] == 2 and c["weekly_rules"] == ["elite"]
@@ -186,9 +197,9 @@ def test_challenge_achievements_and_skin_unlock():
     import stats_manager as SM
     d = tempfile.mkdtemp()
     st = SM.StatsManager(os.path.join(d, "s.json"))
-    assert len(SM.ACHIEVEMENTS) == 14
+    assert len(SM.ACHIEVEMENTS) == 50 and set(SM.ACH_CATEGORY) == {a[0] for a in SM.ACHIEVEMENTS}
     st.mark_challenges("practice", None, CH.PRACTICE_IDS)
-    assert "practice_all" in st.data["achievements"], "연습 12개 완료 -> 수련 완료 (경기 기록 없이도 판정)"
+    assert "practice_all" in st.data["achievements"], "연습 과제 전부 완료 -> 수련 완료 (경기 기록 없이도 판정)"
     for i, rule in enumerate(CH.WEEKLY_GOALS):
         st.mark_challenges("weekly", f"2026W{10 + i}", [CH.WEEKLY_GOALS[rule][0]["id"]])
     assert "variant_master" in st.data["achievements"]
@@ -228,19 +239,237 @@ def test_practice_flow_ta_and_save():
     # 새 연습 판에서도 저장된 달성분이 이어짐
     app.start_game(mode="SOLO", practice=True)
     assert "p_quad" in app.match.challenge.done
-    # 모두 깨면 타임어택
+    # 모두 깨면 쿼드 타임어택이 자동으로 켜짐
     m = app.match
     m.challenge.done = set(m.challenge.order)
     m._practice_check({"cleared": 1})
-    assert m.ta_t0 is not None
+    assert m.ta_mode == "quad" and m.ta_t0 is not None
     for _ in range(CH.TA_QUADS):
         m.elapsed += 5.0
         m._practice_check({"cleared": 4})
-    assert m.ta_last and m.ta_best == m.ta_last
+    assert m.ta_last and m.ta_best == m.ta_last and m.ta_bests["quad"] == m.ta_last
     app._tick_game(1 / 60)
-    assert app.stats_mgr.ch()["practice"]["ta_best"] == m.ta_best
+    assert app.stats_mgr.ch()["practice"]["ta"]["quad"] == m.ta_best
     app.renderer.render(m)
     print("  OK practice")
+
+
+def test_time_attack_modes_and_y_key():
+    app = _app()
+    app.stats_mgr.data.pop("challenges", None)
+    app.stats_mgr.data["achievements"] = []                         # 앞선 테스트가 저장한 기록과 섞이지 않게
+    app.start_game(mode="SOLO", practice=True)
+    m = app.match
+    m.countdown_until = 0.0
+    assert m.ta_mode is None
+    seq = []
+    for _ in range(len(CH.TA_MODES) + 1):                          # Y: 끔 -> 쿼드 -> 스프린트 -> T-스핀 -> 더블 -> T-스핀 더블 -> 콤보 -> 끔
+        app._handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_y, mod=0, unicode="y", scancode=0))
+        seq.append(m.ta_mode)
+    assert seq == ["quad", "sprint", "tspin", "double", "tsd", "combo", None], seq
+    # 40줄 스프린트: 지운 줄 수를 더해 40줄에 도달하면 기록
+    m.ta_mode, m.ta_t0, m.ta_n = "sprint", m.elapsed, 0
+    for _ in range(10):
+        m.elapsed += 3.0
+        m._practice_check({"cleared": 4})
+    assert m.ta_last == 30 and m.ta_bests["sprint"] == 30 and m.ta_n == 0
+    # T-스핀 3번 (T-스핀이 아닌 줄 지우기는 세지 않음)
+    m.ta_mode, m.ta_t0, m.ta_n = "tspin", m.elapsed, 0
+    m._practice_check({"cleared": 2})
+    m._practice_check({"cleared": 1, "is_tspin": True})
+    m.elapsed += 8.0
+    m._practice_check({"cleared": 2, "is_tspin": True})
+    m._practice_check({"cleared": 3, "is_tspin": True})
+    assert m.ta_bests["tspin"] == 8
+    # 더 느린 기록은 최고 기록을 덮어쓰지 않음
+    m.ta_mode, m.ta_t0, m.ta_n = "sprint", m.elapsed, 0
+    for _ in range(10):
+        m.elapsed += 9.0
+        m._practice_check({"cleared": 4})
+    assert m.ta_last == 90 and m.ta_bests["sprint"] == 30
+    # 저장: 더 빠른 것만 반영하고, 쿼드 60초 이내면 스프린터 업적
+    st = app.stats_mgr
+    assert st.save_time_attack({"sprint": 30, "tspin": 8}) and st.ch()["practice"]["ta"] == {"sprint": 30, "tspin": 8}
+    assert not st.save_time_attack({"sprint": 40}) and st.ch()["practice"]["ta"]["sprint"] == 30
+    assert "sprinter" not in st.data["achievements"] and "ta_all" not in st.data["achievements"]
+    assert st.save_time_attack({"quad": 55})
+    assert "sprinter" in st.data["achievements"] and "ta_all" not in st.data["achievements"], "타임어택 6종을 모두 남겨야 완주"
+    assert st.save_time_attack({"double": 50, "tsd": 70, "combo": 20})
+    assert "ta_all" in st.data["achievements"] and "sprint90" in st.data["achievements"]
+    # 더블 10번 / T-스핀 더블 2번 / 콤보 6 타임어택의 진행량
+    assert CH.ta_next("double", 3, {"cleared": 2}) == 4 and CH.ta_next("double", 3, {"cleared": 4}) == 3
+    assert CH.ta_next("tsd", 0, {"cleared": 2, "is_tspin": True}) == 1 and CH.ta_next("tsd", 0, {"cleared": 2, "is_tspin": True, "is_mini": True}) == 0
+    assert CH.ta_next("combo", 4, {"cleared": 1, "combo": 3}) == 4 and CH.ta_next("combo", 4, {"cleared": 1, "combo": 6}) == 6
+    m.ta_mode, m.ta_t0, m.ta_n = "combo", m.elapsed, 0
+    m.elapsed += 12.0
+    m._practice_check({"cleared": 1, "combo": 6})
+    assert m.ta_bests["combo"] == 12
+    app.renderer.render(m)
+    m.ta_mode = None
+    app.renderer.render(m)                                         # 타임어택 꺼진 상태(종류별 기록 목록)도 그려짐
+    print("  OK time attack")
+
+
+def test_practice_pages_and_new_metrics():
+    t = CH.ChallengeTracker(CH.PRACTICE_GOALS)
+    t.on_clear({"cleared": 3})
+    t.on_clear({"cleared": 3, "is_tspin": True})
+    t.on_clear({"cleared": 1, "is_tspin": True})
+    t.on_clear({"cleared": 1, "is_tspin": True, "is_mini": True})
+    t.on_clear({"cleared": 2, "is_tspin": True})
+    assert {"p_triple", "p_tst", "p_tspin", "p_tspin3", "p_tss", "p_mini", "p_tsd"} <= t.done, t.done
+    assert t.m["triples"] == 2 and t.m["doubles"] == 1 and t.m["tspin_triples"] == 1 and t.m["tspin_singles"] == 1 and t.m["mini_tspins"] == 1
+    # 블록 수 지표: 60초 구간 최대치와 누적
+    t = CH.ChallengeTracker(CH.PRACTICE_GOALS)
+    for i in range(90):
+        t.on_lock(i * 0.5)                                             # 0.5초마다 1개 = 60초에 120개
+    assert t.m["pieces"] == 90 and t.m["pieces_60s"] == 90 and "p_pps" in t.done
+    t = CH.ChallengeTracker(CH.PRACTICE_GOALS)
+    for i in range(200):
+        t.on_lock(i * 1.0)                                             # 1초에 1개: 어느 60초 구간이든 60개 안팎 (90개 목표 못 채움)
+    assert t.m["pieces_60s"] <= 61 and "p_pps" not in t.done and "p_pieces300" not in t.done
+    for i in range(100):
+        t.on_lock(200 + i)
+    assert "p_pieces300" in t.done
+    # 엔진 연동: 블록이 고정되면 매치가 추적기에 알림 (보드를 초기화해도 이어서 셈)
+    app = _app()
+    app.stats_mgr.data.pop("challenges", None)
+    app.start_game(mode="SOLO", practice=True)
+    m = app.match
+    m.countdown_until = 0.0
+    m.update(0.01)
+    base = m.challenge.m["pieces"]
+    for _ in range(3):
+        m.local_engine.hard_drop()
+        m.update(0.01)
+    assert m.challenge.m["pieces"] == base + 3, (base, m.challenge.m["pieces"])
+    m.practice_reset(announce=False)
+    m.local_engine.hard_drop()
+    m.update(0.01)
+    assert m.challenge.m["pieces"] == base + 4
+    # 화면: 현재 과제가 속한 난이도 페이지를 따라가고, 탭을 눌러 다른 페이지를 볼 수 있음
+    app = _app()
+    app.stats_mgr.data.pop("challenges", None)
+    app.start_game(mode="SOLO", practice=True)
+    m = app.match
+    m.countdown_until = 0.0
+    r = app.renderer
+    r.practice_page = None
+    r._prac_last_cur = None
+    r.render(m)
+    assert set(r.practice_tab_rects) == {1, 2, 3, 4}
+    m.challenge.done = {g["id"] for g in CH.PRACTICE_GOALS if g["tier"] == 1}
+    r.render(m)
+    assert r.practice_page is None                                    # 자동 페이지: 기초를 다 깨면 중급 페이지가 보임 (아래에서 클릭 동작 확인)
+    rect = r.practice_tab_rects[3]
+    app._handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=rect.center))
+    assert r.practice_page == 3
+    r.render(m)
+    app._handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_n, mod=0, unicode="n", scancode=0))
+    r.render(m)
+    assert r.practice_page is None, "N으로 과제가 바뀌면 그 과제의 페이지로 돌아감"
+    r.practice_page = None
+    # 과제 행 클릭: 그 과제를 지금 과제로 고름 (달성한 과제는 행이 없어 선택되지 않음)
+    m.challenge.done = {"p_cancel2"}
+    m.practice_focus = None                                           # (앞에서 N 키로 정한 선택을 비움)
+    r._prac_last_cur = None
+    r.render(m)
+    assert "p_cancel2" not in r.practice_row_rects and "p_quad" in r.practice_row_rects, (sorted(r.practice_row_rects), r.practice_page, m.practice_current_task())
+    app._handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=r.practice_row_rects["p_quad"].center))
+    assert m.practice_focus == "p_quad" and m.practice_current_task()[1] == "4줄 한 번에 지우기(쿼드)"
+    r.render(m)
+    app._handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=r.practice_row_rects["p_combo3"].center))
+    assert m.practice_current_task()[1] == "3연속 콤보 만들기"
+    r.render(m)                                                       # (선택이 바뀐 뒤 첫 그리기: 그 과제의 페이지로 자동 이동)
+    r.practice_page = 2                                               # 다른 페이지에서도 행 클릭이 동작하고, 선택한 과제의 페이지로 따라감
+    r.render(m)
+    app._handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=r.practice_row_rects["p_tss"].center))
+    assert m.practice_focus == "p_tss"
+    r.render(m)
+    assert r.practice_page is None
+    print("  OK practice pages")
+
+
+def test_achievement_pages_and_new_achievements():
+    import stats_manager as SM
+    d = tempfile.mkdtemp()
+    st = SM.StatsManager(os.path.join(d, "s.json"))
+    cats = {}
+    for aid, *_ in SM.ACHIEVEMENTS:
+        cats.setdefault(SM.ACH_CATEGORY[aid], []).append(aid)
+    assert [c for c, _n in SM.ACH_CATEGORIES] == list(cats) and all(len(v) <= 10 for v in cats.values()), {k: len(v) for k, v in cats.items()}
+    # 누적/도전 업적 판정
+    st.data["total_games"], st.data["victories"], st.data["top_5"], st.data["total_kos"], st.data["total_lines"] = 9, 2, 9, 99, 999
+    st.record_match(rank=1, total_players=100, kos=1, lines=1, max_combo=1, survival_sec=100)
+    got = set(st.data["achievements"])
+    assert {"games10", "win3", "top5_10", "kos100", "lines1000"} <= got and "games100" not in got and "win10" not in got, got
+    assert "century" in got and "victory" in got
+    st.record_match(rank=3, total_players=100, kos=15, lines=4000, max_combo=12, survival_sec=545)
+    got = set(st.data["achievements"])
+    assert {"ko15", "ironman", "combo12", "lines5000"} <= got, got
+    # 연속 출석/완벽한 하루/주간 별
+    for i in range(3):
+        key = f"2026100{i + 1}"
+        st.mark_challenges("daily", key, st.daily_goal_ids(key)[:1])
+    st.ch()["daily_streak"]["last"] = "20261003"
+    st.mark_challenges("daily", "20261004", st.daily_goal_ids("20261004"))
+    assert {"streak3", "daily_perfect"} <= set(st.data["achievements"]), st.data["achievements"]
+    assert "streak7" not in st.data["achievements"]
+    st.ch()["stars"]["weekly"] = 9
+    st.mark_challenges("weekly", "2026W41", [CH.WEEKLY_GOALS["rush"][0]["id"]])
+    assert "weekly_stars" in st.data["achievements"]
+    # 연습 과제 달성 기반 업적
+    st.mark_challenges("practice", None, ["p_tst", "p_pc", "p_drill180"] + CH.PRACTICE_IDS[:17])
+    assert {"tspin_master", "perfect_clear", "drill_survivor", "practice_half"} <= set(st.data["achievements"]) and "practice_all" not in st.data["achievements"]
+    st.mark_challenges("practice", None, ["p_combo10", "p_b2b7", "p_pc2", "p_pps", "p_drill300", "p_tst3"])
+    assert {"combo10", "b2b7", "pc2", "pps", "drill300", "tst3", "master_5"} <= set(st.data["achievements"]) and "master_all" not in st.data["achievements"], st.data["achievements"]
+    st.mark_challenges("practice", None, CH.MASTER_IDS)
+    assert "master_all" in st.data["achievements"]
+    st.mark_challenges("practice", None, CH.PRACTICE_IDS)
+    assert "practice_all" in st.data["achievements"]
+    # 업적 개수 업적: 이번에 얻은 것까지 센다
+    assert len(st.data["achievements"]) >= 25 and "ach25" in st.data["achievements"] and "ach40" not in st.data["achievements"], len(st.data["achievements"])
+    st.data["achievements"] = [a for a in SM.ACHIEVEMENT_IDS if a not in ("ach40",)][:39] + ["ach25"]
+    st.mark_challenges("practice", None, ["p_pc"])
+    prog = st.achievement_progress()
+    assert prog["games100"][1] == 100 and prog["practice_all"] == (st.ch()["stars"]["practice"], 40) and prog["ach40"][1] == 40
+    # 한 주 별 3개 / 14일 연속
+    for i, g in enumerate(CH.WEEKLY_GOALS["fog"]):
+        st.mark_challenges("weekly", "2026W44", [g["id"]])
+    assert "weekly_perfect" in st.data["achievements"]
+    st.ch()["daily_streak"]["best"] = 13
+    st.mark_challenges("daily", "20261020", st.daily_goal_ids("20261020")[:1])
+    st.ch()["daily_streak"]["best"] = 14
+    st.mark_challenges("daily", "20261021", st.daily_goal_ids("20261021")[:1])
+    assert "streak14" in st.data["achievements"]
+    st.data["total_play_time_sec"] = 36000 - 100
+    st.record_match(rank=9, total_players=40, kos=0, lines=1, max_combo=0, survival_sec=200)
+    assert "playtime" in st.data["achievements"]
+    # 기록실 페이지 이동 (탭 클릭/키/휠) 과 화면
+    app = _app()
+    app.state = "RECORDS"
+    app.records_mode = "achv"
+    for pg in range(len(SM.ACH_CATEGORIES)):
+        app.records_ach_page = pg
+        app._render_records()
+    app.records_ach_page = 0
+    app._render_records()
+    ev = pygame.event.Event
+    app._handle_event(ev(pygame.KEYDOWN, key=pygame.K_PAGEDOWN, mod=0, unicode="", scancode=0))
+    assert app.records_ach_page == 1
+    app._handle_event(ev(pygame.KEYDOWN, key=pygame.K_5, mod=0, unicode="5", scancode=0))
+    assert app.records_ach_page == 4
+    app._handle_event(ev(pygame.KEYDOWN, key=pygame.K_PAGEDOWN, mod=0, unicode="", scancode=0))
+    assert app.records_ach_page == 4, "끝 페이지에서는 더 넘어가지 않음"
+    app._handle_event(ev(pygame.MOUSEWHEEL, x=0, y=1, flipped=False, precise_x=0.0, precise_y=1.0))
+    assert app.records_ach_page == 3
+    app._render_records()
+    app._handle_event(ev(pygame.MOUSEBUTTONDOWN, button=1, pos=app.records_buttons["ach_0"].center))
+    assert app.records_ach_page == 0
+    app._render_records()
+    app._handle_event(ev(pygame.MOUSEBUTTONDOWN, button=1, pos=app.records_buttons["ach_next"].center))
+    assert app.records_ach_page == 1
+    print("  OK achievement pages")
 
 
 def test_daily_and_weekly_hookup_hud_result_and_restart():

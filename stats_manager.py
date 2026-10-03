@@ -33,24 +33,79 @@ def size_bucket(total_players):
 STATS_FILE = data_path("stats.json")
 
 # 업적 (배틀로얄 전적에만 기록, 한 번 달성하면 유지). (id, 제목, 설명, 달성 조건 ctx -> bool)
-# ctx: rank, total, kos, lines, combo, secs, ladder_n(클리어한 난이도 수), daily_n(오늘의 도전을 한 날 수)
+# ctx: rank, total, kos, lines, combo, secs, ladder_n(클리어한 난이도 수), daily_n(오늘의 도전을 한 날 수), revenge_n,
+#      games/victories/top5/total_kos/total_lines(배틀로얄 누적), 도전 과제 쪽 daily_stars/weekly_stars/weekly_rules_n/practice_n/practice_done/ta/streak_best/daily_full
+# 카테고리(ACH_CATEGORY)별로 한 페이지에 최대 10개씩 기록실에서 보여 줌
 ACHIEVEMENTS = (
+    # ---- 대전
     ("first_ko", "첫 K.O.", "한 판에서 상대를 1명 처치", lambda c: c["kos"] >= 1),
+    ("ko5", "사냥꾼", "한 판에서 5명 처치", lambda c: c["kos"] >= 5),
+    ("ko10", "학살자", "한 판에서 10명 처치", lambda c: c["kos"] >= 10),
+    ("ko15", "전장의 지배자", "한 판에서 15명 처치", lambda c: c["kos"] >= 15),
     ("top10", "TOP 10 진입", "30인 이상 대전에서 10위 안", lambda c: c["total"] >= 30 and c["rank"] <= 10),
     ("victory", "로열 빅토리", "10인 이상 대전에서 우승", lambda c: c["total"] >= 10 and c["rank"] == 1),
     ("century", "백인의 왕", "100인 대전에서 우승", lambda c: c["total"] >= 100 and c["rank"] == 1),
-    ("ko5", "사냥꾼", "한 판에서 5명 처치", lambda c: c["kos"] >= 5),
-    ("ko10", "학살자", "한 판에서 10명 처치", lambda c: c["kos"] >= 10),
-    ("combo8", "콤보 장인", "한 판에서 8연속 콤보", lambda c: c["combo"] >= 8),
     ("marathon", "마라토너", "한 판에서 7분 이상 생존", lambda c: c["secs"] >= 420),      # 8~9분에 끝나는 경기라 10분은 사실상 우승권만 가능했음 -> 7분
-    ("ladder_all", "사다리 정복", "난이도 사다리 4단계 모두 클리어", lambda c: c["ladder_n"] >= 4),
-    ("daily3", "꾸준한 도전자", "오늘의 도전을 3일 이상 플레이", lambda c: c["daily_n"] >= 3),
+    ("ironman", "철인", "한 판에서 9분 이상 생존", lambda c: c["secs"] >= 540),
     ("revenge", "복수의 화신", "나를 자주 탈락시킨 라이벌 봇을 처치", lambda c: c.get("revenge_n", 0) >= 1),
+    # ---- 누적
+    ("games10", "신입 대원", "배틀로얄 10판 플레이", lambda c: c.get("games", 0) >= 10),
+    ("games100", "백전노장", "배틀로얄 100판 플레이", lambda c: c.get("games", 0) >= 100),
+    ("win3", "삼연의 왕관", "배틀로얄에서 우승 3번", lambda c: c.get("victories", 0) >= 3),
+    ("win10", "챔피언", "배틀로얄에서 우승 10번", lambda c: c.get("victories", 0) >= 10),
+    ("top5_10", "상위권 단골", "5위 안에 10번 들기", lambda c: c.get("top5", 0) >= 10),
+    ("kos100", "백 명 사냥", "누적 K.O. 100명", lambda c: c.get("total_kos", 0) >= 100),
+    ("lines1000", "천 줄의 길", "누적 1,000줄 지우기", lambda c: c.get("total_lines", 0) >= 1000),
+    ("lines5000", "오천 줄의 길", "누적 5,000줄 지우기", lambda c: c.get("total_lines", 0) >= 5000),
+    ("ladder_all", "사다리 정복", "난이도 사다리 4단계 모두 클리어", lambda c: c["ladder_n"] >= 4),
+    ("playtime", "시간 부자", "배틀로얄 누적 플레이 10시간", lambda c: c.get("play_min", 0) >= 600),
+    # ---- 도전
+    ("daily3", "꾸준한 도전자", "오늘의 도전을 3일 이상 플레이", lambda c: c["daily_n"] >= 3),
+    ("streak3", "사흘 연속", "오늘의 도전 별을 3일 연속으로 받기", lambda c: c.get("streak_best", 0) >= 3),
+    ("streak7", "일주일 개근", "오늘의 도전 별을 7일 연속으로 받기", lambda c: c.get("streak_best", 0) >= 7),
+    ("streak14", "보름 개근", "오늘의 도전 별을 14일 연속으로 받기", lambda c: c.get("streak_best", 0) >= 14),
+    ("daily_perfect", "완벽한 하루", "하루에 오늘의 도전 별 3개를 모두 받기", lambda c: c.get("daily_full", 0) >= 1),
     ("star_collector", "별 수집가", "오늘의 도전 별(★) 누적 30개", lambda c: c.get("daily_stars", 0) >= 30),
+    ("star_100", "별의 지배자", "오늘의 도전 + 주간 변형 별 누적 100개", lambda c: c.get("daily_stars", 0) + c.get("weekly_stars", 0) >= 100),
     ("variant_master", "변형 정복자", "주간 변형 규칙 네 가지 모두에서 별 1개 이상", lambda c: c.get("weekly_rules_n", 0) >= 4),
-    ("practice_all", "수련 완료", "연습 과제 12개를 모두 완료", lambda c: c.get("practice_n", 0) >= 12),
+    ("weekly_stars", "주간 단골", "주간 변형 별 누적 10개", lambda c: c.get("weekly_stars", 0) >= 10),
+    ("weekly_perfect", "완벽한 한 주", "한 주에 주간 변형 별 3개를 모두 받기", lambda c: c.get("weekly_full", 0) >= 1),
+    # ---- 연습·기술
+    ("combo8", "콤보 장인", "한 판에서 8연속 콤보", lambda c: c["combo"] >= 8),
+    ("combo12", "콤보 전설", "한 판에서 12연속 콤보", lambda c: c["combo"] >= 12),
+    ("practice_half", "수련생", f"연습 과제 {len(_ch.PRACTICE_IDS) // 2}개 완료", lambda c: c.get("practice_n", 0) >= len(_ch.PRACTICE_IDS) // 2),
+    ("practice_all", "수련 완료", f"연습 과제 {len(_ch.PRACTICE_IDS)}개를 모두 완료", lambda c: c.get("practice_n", 0) >= len(_ch.PRACTICE_IDS)),
+    ("tspin_master", "T-스핀 마스터", "연습에서 T-스핀 트리플 달성", lambda c: "p_tst" in c.get("practice_done", ())),
+    ("perfect_clear", "퍼펙트 클리어", "연습에서 퍼펙트 클리어 달성", lambda c: "p_pc" in c.get("practice_done", ())),
+    ("drill_survivor", "압박을 견딘 자", "압박 드릴에서 3분 버티기", lambda c: "p_drill180" in c.get("practice_done", ())),
+    ("sprinter", "스프린터", "타임어택 쿼드 5번을 60초 안에", lambda c: 0 < c.get("ta", {}).get("quad", 0) <= 60),
+    ("ta_all", "타임어택 완주", f"타임어택 {len(_ch.TA_MODES)}종 모두 기록 남기기", lambda c: len(c.get("ta", {})) >= len(_ch.TA_MODES)),
+    ("pps", "속도광", "연습에서 60초 안에 블록 90개 놓기", lambda c: "p_pps" in c.get("practice_done", ())),
+    # ---- 마스터
+    ("master_5", "마스터 입문", "마스터 연습 과제 5개 완료", lambda c: c.get("master_n", 0) >= 5),
+    ("master_all", "마스터 수료", f"마스터 연습 과제 {len(_ch.MASTER_IDS)}개를 모두 완료", lambda c: c.get("master_n", 0) >= len(_ch.MASTER_IDS)),
+    ("pc2", "퍼펙트 두 번", "연습에서 퍼펙트 클리어 2회", lambda c: "p_pc2" in c.get("practice_done", ())),
+    ("combo10", "연속의 달인", "연습에서 10연속 콤보", lambda c: "p_combo10" in c.get("practice_done", ())),
+    ("b2b7", "B2B 마스터", "연습에서 B2B 7연속", lambda c: "p_b2b7" in c.get("practice_done", ())),
+    ("drill300", "철벽", "압박 드릴에서 5분 버티기", lambda c: "p_drill300" in c.get("practice_done", ())),
+    ("sprint90", "질주", "타임어택 40줄 스프린트를 90초 안에", lambda c: 0 < c.get("ta", {}).get("sprint", 0) <= 90),
+    ("tst3", "트리플의 지배자", "연습에서 T-스핀 트리플 3번", lambda c: "p_tst3" in c.get("practice_done", ())),
+    ("ach25", "수집가", "업적 25개 달성", lambda c: c.get("ach_n", 0) >= 25),
+    ("ach40", "명예의 전당", "업적 40개 달성", lambda c: c.get("ach_n", 0) >= 40),
 )
-CHALLENGE_ACHIEVEMENTS = ("star_collector", "variant_master", "practice_all")      # 도전 과제를 저장할 때 따로 판정하는 업적
+# 기록실 업적 페이지 (카테고리 id, 이름)와 업적별 카테고리
+ACH_CATEGORIES = (("battle", "대전"), ("career", "누적"), ("challenge", "도전"), ("skill", "연습·기술"), ("master", "마스터"))
+ACH_CATEGORY = {}
+for _cat, _ids in (("battle", ("first_ko", "ko5", "ko10", "ko15", "top10", "victory", "century", "marathon", "ironman", "revenge")),
+                   ("career", ("games10", "games100", "win3", "win10", "top5_10", "kos100", "lines1000", "lines5000", "ladder_all", "playtime")),
+                   ("challenge", ("daily3", "streak3", "streak7", "streak14", "daily_perfect", "star_collector", "star_100", "variant_master", "weekly_stars", "weekly_perfect")),
+                   ("skill", ("combo8", "combo12", "practice_half", "practice_all", "tspin_master", "perfect_clear", "drill_survivor", "sprinter", "ta_all", "pps")),
+                   ("master", ("master_5", "master_all", "pc2", "combo10", "b2b7", "drill300", "sprint90", "tst3", "ach25", "ach40"))):
+    for _aid in _ids:
+        ACH_CATEGORY[_aid] = _cat
+CHALLENGE_ACHIEVEMENTS = ("streak3", "streak7", "streak14", "daily_perfect", "star_collector", "star_100", "variant_master", "weekly_stars", "weekly_perfect",
+                          "practice_half", "practice_all", "tspin_master", "perfect_clear", "drill_survivor", "sprinter", "ta_all", "pps",
+                          "master_5", "master_all", "pc2", "combo10", "b2b7", "drill300", "sprint90", "tst3", "ach25", "ach40")      # 도전 과제를 저장할 때 따로 판정하는 업적 (경기 기록 없이도 달성)
 ACHIEVEMENT_IDS = tuple(a[0] for a in ACHIEVEMENTS)
 
 DEFAULT_STATS = {
@@ -114,12 +169,15 @@ def _clean_challenges(v):
 
     def nn(x):
         return int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) and x >= 0 else 0
-    out = {"v": 1, "practice": {"done": [], "ta_best": 0}, "daily": {}, "weekly": {},
+    out = {"v": 1, "practice": {"done": [], "ta": {}}, "daily": {}, "weekly": {},
            "daily_streak": {"cur": 0, "best": 0, "last": ""}, "stars": {"daily": 0, "weekly": 0, "practice": 0}, "weekly_rules": []}
     p = v.get("practice")
     if isinstance(p, dict):
         out["practice"]["done"] = [g for g in _ch.PRACTICE_IDS if g in ids(p.get("done"), set(_ch.PRACTICE_IDS))]
-        out["practice"]["ta_best"] = nn(p.get("ta_best"))
+        ta = p.get("ta") if isinstance(p.get("ta"), dict) else {}
+        out["practice"]["ta"] = {m: nn(ta.get(m)) for m in _ch.TA_BY_ID if nn(ta.get(m)) > 0}
+        if "quad" not in out["practice"]["ta"] and nn(p.get("ta_best")) > 0:         # v1.1.4 이전 저장 형식 (쿼드 5번 최고 기록 하나)
+            out["practice"]["ta"]["quad"] = nn(p.get("ta_best"))
     dd = v.get("daily")
     if isinstance(dd, dict):
         for k, rec in dd.items():
@@ -257,8 +315,23 @@ class StatsManager:
         d = self.data
         best_secs = max([m.get("survival_sec", 0) for m in d.get("recent_matches", []) if isinstance(m.get("survival_sec", 0), (int, float))] or [0])
         mk, cb = d.get("max_ko", 0), d.get("max_combo", 0)
-        return {"first_ko": (min(mk, 1), 1), "ko5": (min(mk, 5), 5), "ko10": (min(mk, 10), 10), "combo8": (min(cb, 8), 8),
-                "marathon": (min(int(best_secs), 420), 420), "ladder_all": (len(d.get("ladder", [])), 4), "daily3": (min(len(d.get("daily", {})), 3), 3)}
+        cc = self._challenge_ctx()
+        n_pr = len(_ch.PRACTICE_IDS)
+
+        def cap(v, goal):
+            return (min(int(v), goal), goal)
+        return {"first_ko": cap(mk, 1), "ko5": cap(mk, 5), "ko10": cap(mk, 10), "ko15": cap(mk, 15), "combo8": cap(cb, 8), "combo12": cap(cb, 12),
+                "marathon": cap(best_secs, 420), "ironman": cap(best_secs, 540), "ladder_all": (len(d.get("ladder", [])), 4), "daily3": (min(len(d.get("daily", {})), 3), 3),
+                "games10": cap(d.get("total_games", 0), 10), "games100": cap(d.get("total_games", 0), 100),
+                "win3": cap(d.get("victories", 0), 3), "win10": cap(d.get("victories", 0), 10), "top5_10": cap(d.get("top_5", 0), 10),
+                "kos100": cap(d.get("total_kos", 0), 100), "lines1000": cap(d.get("total_lines", 0), 1000), "lines5000": cap(d.get("total_lines", 0), 5000),
+                "streak3": cap(cc["streak_best"], 3), "streak7": cap(cc["streak_best"], 7),
+                "star_collector": cap(cc["daily_stars"], 30), "star_100": cap(cc["daily_stars"] + cc["weekly_stars"], 100),
+                "variant_master": cap(cc["weekly_rules_n"], 4), "weekly_stars": cap(cc["weekly_stars"], 10),
+                "practice_half": cap(cc["practice_n"], n_pr // 2), "practice_all": cap(cc["practice_n"], n_pr), "ta_all": cap(len(cc["ta"]), len(_ch.TA_MODES)),
+                "playtime": cap(d.get("total_play_time_sec", 0) // 60, 600), "streak14": cap(cc["streak_best"], 14),
+                "master_5": cap(cc["master_n"], 5), "master_all": cap(cc["master_n"], len(_ch.MASTER_IDS)),
+                "ach25": cap(len(d.get("achievements", [])), 25), "ach40": cap(len(d.get("achievements", [])), 40)}
 
     # ------------------------------------------------------------------ 도전 과제 (연습 / 오늘의 도전 / 주간 변형)
     def ch(self):
@@ -351,13 +424,35 @@ class StatsManager:
         yesterday = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y%m%d")
         return (st["cur"] if st["last"] in (today, yesterday) else 0), st["best"]
 
+    def _challenge_ctx(self):
+        """업적 판정에 쓰는 도전 과제 쪽 값 (경기 기록과 상관없이 연습/도전/주간 기록에서 나옴)"""
+        c = self.ch()
+        return {"daily_stars": c["stars"]["daily"], "weekly_stars": c["stars"]["weekly"], "weekly_rules_n": len(c["weekly_rules"]),
+                "practice_n": len(c["practice"]["done"]), "practice_done": set(c["practice"]["done"]), "ta": dict(c["practice"]["ta"]),
+                "streak_best": c["daily_streak"]["best"], "daily_full": sum(1 for r in c["daily"].values() if len(r.get("done", [])) >= 3),
+                "weekly_full": sum(1 for r in c["weekly"].values() if len(r.get("done", [])) >= 3),
+                "master_n": sum(1 for x in c["practice"]["done"] if x in _ch.MASTER_IDS)}
+
+    def save_time_attack(self, bests):
+        """타임어택 종류별 최고 기록(초)을 저장된 것과 비교해 더 빠른 것만 반영하고, 그 덕에 달성한 업적까지 판정. 바뀐 것이 있으면 True"""
+        ta = self.ch()["practice"]["ta"]
+        changed = False
+        for mode, secs in bests.items():
+            if mode in _ch.TA_BY_ID and int(secs) > 0 and (mode not in ta or int(secs) < ta[mode]):
+                ta[mode] = int(secs)
+                changed = True
+        if changed:
+            self.grant_challenge_achievements()
+            self.save()
+        return changed
+
     def grant_challenge_achievements(self):
         """도전 과제 저장 직후 업적 판정 (경기 기록 없이도 연습/도전으로 달성 가능). 새로 달성한 id 목록"""
-        c = self.ch()
-        ctx = {"daily_stars": c["stars"]["daily"], "weekly_rules_n": len(c["weekly_rules"]), "practice_n": len(c["practice"]["done"])}
+        ctx = self._challenge_ctx()
         have = self.data.setdefault("achievements", [])
         got = []
         for aid, _t, _d, ok in ACHIEVEMENTS:
+            ctx["ach_n"] = len(have)                                          # 업적 개수 업적은 이번에 얻은 것까지 센다 (목록 맨 뒤에 둠)
             if aid in CHALLENGE_ACHIEVEMENTS and aid not in have and ok(ctx):
                 have.append(aid)
                 got.append(aid)
@@ -452,18 +547,6 @@ class StatsManager:
             self.last_ladder_clear = difficulty
         d["total_games"] = prev_games + 1
         self.last_new_achievements = []                    # 이번 경기로 새로 달성한 업적 id
-        if mode == "battle":
-            ctx = {"rank": rank, "total": total_players, "kos": kos, "lines": lines, "combo": max_combo, "secs": survival_sec,
-                   "ladder_n": len(d.get("ladder", [])), "daily_n": len(d.get("daily", {})),
-                   "revenge_n": d.get("rivals", {}).get("revenges", 0),
-                   "daily_stars": self.ch()["stars"]["daily"], "weekly_rules_n": len(self.ch()["weekly_rules"]),
-                   "practice_n": len(self.ch()["practice"]["done"])}
-            have = d.setdefault("achievements", [])
-            for aid, _title, _desc, ok in ACHIEVEMENTS:
-                if aid not in have and ok(ctx):
-                    have.append(aid)
-                    self.last_new_achievements.append(aid)
-            d["achievements"] = [x for x in ACHIEVEMENT_IDS if x in have]
         
         is_victory = (rank == 1)
         if is_victory:
@@ -483,6 +566,22 @@ class StatsManager:
         d["max_combo"] = max(d.get("max_combo", 0), max_combo)
         d["total_lines"] = d.get("total_lines", 0) + lines
         d["total_play_time_sec"] = d.get("total_play_time_sec", 0) + int(survival_sec)
+
+        if mode == "battle":                               # 업적은 누적 값을 모두 갱신한 뒤에 판정
+            ctx = {"rank": rank, "total": total_players, "kos": kos, "lines": lines, "combo": max_combo, "secs": survival_sec,
+                   "ladder_n": len(d.get("ladder", [])), "daily_n": len(d.get("daily", {})),
+                   "revenge_n": d.get("rivals", {}).get("revenges", 0),
+                   "games": d.get("total_games", 0), "victories": d.get("victories", 0), "top5": d.get("top_5", 0),
+                   "total_kos": d.get("total_kos", 0), "total_lines": d.get("total_lines", 0), "play_min": d.get("total_play_time_sec", 0) // 60}
+            ctx.update(self._challenge_ctx())
+            have = d.setdefault("achievements", [])
+            for aid, _title, _desc, ok in ACHIEVEMENTS:
+                ctx["ach_n"] = len(have)
+                if aid not in have and ok(ctx):
+                    have.append(aid)
+                    self.last_new_achievements.append(aid)
+            d["achievements"] = [x for x in ACHIEVEMENT_IDS if x in have]
+
         
         # 최근 경기 목록 기록 (최대 100경기)
         match_entry = {
@@ -567,7 +666,7 @@ class StatsManager:
 SKIN_UNLOCKS = {
     "pixel": ("업적 3개 달성", lambda d: len(d.get("achievements", [])) >= 3),
     "glass": ("로열 빅토리(우승) 1회", lambda d: d.get("victories", 0) >= 1),
-    "starlight": ("도전 과제 별(★) 누적 60개", lambda d: _stars_of(d) >= 60),
+    "starlight": ("도전 과제 별(★) 누적 90개", lambda d: _stars_of(d) >= 90),
 }
 
 

@@ -8,6 +8,7 @@ import time
 import math
 import random
 import pygame
+import challenges
 from gfx import CANVAS, Canvas, HiFont, mix_color as _mix
 from config import is_colorblind
 from config import NAME_COLORS
@@ -1465,30 +1466,7 @@ class UIRenderer:
         x, y, w = self._right_x(ox), self.main_board_y + 390 + oy, 108
         kind = match.challenge_kind
         if kind == "practice":
-            h = 176
-            rect = pygame.Rect(x, y, w, h)
-            self._panel(rect, border=C_GREEN)
-            self._draw_text(f"과제 {len(ch.done)}/{len(ch.order)}", self.font_tiny, C_GREEN, rect.centerx, rect.y + 7, "midtop")
-            cur = match.practice_current_task()
-            if cur:
-                lines = self.wrap(cur[1], self.font_tiny, w - 16)[:4]
-                col = C_TEXT
-            else:
-                lines = ["타임어택", f"쿼드 {match.ta_quads}/{__import__('challenges').TA_QUADS}",
-                         f"{int(match.elapsed - match.ta_t0) if match.ta_t0 is not None else 0}초", f"최고 {match.ta_best}초" if match.ta_best else "최고 -"]
-                col = C_GOLD
-            for i, ln in enumerate(lines):
-                self._draw_text(ln, self.font_tiny, col, rect.x + 8, rect.y + 30 + i * 16)
-            sq, gap = 12, 4
-            gx0 = rect.x + (w - (6 * sq + 5 * gap)) // 2
-            for i, gid in enumerate(ch.order):
-                cx, cy = gx0 + (i % 6) * (sq + gap), rect.y + 100 + (i // 6) * (sq + gap)
-                if gid in ch.done:
-                    pygame.draw.rect(self.screen, C_GOLD, (cx, cy, sq, sq), border_radius=3)
-                else:
-                    pygame.draw.rect(self.screen, (60, 72, 104), (cx, cy, sq, sq), 1, border_radius=3)
-            self._draw_text("N: 다음 과제", self.font_tiny, C_DIM, rect.centerx, rect.bottom - 22, "midtop")
-            return
+            return                                                      # 연습: 과제 목록/타임어택은 좌우 패널(_render_practice_sides)에서 보여 줌
         n = len(ch.order)
         rect = pygame.Rect(x, y, w, 28 + n * 34 + 6)
         accent = C_ORANGE if kind == "weekly" else C_GREEN
@@ -1512,6 +1490,118 @@ class UIRenderer:
             pygame.draw.rect(self.screen, (28, 34, 56), (rect.x + 8, ry + 29, w - 16, 3), border_radius=1)
             if ratio > 0:
                 pygame.draw.rect(self.screen, accent, (rect.x + 8, ry + 29, max(2, int((w - 16) * ratio)), 3), border_radius=1)
+
+    PRACTICE_KEYS = (("G", "쓰레기 받기 (Shift+G 8줄)"), ("V", "압박 드릴 켜기/끄기"), ("B", "보드 초기화"),
+                     ("N", "다음 과제 (Shift+N 이전)"), ("Y", "타임어택 켜기/종류 변경"), ("F1", "규칙 카드"))
+    practice_tab_rects = {}          # 연습 과제 목록 위쪽 페이지 탭의 클릭 영역 {난이도: Rect} (프레임마다 갱신)
+    practice_row_rects = {}          # 연습 과제 목록의 각 과제 행 클릭 영역 {과제 id: Rect} (프레임마다 갱신, 클릭하면 그 과제를 고름)
+    practice_page = None             # 연습 과제 목록에서 보고 있는 페이지(난이도 1~3). None이면 지금 도전 중인 과제의 페이지를 따라감
+    _prac_last_cur = None
+
+    def _render_practice_sides(self, match, ox=0, oy=0):
+        """연습 모드 좌우 빈 공간: 왼쪽 = 과제 목록(기초/중급/고급 페이지, 현재 과제 강조 + 진행도), 오른쪽 = 이번 연습 기록 + 연습 조작키 + 타임어택"""
+        ch = getattr(match, "challenge", None)
+        if ch is None:
+            return
+        pw = min(330, self.main_board_x - 145 - 15)
+        top = 78 + oy
+        tier_col = {1: C_GREEN, 2: C_GOLD, 3: C_ORANGE, 4: (200, 150, 255)}
+        cur = match.practice_current_task()
+        cur_id = ch.order[cur[0]] if cur else None
+        if cur_id != self._prac_last_cur:                               # N 키 등으로 과제가 바뀌면 그 과제의 페이지로 자동 이동
+            self._prac_last_cur = cur_id
+            self.practice_page = None
+        auto_page = ch.by_id[cur_id]["tier"] if cur_id else 1
+        page = self.practice_page if self.practice_page in (1, 2, 3, 4) else auto_page
+
+        # --- 왼쪽: 과제 목록 (한 페이지 = 한 난이도)
+        rows = [gid for gid in ch.order if ch.by_id[gid]["tier"] == page]
+        lr = pygame.Rect(self.main_board_x - 145 - pw + ox, top, pw, 36 + 34 + len(rows) * 44 + 8)
+        self._panel(lr, border=tier_col[page])
+        self._draw_text(f"연습 과제  {len(ch.done)}/{len(ch.order)}", self.font_hud, C_GREEN, lr.x + 14, lr.y + 8)
+        tw = (pw - 20 - 12) // 4
+        for t in (1, 2, 3, 4):
+            tr = pygame.Rect(lr.x + 10 + (t - 1) * (tw + 4), lr.y + 38, tw, 26)
+            self.practice_tab_rects[t] = tr
+            ids = [gid for gid in ch.order if ch.by_id[gid]["tier"] == t]
+            n_done = sum(1 for gid in ids if gid in ch.done)
+            on = t == page
+            hov = tr.collidepoint(pygame.mouse.get_pos())
+            pygame.draw.rect(self.screen, _mix((16, 20, 34), tier_col[t], 0.30 if on else (0.16 if hov else 0.04)), tr, border_radius=7)
+            pygame.draw.rect(self.screen, tier_col[t] if on else (60, 72, 104), tr, 2 if on else 1, border_radius=7)
+            full = n_done == len(ids)
+            self._draw_text(f"{challenges.PRACTICE_TIER_NAMES[t]} {n_done}/{len(ids)}", self.font_tiny, tier_col[t] if (on or full) else C_DIM, tr.centerx, tr.centery, "center")
+        for i, gid in enumerate(rows):
+            g = ch.by_id[gid]
+            ry = lr.y + 70 + i * 44
+            row = pygame.Rect(lr.x + 6, ry, pw - 12, 41)
+            got = gid in ch.done
+            if not got:
+                self.practice_row_rects[gid] = row
+            if gid == cur_id:
+                pygame.draw.rect(self.screen, (22, 44, 40), row, border_radius=8)
+                pygame.draw.rect(self.screen, C_GREEN, row, 1, border_radius=8)
+            elif not got and row.collidepoint(pygame.mouse.get_pos()):        # 마우스를 올린 과제: 클릭하면 이 과제로 바꿈
+                pygame.draw.rect(self.screen, (24, 30, 52), row, border_radius=8)
+                pygame.draw.rect(self.screen, (90, 110, 160), row, 1, border_radius=8)
+            box = pygame.Rect(row.x + 8, row.y + 11, 16, 16)
+            if got:
+                pygame.draw.rect(self.screen, C_GOLD, box, border_radius=4)
+                pygame.draw.lines(self.screen, (24, 20, 8), False, [(box.x + 4, box.centery), (box.x + 7, box.bottom - 5), (box.right - 4, box.y + 4)], 2)
+            else:
+                pygame.draw.rect(self.screen, (60, 72, 104), box, 1, border_radius=4)
+            lines = self.wrap(g["text"], self.font_tiny, row.w - 52)[:2]
+            for j, ln in enumerate(lines):
+                self._draw_text(ln, self.font_tiny, C_DIM if got else C_TEXT, row.x + 34, row.y + (6 if len(lines) > 1 else 12) + j * 15)
+            if gid == cur_id:
+                prog = ch.progress(gid)
+                if prog:
+                    self._draw_text(f"{self._fmt_goal_value(g['metric'], prog[0])}/{self._fmt_goal_value(g['metric'], prog[1])}", self.font_tiny, C_GREEN, row.right - 8, row.y + 6, "topright")
+                    pygame.draw.rect(self.screen, (28, 34, 56), (row.x + 34, row.bottom - 5, row.w - 44, 3), border_radius=1)
+                    if prog[0] > 0:                                     # 0일 때는 그리지 않음 (최소 폭 2px 때문에 점으로 보이던 문제)
+                        pygame.draw.rect(self.screen, C_GREEN, (row.x + 34, row.bottom - 5, max(2, int((row.w - 44) * prog[0] / max(1, prog[1]))), 3), border_radius=1)
+
+        # --- 오른쪽: 이번 연습 기록 + 조작키 + 타임어택
+        rr = pygame.Rect(self.main_board_x + self.main_board_w + 145 + ox, top, pw, 0)
+        m = ch.m
+        stats = [("지운 줄", m["lines"]), ("쿼드", m["quads"]), ("T-스핀", m["tspins"]), ("최고 콤보", m["combo_max"]),
+                 ("최고 B2B", m["b2b_chain_max"]), ("퍼펙트", m["pcs"]), ("막은 줄", m["canceled_total"]),
+                 ("드릴 최고", f"{match.drill_best}초" if getattr(match, "drill_best", 0) else "-")]
+        rr.h = 36 + 4 * 40 + 14
+        self._panel(rr, border=C_ACCENT)
+        self._draw_text("이번 연습 기록", self.font_hud, C_ACCENT, rr.x + 14, rr.y + 8)
+        cw = (pw - 20) // 2
+        for i, (lab, val) in enumerate(stats):
+            cx = rr.x + 10 + (i % 2) * cw
+            cy = rr.y + 38 + (i // 2) * 40
+            cell = pygame.Rect(cx, cy, cw - 6, 34)
+            pygame.draw.rect(self.screen, (22, 27, 46), cell, border_radius=8)
+            self._draw_text(lab, self.font_tiny, C_DIM, cell.x + 8, cell.y + 3)
+            self._draw_text(str(val), self.font_hud, C_TEXT if val not in (0, "-") else C_DIM, cell.right - 8, cell.bottom - 3, "bottomright")
+        kr = pygame.Rect(rr.x, rr.bottom + 10, pw, 36 + len(self.PRACTICE_KEYS) * 28 + 8)
+        self._panel(kr)
+        self._draw_text("연습 조작", self.font_hud, C_GOLD, kr.x + 14, kr.y + 8)
+        for i, (k, d) in enumerate(self.PRACTICE_KEYS):
+            ky = kr.y + 40 + i * 28
+            kw = max(34, self.font_tiny.size(k)[0] + 16)
+            pygame.draw.rect(self.screen, (34, 42, 70), (kr.x + 12, ky, kw, 22), border_radius=6)
+            self._draw_text(k, self.font_tiny, C_TEXT, kr.x + 12 + kw // 2, ky + 11, "center")
+            self._draw_text(d, self.font_tiny, C_DIM, kr.x + 12 + kw + 10, ky + 11, "midleft")
+        tr = pygame.Rect(kr.x, kr.bottom + 10, pw, 100)
+        on = bool(match.ta_mode)
+        self._panel(tr, border=C_GOLD if on else (74, 88, 128))
+        if on:
+            _id, name, goal, unit = challenges.TA_BY_ID[match.ta_mode]
+            secs = int(match.elapsed - match.ta_t0) if match.ta_t0 is not None else 0
+            self._draw_text(f"타임어택 · {name}", self.font_hud, C_GOLD, tr.x + 14, tr.y + 8)
+            self._draw_text(f"{match.ta_n}/{goal}{unit}", self.font_hud, C_TEXT, tr.x + 14, tr.y + 50)
+            self._draw_text(f"{secs}초", self.font_hud, C_TEXT, tr.centerx + 20, tr.y + 50)
+            self._draw_text(f"최고 {match.ta_best}초" if match.ta_best else "최고 -", self.font_small, C_DIM, tr.right - 14, tr.y + 54, "topright")
+        else:
+            self._draw_text("타임어택  (Y로 시작)", self.font_hud, C_DIM, tr.x + 14, tr.y + 8)
+            for i, (mid, name, _goal, _unit) in enumerate(challenges.TA_MODES):
+                b = int(match.ta_bests.get(mid, 0))
+                self._draw_text(f"{name} {b}초" if b else f"{name} -", self.font_tiny, C_TEXT if b else C_DIM, tr.x + 14 + (i % 2) * (pw // 2 - 4), tr.y + 38 + (i // 2) * 18)
 
     def _render_incoming_box(self, engine, ox=0, oy=0):
         rect = pygame.Rect(self._right_x(ox), self.main_board_y + 276 + oy, 108, 104)
@@ -1554,8 +1644,11 @@ class UIRenderer:
 
     def _render_mini_boards(self, match, ox=0, oy=0):
         self.mini_board_rects.clear()
+        self.practice_tab_rects = {}
+        self.practice_row_rects = {}
         if getattr(match, "practice", False):
-            return                                          # 연습 모드: 상대 자리는 빈 보드라 그리지 않음
+            self._render_practice_sides(match, ox, oy)      # 연습 모드: 상대 자리는 비어 있으니 좌우를 과제 목록/연습 기록으로 채움
+            return
         others = [(pid, p) for pid, p in match.players.items() if pid != match.local_player_id]
         # 후반 재배치: 단계가 오를 때만 (죽을 때마다가 아님) 그 시점의 생존자만 다시 배치. 다음 단계까지는 자리를 유지해 특정 상대를 계속 눈으로 따라갈 수 있고,
         # 그 사이 탈락한 카드는 지금처럼 탈락 표시로 남음. 경기마다 한 번씩만 단계가 올라감 (단계는 내려가지 않음)

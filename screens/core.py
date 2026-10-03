@@ -274,7 +274,7 @@ class CoreMixin:
         )
         self.match.challenge_kind = kind
         if practice:
-            self.match.ta_best = int(self.stats_mgr.ch()["practice"]["ta_best"])
+            self.match.ta_bests = dict(self.stats_mgr.ch()["practice"]["ta"])
         self.match.local_color = self.name_color
         self.match.drill_best = int(self.settings.get("drill_best", 0) or 0)
         self.match.set_target_mode(self.settings.get("target_mode"))        # 마지막으로 쓴 조준 모드를 이어서 사용

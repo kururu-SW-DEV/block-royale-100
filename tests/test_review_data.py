@@ -166,19 +166,19 @@ def test_achievements():
     from stats_manager import StatsManager, ACHIEVEMENTS, ACHIEVEMENT_IDS
     path = os.path.join(tempfile.mkdtemp(), "stats.json")
     sm = StatsManager(path)
-    assert len(ACHIEVEMENTS) == 14 and len(set(ACHIEVEMENT_IDS)) == 14      # 11번째 복수의 화신, 12~14번째 도전 과제 업적(별 수집가/변형 정복자/수련 완료)
+    assert len(ACHIEVEMENTS) == 50 and len(set(ACHIEVEMENT_IDS)) == 50      # 대전/누적/도전/연습·기술/마스터 각 10개 (카테고리별 한 페이지)
     sm.record_match(40, 100, 0, 5, 1, 60)
     assert sm.last_new_achievements == [] and sm.achievements_done() == []
     sm.record_match(1, 100, 6, 50, 3, 300)
-    assert sm.last_new_achievements == ["first_ko", "top10", "victory", "century", "ko5"], sm.last_new_achievements
+    assert sm.last_new_achievements == ["first_ko", "ko5", "top10", "victory", "century"], sm.last_new_achievements
     sm.record_match(1, 100, 6, 50, 3, 300)
     assert sm.last_new_achievements == [], "이미 달성한 업적은 다시 알리지 않음"
     sm.record_match(30, 50, 12, 90, 9, 700, mode="survival")             # 서바이벌 경기는 업적과 무관
-    assert sm.achievements_done() == ["first_ko", "top10", "victory", "century", "ko5"]
+    assert sm.achievements_done() == ["first_ko", "ko5", "top10", "victory", "century"]
     sm.record_match(9, 40, 10, 90, 8, 650)
-    assert set(sm.last_new_achievements) == {"ko10", "combo8", "marathon"}
+    assert set(sm.last_new_achievements) == {"ko10", "combo8", "marathon", "ironman"}
     sm2 = StatsManager(path)                                             # 저장 후 다시 불러와도 유지
-    assert sm2.achievements_done() == sm.achievements_done() and len(sm2.achievements_done()) == 8
+    assert sm2.achievements_done() == sm.achievements_done() and len(sm2.achievements_done()) == 9
     d = json.load(open(path, encoding="utf-8"))
     d["achievements"] = ["victory", "없는업적", 5]                        # 손상/알 수 없는 값은 걸러냄
     json.dump(d, open(path, "w", encoding="utf-8"))

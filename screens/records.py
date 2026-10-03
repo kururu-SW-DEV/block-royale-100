@@ -3,7 +3,7 @@ Block Royale 100 - 전적 기록실 화면
 BlockRoyaleApp(main.py)이 상속하는 믹스인: 메서드 본문은 원래 main.py에 있던 그대로이며 self로 앱 상태를 공유함
 """
 
-from stats_manager import SIZE_BUCKETS, SIZE_BUCKET_IDS, ACHIEVEMENTS
+from stats_manager import SIZE_BUCKETS, SIZE_BUCKET_IDS, ACHIEVEMENTS, ACH_CATEGORIES, ACH_CATEGORY
 from app_common import BOT_DIFFICULTY_LABELS, C_ACCENT, C_DIM, C_GOLD, C_GREEN, C_ORANGE, C_TEXT, SCREEN_WIDTH, _mix, pygame
 
 
@@ -26,7 +26,45 @@ class RecordsMixin:
         i = RECORDS_DIFF_OPTIONS.index(self.records_diff) if self.records_diff in RECORDS_DIFF_OPTIONS else 0
         self._records_set_filter(diff=RECORDS_DIFF_OPTIONS[(i + 1) % len(RECORDS_DIFF_OPTIONS)])
 
+    def _records_set_ach_page(self, page):
+        page = max(0, min(len(ACH_CATEGORIES) - 1, int(page)))
+        if page != self.records_ach_page:
+            self.sound_mgr.play('move')
+            self.records_ach_page = page
+
     def _handle_records_event(self, event):
+        if self.records_mode == "achv":                                  # 업적 탭: 스크롤 없이 페이지(카테고리) 단위로 넘김
+            if event.type == pygame.MOUSEWHEEL:
+                self._records_set_ach_page(self.records_ach_page - (1 if event.y > 0 else -1))
+                return
+            if event.type == pygame.KEYDOWN:
+                page_keys = {pygame.K_1: 0, pygame.K_2: 1, pygame.K_3: 2, pygame.K_4: 3, pygame.K_5: 4,
+                             pygame.K_KP1: 0, pygame.K_KP2: 1, pygame.K_KP3: 2, pygame.K_KP4: 3, pygame.K_KP5: 4}
+                if event.key in page_keys:
+                    self._records_set_ach_page(page_keys[event.key])
+                    return
+                if event.key in (pygame.K_PAGEUP, pygame.K_UP, pygame.K_KP8):
+                    self._records_set_ach_page(self.records_ach_page - 1)
+                    return
+                if event.key in (pygame.K_PAGEDOWN, pygame.K_DOWN, pygame.K_KP2):
+                    self._records_set_ach_page(self.records_ach_page + 1)
+                    return
+                if event.key == pygame.K_HOME:
+                    self._records_set_ach_page(0)
+                    return
+                if event.key == pygame.K_END:
+                    self._records_set_ach_page(len(ACH_CATEGORIES) - 1)
+                    return
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                for btn_id, rect in self.records_buttons.items():
+                    if rect.collidepoint(event.pos) and btn_id.startswith("ach_"):
+                        if btn_id == "ach_prev":
+                            self._records_set_ach_page(self.records_ach_page - 1)
+                        elif btn_id == "ach_next":
+                            self._records_set_ach_page(self.records_ach_page + 1)
+                        else:
+                            self._records_set_ach_page(int(btn_id[4:]))
+                        return
         if event.type == pygame.KEYDOWN and event.key in RECORDS_SIZE_KEYS:
             self._records_set_filter(size=RECORDS_SIZE_KEYS[event.key])
             return
@@ -101,7 +139,7 @@ class RecordsMixin:
             pygame.draw.rect(self.screen, _mix((16, 20, 34), col, 0.30 if on else (0.14 if hov else 0.05)), r, border_radius=8)
             pygame.draw.rect(self.screen, col if on else (60, 72, 104), r, 2 if on else 1, border_radius=8)
             self._t(label, self.font_small, col if on else C_DIM, r.centerx, r.centery, "center")
-        self._t("1~4 규모 · F 난이도" if self.records_mode != "achv" else "← → 탭", self.font_tiny, C_DIM, box_x + box_w, tab_y + 15, "midright")
+        self._t("1~4 규모 · F 난이도" if self.records_mode != "achv" else "← → 위 탭 이동  ·  1~5 · PgUp/PgDn 업적 페이지", self.font_tiny, C_DIM, box_x + box_w, tab_y + 15, "midright")
         if self.records_mode == "achv":
             self._render_achievements(box_x, box_y, box_w)
             self._records_bottom_buttons(mx, my, box_x, box_y, box_w)
@@ -314,33 +352,78 @@ class RecordsMixin:
         self._t("● 우승   파란 선: 5판 이동 평균", self.font_tiny, C_DIM, ix + iw, gy + gh + 34, "topright")
 
     def _render_achievements(self, box_x, box_y, box_w):
-        """업적 탭: 카드 (한 줄 7개) (달성은 밝게, 미달성은 흐리게 + 조건 표시)"""
+        """업적 탭: 카테고리(대전/누적/도전/연습·기술)별 한 페이지에 카드 최대 10개 (한 줄 5개 x 2줄). 달성은 밝게, 미달성은 흐리게 + 조건/진행도"""
+        mx, my = pygame.mouse.get_pos()
         done = set(self.stats_mgr.achievements_done())
         prog = self.stats_mgr.achievement_progress()
+        n_pages = len(ACH_CATEGORIES)
+        self.records_ach_page = max(0, min(n_pages - 1, self.records_ach_page))
         self._t(f"달성한 업적  {len(done)} / {len(ACHIEVEMENTS)}", self.font_mid, C_TEXT, box_x + 25, box_y + 20)
-        self._t("배틀로얄 경기에서 달성하면 기록됩니다 (서바이벌/연습은 해당 없음)", self.font_tiny, C_DIM, box_x + box_w - 25, box_y + 26, "topright")
-        cols, rows = 7, 2                                              # 업적이 14개라 한 줄에 7개
-        gap = 12
-        cw = (box_w - 50 - gap * (cols - 1)) // cols
-        ch = 168
-        for i, (aid, title, desc, _ok) in enumerate(ACHIEVEMENTS):
-            r = pygame.Rect(box_x + 25 + (i % cols) * (cw + gap), box_y + 66 + (i // cols) * (ch + gap), cw, ch)
+        self._t("배틀로얄 경기와 연습·도전 기록으로 달성합니다 (한 번 달성하면 유지)", self.font_tiny, C_DIM, box_x + box_w - 25, box_y + 26, "topright")
+
+        # 페이지 탭 (카테고리): 이름 + 달성 수 + 얇은 진행 바
+        gap = 10
+        tw = (box_w - 50 - gap * (n_pages - 1)) // n_pages
+        for i, (cid, cname) in enumerate(ACH_CATEGORIES):
+            ids = [a[0] for a in ACHIEVEMENTS if ACH_CATEGORY.get(a[0]) == cid]
+            n_got = sum(1 for x in ids if x in done)
+            r = pygame.Rect(box_x + 25 + i * (tw + gap), box_y + 56, tw, 42)
+            self.records_buttons[f"ach_{i}"] = r
+            on = i == self.records_ach_page
+            hov = r.collidepoint(mx, my)
+            full = n_got == len(ids)
+            col = C_GOLD if (on or full) else C_DIM
+            pygame.draw.rect(self.screen, _mix((16, 20, 34), C_GOLD, 0.26 if on else (0.14 if hov else 0.04)), r, border_radius=10)
+            pygame.draw.rect(self.screen, C_GOLD if on else (60, 72, 104), r, 2 if on else 1, border_radius=10)
+            self._t(f"{i + 1}  {cname}", self.font_small, col, r.x + 14, r.y + 12)
+            self._t(f"{n_got} / {len(ids)}", self.font_small, C_TEXT if on else C_DIM, r.right - 14, r.y + 12, "topright")
+            pygame.draw.rect(self.screen, (28, 34, 56), (r.x + 12, r.bottom - 8, r.w - 24, 3), border_radius=1)
+            if n_got:
+                pygame.draw.rect(self.screen, C_GOLD, (r.x + 12, r.bottom - 8, max(3, int((r.w - 24) * n_got / max(1, len(ids)))), 3), border_radius=1)
+
+        # 카드 (이 페이지의 업적)
+        cat = ACH_CATEGORIES[self.records_ach_page][0]
+        items = [a for a in ACHIEVEMENTS if ACH_CATEGORY.get(a[0]) == cat]
+        cols = 5
+        cgap = 10
+        cw = (box_w - 50 - cgap * (cols - 1)) // cols
+        ch = 174
+        for i, (aid, title, desc, _ok) in enumerate(items):
+            r = pygame.Rect(box_x + 25 + (i % cols) * (cw + cgap), box_y + 110 + (i // cols) * (ch + cgap), cw, ch)
             got = aid in done
             col = C_GOLD if got else (80, 92, 126)
             pygame.draw.rect(self.screen, (44, 38, 18) if got else (16, 20, 34), r, border_radius=12)
             pygame.draw.rect(self.screen, col, r, 2 if got else 1, border_radius=12)
-            self._t("★" if got else "☆", self.font_title, C_GOLD if got else (70, 80, 110), r.centerx, r.y + 14, "midtop")
-            self._t(title, self.font_mid, C_TEXT if got else (140, 152, 185), r.centerx, r.y + 66, "midtop")
+            self._t("★" if got else "☆", self.font_title, C_GOLD if got else (70, 80, 110), r.centerx, r.y + 6, "midtop")
+            self._t(title, self.font_mid, C_TEXT if got else (140, 152, 185), r.centerx, r.y + 60, "midtop")
             for li, line in enumerate(self._wrap_text(desc, self.font_tiny, cw - 20)[:3]):
-                self._t(line, self.font_tiny, (185, 200, 228) if got else (110, 122, 156), r.centerx, r.y + 98 + li * 18, "midtop")
+                self._t(line, self.font_tiny, (185, 200, 228) if got else (110, 122, 156), r.centerx, r.y + 92 + li * 18, "midtop")
             if got:
-                self._t("달성!", self.font_tiny, C_GOLD, r.centerx, r.bottom - 22, "midtop")
+                self._t("달성!", self.font_tiny, C_GOLD, r.centerx, r.bottom - 24, "midtop")
             elif aid in prog:                                           # 근접 진행도 (예: 최고 3 / 5)
                 cur, goal = prog[aid]
-                txt = f"진행 {cur // 60}:{cur % 60:02d} / {goal // 60}:{goal % 60:02d}" if aid == "marathon" else f"진행 {cur} / {goal}"
-                self._t(txt, self.font_tiny, C_ORANGE if cur else (90, 100, 130), r.centerx, r.bottom - 22, "midtop")
+                txt = (f"진행 {cur // 60}:{cur % 60:02d} / {goal // 60}:{goal % 60:02d}" if aid in ("marathon", "ironman")
+                       else f"진행 {cur} / {goal}" + ("분" if aid == "playtime" else ""))
+                self._t(txt, self.font_tiny, C_ORANGE if cur else (90, 100, 130), r.centerx, r.bottom - 24, "midtop")
+                pygame.draw.rect(self.screen, (28, 34, 56), (r.x + 14, r.bottom - 9, r.w - 28, 3), border_radius=1)
+                if cur:
+                    pygame.draw.rect(self.screen, C_ORANGE, (r.x + 14, r.bottom - 9, max(3, int((r.w - 28) * cur / max(1, goal))), 3), border_radius=1)
             else:
-                self._t("미달성", self.font_tiny, (90, 100, 130), r.centerx, r.bottom - 22, "midtop")
+                self._t("미달성", self.font_tiny, (90, 100, 130), r.centerx, r.bottom - 24, "midtop")
+
+        # 페이지 이동 줄: ◀ 이전 / n / N / 다음 ▶
+        ny = box_y + 110 + 2 * (ch + cgap) - 2
+        cx = box_x + box_w // 2
+        for bid, label, bx, enabled in (("ach_prev", "◀ 이전", cx - 190, self.records_ach_page > 0), ("ach_next", "다음 ▶", cx + 70, self.records_ach_page < n_pages - 1)):
+            r = pygame.Rect(bx, ny, 120, 30)
+            self.records_buttons[bid] = r
+            hov = enabled and r.collidepoint(mx, my)
+            pygame.draw.rect(self.screen, _mix((16, 20, 34), C_GOLD, 0.2 if hov else 0.05), r, border_radius=8)
+            pygame.draw.rect(self.screen, C_GOLD if enabled else (50, 60, 88), r, 1, border_radius=8)
+            self._t(label, self.font_small, C_GOLD if enabled else (70, 80, 110), r.centerx, r.centery, "center")
+        for i in range(n_pages):                                         # 가운데: 점 표시
+            pygame.draw.circle(self.screen, C_GOLD if i == self.records_ach_page else (70, 80, 110), (cx - 36 + i * 24, ny + 15), 5 if i == self.records_ach_page else 4)
+        self._t("PgUp / PgDn · 휠", self.font_tiny, C_DIM, box_x + box_w - 25, ny + 15, "midright")
 
     def _wrap_text(self, text, font, max_w):
         """글자 단위 줄바꿈 (한글 포함)"""

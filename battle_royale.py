@@ -53,11 +53,14 @@ class BattleRoyaleMatch:
         self.challenge_kind = None                     # "practice" / "daily" / "weekly" (앱이 지정)
         self.brief_open = False                        # 시작 전 브리핑 카드가 열려 있는 동안 경기는 시작하지 않음
         self.practice_focus = None                     # 연습: N 키로 고른 과제 id (없으면 못 깬 첫 과제)
-        self.ta_t0 = None                              # 연습 타임어택 시작 시각 (모든 과제를 깬 뒤)
-        self.challenge_saved = []                       # 새로 달성해 앱이 저장해야 하는 과제 id 목록
-        self.ta_quads = 0
+        self.ta_mode = None                            # 연습 타임어택 종류 (challenges.TA_MODES의 id, 꺼져 있으면 None). Y 키로 바꿈
+        self.ta_t0 = None                              # 타임어택 시작 시각
+        self.ta_n = 0                                  # 타임어택 진행량 (쿼드 수 / 지운 줄 / T-스핀 수)
         self.ta_last = None                            # 방금 끝난 타임어택 기록(초)
-        self.ta_best = 0
+        self.ta_bests = {}                             # 종류별 최고 기록(초), 앱이 저장된 값을 넣어 줌
+        self._prac_locks = 0                           # 연습: 이미 센 블록 고정 횟수 (엔진의 lock_events와 비교)
+        self._ta_auto_done = False                     # 모든 과제를 깬 뒤 타임어택을 자동으로 켠 적이 있는가 (한 경기에 한 번)
+        self.challenge_saved = []                       # 새로 달성해 앱이 저장해야 하는 과제 id 목록
         self.rival_defeated = False                    # 이번 경기에서 라이벌을 내가 처치했는가 (복수 성공)
         self.ghost = ghost                             # 오늘의 도전 지난 최고 기록 {"rank","secs","tries"} 또는 None (경기 중 비교 표시용)
         if seed is not None:
@@ -135,7 +138,12 @@ class BattleRoyaleMatch:
         
         self._setup_participants()
         self._apply_mutator()
-        self.add_commentary(f"경기 시작!  {self.total_players}명 배틀로얄", (120, 235, 255))
+        if self.practice:                                  # 연습은 내부적으로 더미 상대 1명을 둔 2인 구성이라 인원 수를 보여 주면 틀린 안내가 됨
+            self.add_commentary("연습 시작!  G로 쓰레기 받기 · N으로 과제 고르기 · Y로 타임어택", (120, 235, 255))
+        elif not self.attacks_enabled:
+            self.add_commentary(f"서바이벌 시작!  {self.total_players}명 중 끝까지 생존", (120, 235, 255))
+        else:
+            self.add_commentary(f"경기 시작!  {self.total_players}명 배틀로얄", (120, 235, 255))
         if self.mutator:
             self.add_commentary(f"주간 변형: {self.mutator['name']} - {self.mutator['desc']}", (255, 190, 90), prio=1)
         if self.daily and self.ghost:
@@ -894,7 +902,7 @@ class BattleRoyaleMatch:
         self.drill_t0 = self.elapsed
         self.drill_next = self.elapsed + 8.0
 
-    PRACTICE_TASKS = tuple(g["text"] for g in challenges.PRACTICE_GOALS)       # 연습 과제 12개 (쉬운 순서, 앱이 달성 기록을 저장)
+    PRACTICE_TASKS = tuple(g["text"] for g in challenges.PRACTICE_GOALS)       # 연습 과제 40개 (기초/중급/고급/마스터, 쉬운 순서, 앱이 달성 기록을 저장)
 
     def practice_current_task(self):
         """연습 과제: (번호, 문구). N 키로 고른 과제가 아직 안 끝났으면 그것, 아니면 못 깬 첫 과제. 모두 끝났으면 None"""
@@ -925,28 +933,51 @@ class BattleRoyaleMatch:
         ch = self.challenge
         return ch is not None and self.challenge_kind == "practice" and len(ch.done) >= len(ch.order)
 
+    @property
+    def ta_best(self):
+        """지금 고른 타임어택 종류의 최고 기록(초), 없으면 0"""
+        return int(self.ta_bests.get(self.ta_mode or "quad", 0))
+
+    def practice_cycle_ta(self):
+        """Y 키: 타임어택 끄기 -> 쿼드 5번 -> 40줄 스프린트 -> T-스핀 3번 -> 더블 10번 -> T-스핀 더블 2번 -> 콤보 6 -> 끄기. 켤 때는 보드를 새로 시작해 공정하게 잼"""
+        if not self.practice:
+            return
+        ids = [None] + [m[0] for m in challenges.TA_MODES]
+        self.ta_mode = ids[(ids.index(self.ta_mode) + 1) % len(ids)]
+        self.ta_n = 0
+        if self.ta_mode is None:
+            self.ta_t0 = None
+            self.add_floating_text("타임어택 끔", (140, 230, 255), duration=1.6, size=24, category="action")
+            return
+        self.practice_reset(announce=False)
+        self.ta_t0 = self.elapsed
+        _id, name, goal, unit = challenges.TA_BY_ID[self.ta_mode]
+        self.add_floating_text(f"타임어택: {name}  (목표 {goal}{unit} · Y로 종류 변경)", (255, 215, 90), duration=2.6, size=24, category="action")
+
     def _practice_check(self, info=None):
-        """연습: 줄을 지울 때마다 과제 지표를 갱신하고 새로 달성한 과제를 알림. 모두 깬 뒤에는 타임어택(쿼드 5번)을 잼"""
+        """연습: 줄을 지울 때마다 과제 지표를 갱신하고 새로 달성한 과제를 알림. 타임어택이 켜져 있으면 진행량을 올림 (모든 과제를 깨면 쿼드 5번이 자동으로 켜짐)"""
         if not self.practice or self.challenge is None:
             return
         if info:
             self.challenge.on_clear(info)
-            if self.practice_all_done():
-                if self.ta_t0 is None:
-                    self.ta_t0 = self.elapsed
-                    self.ta_quads = 0
-                    self.add_floating_text(f"수련 완료!  타임어택: 쿼드 {challenges.TA_QUADS}번을 가장 빨리", (255, 215, 90), duration=3.2, size=24, category="action")
-                elif info.get("cleared", 0) >= 4:
-                    self.ta_quads += 1
-                    if self.ta_quads >= challenges.TA_QUADS:
-                        secs = max(1, int(self.elapsed - self.ta_t0))
-                        self.ta_last = secs
-                        new_best = self.ta_best == 0 or secs < self.ta_best
-                        if new_best:
-                            self.ta_best = secs
-                        self.add_floating_text(f"타임어택 {secs}초" + ("  ★ 최고 기록!" if new_best else f"  (최고 {self.ta_best}초)"),
-                                               (255, 215, 90) if new_best else (140, 230, 255), duration=3.2, size=26, category="action")
-                        self.ta_t0, self.ta_quads = self.elapsed, 0
+            if self.practice_all_done() and self.ta_mode is None and not self._ta_auto_done:
+                self._ta_auto_done = True
+                self.add_floating_text("수련 완료!  타임어택을 시작합니다 (Y로 종류 변경)", (255, 215, 90), duration=3.2, size=24, category="action")
+                self.ta_mode, self.ta_t0, self.ta_n = "quad", self.elapsed, 0
+            elif self.ta_mode and self.ta_t0 is not None:
+                self.ta_n = challenges.ta_next(self.ta_mode, self.ta_n, info)
+                _id, name, goal, _unit = challenges.TA_BY_ID[self.ta_mode]
+                if self.ta_n >= goal:
+                    secs = max(1, int(self.elapsed - self.ta_t0))
+                    self.ta_last = secs
+                    best = int(self.ta_bests.get(self.ta_mode, 0))
+                    new_best = best == 0 or secs < best
+                    if new_best:
+                        self.ta_bests[self.ta_mode] = secs
+                        best = secs
+                    self.add_floating_text(f"{name} {secs}초" + ("  ★ 최고 기록!" if new_best else f"  (최고 {best}초)"),
+                                           (255, 215, 90) if new_best else (140, 230, 255), duration=3.2, size=26, category="action")
+                    self.ta_t0, self.ta_n = self.elapsed, 0
         self._challenge_events()
 
     def challenge_summary(self):
@@ -980,9 +1011,10 @@ class BattleRoyaleMatch:
     def practice_reset(self, announce=True):
         """연습 모드: 보드를 새로 시작 (직접 초기화하거나 블록이 끝까지 쌓였을 때)"""
         self.local_engine = BlockEngine()
+        self._prac_locks = 0
         self._danger_since = None
-        if self.ta_t0 is not None:
-            self.ta_t0, self.ta_quads = self.elapsed, 0         # 보드를 초기화하면 타임어택도 처음부터
+        if self.ta_mode and self.ta_t0 is not None:
+            self.ta_t0, self.ta_n = self.elapsed, 0             # 보드를 초기화하면 타임어택도 처음부터
         if announce:
             self.add_floating_text("연습 보드를 새로 시작했습니다", (140, 230, 255), duration=1.8, size=24, category="action")
 
@@ -1183,6 +1215,15 @@ class BattleRoyaleMatch:
             self.challenge.tick(self.elapsed, self.local_is_alive, self.alive_count, self.attack_multiplier())
             self._challenge_events()
         self._drill_tick()
+        if self.practice and self.challenge is not None:                 # 연습: 블록이 고정된 횟수를 추적기에 알림 (블록 수/초당 개수 과제)
+            ev = self.local_engine.lock_events
+            if ev < self._prac_locks:
+                self._prac_locks = 0
+            for _ in range(ev - self._prac_locks):
+                self.challenge.on_lock(self.elapsed)
+            if ev != self._prac_locks:
+                self._prac_locks = ev
+                self._challenge_events()
         if self.practice and self.challenge is not None and self.drill_on:
             self.challenge.on_drill(self.drill_seconds(), self.drill_level() + 1)
             self._challenge_events()

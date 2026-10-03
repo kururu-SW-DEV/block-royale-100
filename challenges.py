@@ -11,6 +11,7 @@ pygame을 쓰지 않는 순수 파이썬 모듈이라 단위 테스트가 쉽다
 """
 
 import random
+from collections import deque
 
 POOL_VERSION = 1
 TOP_INIT = 10 ** 6           # "top" 지표의 초기값 (내가 살아 있는 동안 본 가장 적은 생존자 수)
@@ -20,23 +21,80 @@ def _g(gid, text, short, metric, goal, tier, cat, op=">="):
     return {"id": gid, "text": text, "short": short, "metric": metric, "goal": goal, "tier": tier, "cat": cat, "op": op}
 
 
-# ------------------------------------------------------------------ 연습 과제 (쉬운 순서)
+# ------------------------------------------------------------------ 연습 과제 (쉬운 순서, tier 1~4 = 기초/중급/고급/마스터 각 10개: 화면에서 한 페이지씩 보여 줌)
 PRACTICE_GOALS = [
+    # 기초
     _g("p_cancel2", "G로 받은 줄 2줄 상쇄하기", "상쇄 2줄", "canceled_total", 2, 1, "defense"),
+    _g("p_lines10", "줄 10개 지우기", "10줄 삭제", "lines", 10, 1, "tech"),
+    _g("p_double", "2줄 한 번에 지우기(더블) 3번", "더블 3번", "doubles", 3, 1, "tech"),
+    _g("p_triple", "3줄 한 번에 지우기(트리플)", "트리플", "triples", 1, 1, "tech"),
     _g("p_quad", "4줄 한 번에 지우기(쿼드)", "쿼드", "quads", 1, 1, "tech"),
     _g("p_combo3", "3연속 콤보 만들기", "콤보 3", "combo_max", 3, 1, "tech"),
     _g("p_tspin", "T-스핀으로 줄 지우기", "T-스핀", "tspins", 1, 1, "tech"),
+    _g("p_lines40", "줄 40개 지우기", "40줄 삭제", "lines", 40, 1, "tech"),
+    _g("p_quad3", "쿼드 3번", "쿼드 3번", "quads", 3, 1, "tech"),
+    _g("p_combo4", "4연속 콤보 만들기", "콤보 4", "combo_max", 4, 1, "tech"),
+    # 중급
     _g("p_cancel_big", "Shift+G로 8줄을 받고 한 번에 4줄 이상 막기", "한번에 4막기", "canceled_max", 4, 2, "defense"),
     _g("p_drill60", "압박 드릴(V)에서 60초 버티기", "드릴 60초", "drill_secs", 60, 2, "survival"),
     _g("p_b2bquad", "B2B 쿼드 (쿼드를 연달아)", "B2B 쿼드", "b2b_quads", 1, 2, "tech"),
     _g("p_combo5", "5연속 콤보 만들기", "콤보 5", "combo_max", 5, 2, "tech"),
+    _g("p_tspin3", "T-스핀 3번", "T-스핀 3번", "tspins", 3, 2, "tech"),
+    _g("p_cancel20", "G로 받은 줄 누적 20줄 상쇄하기", "상쇄 20줄", "canceled_total", 20, 2, "defense"),
+    _g("p_tss", "T-스핀 싱글 (1줄)", "T-스핀 싱글", "tspin_singles", 1, 2, "tech"),
+    _g("p_mini", "미니 T-스핀 1회", "미니 T-스핀", "mini_tspins", 1, 2, "tech"),
+    _g("p_lines100", "줄 100개 지우기", "100줄 삭제", "lines", 100, 2, "tech"),
+    _g("p_quad8", "쿼드 8번", "쿼드 8번", "quads", 8, 2, "tech"),
+    # 고급
     _g("p_tsd", "T-스핀 더블 (2줄)", "T-스핀 더블", "tspin_doubles", 1, 3, "tech"),
     _g("p_b2b3", "B2B를 3번 이어가기", "B2B 3연속", "b2b_chain_max", 3, 3, "tech"),
+    _g("p_combo7", "7연속 콤보 만들기", "콤보 7", "combo_max", 7, 3, "tech"),
     _g("p_drill_lv5", "압박 드릴 Lv.5까지 버티기 (2분)", "드릴 Lv.5", "drill_level", 5, 3, "survival"),
+    _g("p_drill180", "압박 드릴 3분 버티기", "드릴 3분", "drill_secs", 180, 3, "survival"),
+    _g("p_cancel8", "한 번에 8줄 이상 막기", "한번에 8막기", "canceled_max", 8, 3, "defense"),
+    _g("p_b2b5", "B2B를 5번 이어가기", "B2B 5연속", "b2b_chain_max", 5, 3, "tech"),
+    _g("p_tsd3", "T-스핀 더블 3번", "T-더블 3번", "tspin_doubles", 3, 3, "tech"),
+    _g("p_tst", "T-스핀 트리플 (3줄)", "T-스핀 트리플", "tspin_triples", 1, 3, "tech"),
     _g("p_pc", "퍼펙트 클리어 1회", "퍼펙트", "pcs", 1, 3, "tech"),
+    # 마스터
+    _g("p_pieces300", "블록 300개 놓기", "블록 300개", "pieces", 300, 4, "tech"),
+    _g("p_lines200", "줄 200개 지우기", "200줄 삭제", "lines", 200, 4, "tech"),
+    _g("p_combo10", "10연속 콤보 만들기", "콤보 10", "combo_max", 10, 4, "tech"),
+    _g("p_cancel50", "G로 받은 줄 누적 50줄 상쇄하기", "상쇄 50줄", "canceled_total", 50, 4, "defense"),
+    _g("p_tsd5", "T-스핀 더블 5번", "T-더블 5번", "tspin_doubles", 5, 4, "tech"),
+    _g("p_pps", "60초 안에 블록 90개 놓기 (초당 1.5개)", "블록 90/분", "pieces_60s", 90, 4, "tech"),
+    _g("p_b2b7", "B2B를 7번 이어가기", "B2B 7연속", "b2b_chain_max", 7, 4, "tech"),
+    _g("p_drill300", "압박 드릴 5분 버티기", "드릴 5분", "drill_secs", 300, 4, "survival"),
+    _g("p_tst3", "T-스핀 트리플 3번", "T-트리플 3번", "tspin_triples", 3, 4, "tech"),
+    _g("p_pc2", "퍼펙트 클리어 2회", "퍼펙트 2회", "pcs", 2, 4, "tech"),
 ]
 PRACTICE_IDS = [g["id"] for g in PRACTICE_GOALS]
-TA_QUADS = 5                  # 타임어택: 쿼드 5번을 가장 빨리
+MASTER_IDS = [g["id"] for g in PRACTICE_GOALS if g["tier"] == 4]
+PRACTICE_TIER_NAMES = {1: "기초", 2: "중급", 3: "고급", 4: "마스터"}
+TA_QUADS = 5                  # 타임어택(쿼드): 쿼드 5번을 가장 빨리
+# 타임어택 종류: (id, 이름, 목표 수, 단위). Y 키로 돌려 가며 고른다
+TA_MODES = (("quad", "쿼드 5번", 5, "번"), ("sprint", "40줄 스프린트", 40, "줄"), ("tspin", "T-스핀 3번", 3, "번"),
+            ("double", "더블 10번", 10, "번"), ("tsd", "T-스핀 더블 2번", 2, "번"), ("combo", "콤보 6 만들기", 6, "콤보"))
+TA_BY_ID = {m[0]: m for m in TA_MODES}
+
+
+def ta_next(mode, n, info):
+    """타임어택 한 종류의 진행량 n이 이번 줄 지우기로 바뀐 값 (콤보는 '지금까지 가장 높은 콤보', 나머지는 누적)"""
+    cleared = int(info.get("cleared", 0))
+    if mode == "quad":
+        return n + (1 if cleared >= 4 else 0)
+    if mode == "sprint":
+        return n + cleared
+    if mode == "tspin":
+        return n + (1 if (info.get("is_tspin") and cleared > 0) else 0)
+    if mode == "double":
+        return n + (1 if cleared == 2 else 0)
+    if mode == "tsd":
+        return n + (1 if (info.get("is_tspin") and not info.get("is_mini") and cleared == 2) else 0)
+    if mode == "combo":
+        return max(n, int(info.get("combo", 0)))
+    return n
+
 
 # ------------------------------------------------------------------ 오늘의 도전 후보 풀
 DAILY_POOL = [
@@ -114,10 +172,12 @@ class ChallengeTracker:
         self.by_id = {g["id"]: g for g in self.goals}
         self.done = set(x for x in done if x in self.by_id)
         self.newly_done = []                       # 이번 경기에서 새로 달성한 id (앱이 꺼내 가며 저장/알림)
-        self.m = {"lines": 0, "quads": 0, "tspins": 0, "tspin_doubles": 0, "b2b_quads": 0, "b2b_chain_max": 0, "pcs": 0,
+        self.m = {"lines": 0, "quads": 0, "tspins": 0, "tspin_doubles": 0, "tspin_singles": 0, "tspin_triples": 0, "mini_tspins": 0,
+                  "doubles": 0, "triples": 0, "b2b_quads": 0, "b2b_chain_max": 0, "pcs": 0,
                   "combo_max": 0, "canceled_total": 0, "canceled_max": 0, "kos": 0, "sent_total": 0, "sent_max": 0,
                   "multi": 0, "clutch": 0, "survive": 0.0, "esc_survive": 0.0, "top": TOP_INIT,
-                  "drill_secs": 0, "drill_level": 0}
+                  "drill_secs": 0, "drill_level": 0, "pieces": 0, "pieces_60s": 0}
+        self._lock_times = deque()
         self._last_survive = 0.0
         self._last_esc = 0.0
 
@@ -160,10 +220,20 @@ class ChallengeTracker:
             m["quads"] += 1
             if info.get("is_b2b"):
                 m["b2b_quads"] += 1
+        if cleared == 2:
+            m["doubles"] += 1
+        elif cleared == 3:
+            m["triples"] += 1
         if info.get("is_tspin"):
             m["tspins"] += 1
-            if cleared == 2 and not info.get("is_mini"):
+            if info.get("is_mini"):
+                m["mini_tspins"] += 1
+            elif cleared == 1:
+                m["tspin_singles"] += 1
+            elif cleared == 2:
                 m["tspin_doubles"] += 1
+            elif cleared == 3:
+                m["tspin_triples"] += 1
         m["b2b_chain_max"] = max(m["b2b_chain_max"], int(info.get("b2b_chain", 0)))
         if info.get("is_pc"):
             m["pcs"] += 1
@@ -172,6 +242,16 @@ class ChallengeTracker:
         if c > 0:
             m["canceled_total"] += c
             m["canceled_max"] = max(m["canceled_max"], c)
+        self._check()
+
+    def on_lock(self, now):
+        """블록 하나가 고정됨 (now: 경기 시각 초). 누적 개수와 '어느 60초 구간이든 가장 많이 놓은 개수'를 모음"""
+        self.m["pieces"] += 1
+        q = self._lock_times
+        q.append(float(now))
+        while q and q[0] < float(now) - 60.0:
+            q.popleft()
+        self.m["pieces_60s"] = max(self.m["pieces_60s"], len(q))
         self._check()
 
     def on_ko(self):

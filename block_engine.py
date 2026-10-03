@@ -94,8 +94,9 @@ class BlockEngine:
         self.fall_timer = 0.0
         self.lock_delay = 0.5  # 바닥 닿았을 때 락 딜레이 (초)
         self.lock_timer = 0.0
-        self.lock_resets = 0
+        self.lock_resets = 0      # 바닥에서 한 조작 횟수 (최대+1까지 셈: 15번까지는 락 타이머를 되돌리고, 그다음 조작/착지는 바로 고정)
         self.max_lock_resets = 15
+        self.lowest_y = 0         # 이 블록이 지금까지 내려간 가장 낮은 줄 (더 낮은 줄에 내려가면 조작 횟수를 다시 15번 줌: 가이드라인 Move Reset)
 
         # 첫 번째 피스 스폰
         self.spawn_piece()
@@ -129,6 +130,7 @@ class BlockEngine:
         self.fall_timer = 0.0
         self.lock_timer = 0.0
         self.lock_resets = 0
+        self.lowest_y = self.current_y
         self.last_move_was_rotation = False
         self.last_kick_index = 0
 
@@ -147,11 +149,19 @@ class BlockEngine:
                 return True
         return False
 
-    def _on_piece_manipulated(self):
-        """블록 조작 시 락 딜레이 리셋 (최대 15회)"""
-        if self._is_touching_ground():
+    def _track_lowest(self):
+        """블록이 이전보다 낮은 줄에 내려갔으면 조작 횟수를 새로 15번 준다 (같은 높이에서 뜨고 내려앉기를 반복해도 횟수는 늘지 않음)"""
+        if self.current_y > self.lowest_y:
+            self.lowest_y = self.current_y
+            self.lock_resets = 0
+
+    def _on_piece_manipulated(self, was_touching=False):
+        """블록 조작 시 락 딜레이 리셋 (줄마다 최대 15회). 조작 전이나 후에 바닥에 닿아 있으면 한 번으로 셈 (회전으로 떴다 내려앉아도 공짜가 아님).
+        15번을 넘긴 조작은 타이머를 되돌리지 못하고, 바닥에 닿아 있는 한 다음 업데이트에서 바로 고정됨"""
+        if was_touching or self._is_touching_ground():
             if self.lock_resets < self.max_lock_resets:
                 self.lock_timer = 0.0
+            if self.lock_resets <= self.max_lock_resets:
                 self.lock_resets += 1
         else:
             self.lock_timer = 0.0
@@ -162,8 +172,10 @@ class BlockEngine:
         if self.game_over:
             return False
         if not self._check_collision(self.current_x + dx, self.current_y + dy, self.current_rot):
+            was_touching = self._is_touching_ground()
             self.current_x += dx
             self.current_y += dy
+            self._track_lowest()
             if dy > 0 and soft:
                 self.score += 1
                 self.fall_timer = 0.0
@@ -171,7 +183,7 @@ class BlockEngine:
             if auto:
                 self.lock_timer = 0.0
             else:
-                self._on_piece_manipulated()
+                self._on_piece_manipulated(was_touching)
             return True
         return False
 
@@ -191,12 +203,14 @@ class BlockEngine:
             test_x = self.current_x + kx
             test_y = self.current_y - ky
             if not self._check_collision(test_x, test_y, new_rot):
+                was_touching = self._is_touching_ground()
                 self.current_x = test_x
                 self.current_y = test_y
                 self.current_rot = new_rot
+                self._track_lowest()
                 self.last_move_was_rotation = True
                 self.last_kick_index = kick_idx
-                self._on_piece_manipulated()
+                self._on_piece_manipulated(was_touching)
                 return True
         return False
 
@@ -212,12 +226,14 @@ class BlockEngine:
             test_x = self.current_x + kx
             test_y = self.current_y - ky
             if not self._check_collision(test_x, test_y, new_rot):
+                was_touching = self._is_touching_ground()
                 self.current_x = test_x
                 self.current_y = test_y
                 self.current_rot = new_rot
+                self._track_lowest()
                 self.last_move_was_rotation = True
                 self.last_kick_index = min(kick_idx, 3)
-                self._on_piece_manipulated()
+                self._on_piece_manipulated(was_touching)
                 return True
         return False
 
@@ -505,7 +521,7 @@ class BlockEngine:
         # 바닥에 닿았는지 체크
         if self._is_touching_ground():
             self.lock_timer += dt
-            if self.lock_timer >= self.lock_delay:
+            if self.lock_timer >= self.lock_delay or self.lock_resets > self.max_lock_resets:
                 self.lock_timer = 0.0
                 return self.lock_down()
         else:
@@ -519,6 +535,8 @@ class BlockEngine:
                 if not self.move(0, 1, auto=True):
                     self.fall_timer = 0.0
                     break
+            if self.lock_resets > self.max_lock_resets and self._is_touching_ground():
+                return self.lock_down()         # 조작 횟수를 다 쓴 블록이 내려앉은 그 틱에 고정 (다음 입력이 끼어들어 다시 뜨는 것을 막음)
 
         return 0
 

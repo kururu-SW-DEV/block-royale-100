@@ -44,14 +44,17 @@ class GameMixin:
                     and self.text_focus is None and not any(event.key in self.settings.get_action_keys(a) for a, _n in ACTION_NAMES)):
                 self.match.coach_until = 0.0
                 return
-            # 연습 모드: G = 쓰레기 줄 받기(Shift+G는 8줄), B = 보드 초기화. 조작키로 쓰고 있는 키는 조작키가 우선
-            if (self.match.practice and event.key in (pygame.K_g, pygame.K_b, pygame.K_v, pygame.K_n) and self.text_focus is None
+            # 연습 모드: G = 쓰레기 줄 받기(Shift+G는 8줄), B = 보드 초기화, V = 드릴, N = 과제 선택, Y = 타임어택. 조작키로 쓰고 있는 키는 조작키가 우선
+            if (self.match.practice and event.key in (pygame.K_g, pygame.K_b, pygame.K_v, pygame.K_n, pygame.K_y) and self.text_focus is None
                     and not any(event.key in self.settings.get_action_keys(a) for a, _n in ACTION_NAMES)):
                 if event.key == pygame.K_n:
                     self.match.practice_next_task(-1 if (event.mod & pygame.KMOD_SHIFT) else 1)
                     self.sound_mgr.play('rotate')
                 elif event.key == pygame.K_v:
                     self.match.practice_toggle_drill()
+                    self.sound_mgr.play('rotate')
+                elif event.key == pygame.K_y:
+                    self.match.practice_cycle_ta()
                     self.sound_mgr.play('rotate')
                 elif event.key == pygame.K_b:
                     self.match.practice_reset()
@@ -317,6 +320,21 @@ class GameMixin:
                         self.sound_mgr.play('move')
                         return
 
+            # 연습: 과제 목록의 과제 행 클릭 -> 그 과제를 지금 과제로 선택 (N 키와 같은 효과, 이미 달성한 과제는 선택할 수 없음)
+            if self.match.practice:
+                for gid, rect in getattr(self.renderer, "practice_row_rects", {}).items():
+                    if rect.collidepoint(mx, my):
+                        if gid not in self.match.challenge.done:
+                            self.match.practice_focus = gid
+                            self.sound_mgr.play('rotate')
+                        return
+            # 연습: 과제 목록의 기초/중급/고급 탭 클릭 -> 그 페이지 보기
+            for tier, rect in getattr(self.renderer, "practice_tab_rects", {}).items():
+                if rect.collidepoint(mx, my) and self.match.practice:
+                    self.renderer.practice_page = tier
+                    self.sound_mgr.play('move')
+                    return
+
             # 상단 조준 모드 칩 클릭: 그 모드 선택 (수동 지정은 해제)
             for mode, rect in self.renderer.target_chip_rects.items():
                 if rect.collidepoint(mx, my) and self.match.local_is_alive and getattr(self.match, "attacks_enabled", True):
@@ -350,9 +368,13 @@ class GameMixin:
                 from stats_manager import ACHIEVEMENTS
                 title = next((a[1] for a in ACHIEVEMENTS if a[0] == aid), aid)
                 m.add_floating_text(f"★ 업적 달성!  {title}", (255, 215, 90), duration=3.2, size=26, category="action")
-        if m.challenge_kind == "practice" and m.ta_best and (m.ta_best < self.stats_mgr.ch()["practice"]["ta_best"] or self.stats_mgr.ch()["practice"]["ta_best"] == 0):
-            self.stats_mgr.ch()["practice"]["ta_best"] = int(m.ta_best)
-            self.stats_mgr.save()
+        if m.challenge_kind == "practice" and m.ta_bests:
+            before = set(self.stats_mgr.achievements_done())
+            if self.stats_mgr.save_time_attack(m.ta_bests):
+                from stats_manager import ACHIEVEMENTS
+                for aid in [a for a in self.stats_mgr.achievements_done() if a not in before]:
+                    title = next((a[1] for a in ACHIEVEMENTS if a[0] == aid), aid)
+                    m.add_floating_text(f"★ 업적 달성!  {title}", (255, 215, 90), duration=3.2, size=26, category="action")
 
     TIPS = [
         ("garbage", "받은 공격은 잠시 '차징' 중이에요. 그 사이에 줄을 지우면 먼저 깎입니다! (초록→빨강으로 차오르면 위험)"),
