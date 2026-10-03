@@ -9,6 +9,7 @@ import math
 import random
 import pygame
 from gfx import CANVAS, Canvas, HiFont, mix_color as _mix
+from config import is_colorblind
 from config import NAME_COLORS
 from stats_manager import LADDER_NAMES, ACHIEVEMENTS
 from config import (
@@ -182,6 +183,7 @@ class UIRenderer:
         self.main_board_y = 112
 
         self.mini_board_rects = {}
+        self.target_chip_rects = {}      # 상단 조준 모드 칩의 클릭 영역 {모드: Rect} (프레임마다 갱신)
         self.mini_focus = False          # 미니 보드 집중 보기: 나를 노리는 상대/조준 대상/위기 카드가 아닌 카드는 어둡게 (설정에서 변경)
         self.mini_detailed = True        # 미니 보드 자세히 보기 (설정에서 변경): 조작 중 블록/착지 위치/홀드/다음 블록
         self.line_clear_flashes = []
@@ -205,7 +207,8 @@ class UIRenderer:
         self.pause_resume_btn = None
         self.pause_settings_btn = None
         self.pause_exit_btn = None
-        self.pause_focus = 0            # 일시정지 메뉴 키보드 포커스 (0=계속하기 1=환경설정 2=나가기)
+        self.lobby_return_left = None   # (참가자) 방장이 대기실로 돌아간 뒤 자동 이동까지 남은 초 (None이면 안내 없음)
+        self.pause_focus = 0            # 일시정지 메뉴 키보드 포커스 (0=계속하기 1=다시 시작 2=환경설정 3=나가기)
 
     # ---------------------------------------------------------------- 공용 헬퍼
     def _check_ver(self):
@@ -453,6 +456,7 @@ class UIRenderer:
             engine.cleared_row_indices = []
 
         CANVAS.display.fill((0, 0, 0))
+        self.next_visible = (getattr(match, "mutator", None) or {}).get("next_visible", 5)      # 주간 변형 '안개 속': NEXT가 1개만 보임
         self._update_stage_theme(match)
 
         self._render_mini_boards(match, ox, oy)
@@ -468,6 +472,14 @@ class UIRenderer:
         self._render_chat_overlay()
         self._render_ko_orbs(match)
         self._draw_hud_tooltip()
+        if self.lobby_return_left is not None:                       # 방장이 대기실로 돌아감: 순위표를 읽을 시간을 주고 안내
+            msg = f"방장이 대기실로 돌아갔습니다 · R 키로 바로 이동 ({int(self.lobby_return_left) + 1}초 뒤 자동 이동)"
+            ts = self._text(msg, self.font_small, (225, 232, 250))
+            br = pygame.Rect(0, 0, ts.get_width() + 32, 34)
+            br.midbottom = (self.width // 2, self.height - 10)
+            pygame.draw.rect(self.screen, (14, 18, 32), br, border_radius=10)
+            pygame.draw.rect(self.screen, C_GOLD, br, 1, border_radius=10)
+            self.screen.blit(ts, (br.x + 16, br.centery - ts.get_height() // 2))
         self._draw_coach_marks(match)
         self._render_countdown(match, ox, oy)
         if getattr(match, 'is_paused', False):
@@ -495,7 +507,8 @@ class UIRenderer:
 
         actions = [ft for ft in active if ft.get("category") == "action"]
         pins = sorted((ft for ft in active if ft.get("category") == "pin"), key=lambda f: f["birth"])[-1:]      # 후반전 예고/배율 알림은 토스트 칸 한 자리를 차지하고 다른 토스트에 밀려나지 않음
-        feed = sorted((ft for ft in active if ft.get("category") not in ("action", "pin")), key=lambda f: f["birth"])
+        tips = sorted((ft for ft in active if ft.get("category") == "tip"), key=lambda f: f["birth"])[-1:]      # 첫 경험 팁: 한 번에 하나, 전투 토스트 칸과 별도
+        feed = sorted((ft for ft in active if ft.get("category") not in ("action", "pin", "tip")), key=lambda f: f["birth"])
         prio = {"alert": 3, "ko": 3, "attack": 2}                     # 칸이 모자라면 낮은 것부터 밀어냄: 피격·K.O. > 공격 > 콤보 등 (같으면 오래된 것부터)
         while len(feed) > 2 - len(pins):
             drop = min(range(len(feed)), key=lambda i: (prio.get(feed[i].get("category"), 1), feed[i]["birth"]))
@@ -523,6 +536,18 @@ class UIRenderer:
             CANVAS.alpha_rect(plate, (*ft["color"][:3], int(alpha * 0.85)), width=2, radius=10)
             surf.set_alpha(alpha)
             self.screen.blit(surf, (plate.x + 16, plate.y + 7))
+
+        for ft in tips:
+            progress = (now - ft["birth"]) / ft["duration"]
+            alpha = max(0, min(255, int(255 * (1.0 - progress ** 6))))
+            surf = self.font_small.render(ft["text"], True, (250, 240, 200))
+            tw, th = surf.get_size()
+            plate = pygame.Rect(0, 0, tw + 28, th + 12)
+            plate.midtop = (int(cx_board), 68 + 2 * 22 + 8 + int(oy))
+            CANVAS.alpha_rect(plate, (34, 30, 12, int(alpha * 0.92)), radius=10)
+            CANVAS.alpha_rect(plate, (*C_GOLD, int(alpha * 0.9)), width=2, radius=10)
+            surf.set_alpha(alpha)
+            self.screen.blit(surf, (plate.x + 14, plate.y + 6))
 
         strip_y = 68
         for i, ft in enumerate(feed):
@@ -687,7 +712,9 @@ class UIRenderer:
                 else:
                     pend.append(e)
                 while len(pend) > 4:                                                               # 너무 밀리면 오래된 일반 소식부터 버림
-                    drop = next((i for i, x in enumerate(pend) if not x.get("prio", 0)), 0)
+                    drop = next((i for i, x in enumerate(pend) if not x.get("prio", 0) and not x.get("mine")), None)      # 남의 일반 소식부터, 그다음 내 소식, 마지막이 중요 소식
+                    if drop is None:
+                        drop = next((i for i, x in enumerate(pend) if not x.get("prio", 0)), 0)
                     del pend[drop]
         # 속도: 밀린 방송이 다 흐르는 데 걸릴 시간(백로그)으로 정함. 1초 이하면 기본 속도, 길수록 부드럽게 빨라져 최대 LED_MAX_SPEEDUP배
         base_speed = self.LED_BASE_SPEED
@@ -780,7 +807,7 @@ class UIRenderer:
 
     # ---------------------------------------------------------------- 일시정지
     def _render_pause_overlay(self):
-        pw, ph = 440, 270
+        pw, ph = 440, 324
         px = (self.width - pw) // 2
         py = (self.height - ph) // 2
 
@@ -788,22 +815,24 @@ class UIRenderer:
 
         self._panel((px, py, pw, ph), border=C_GOLD, bg=(16, 20, 36), radius=16, alpha=245, border_w=2)
         self._draw_text("일시 정지", self.font_large, C_GOLD, px + pw // 2, py + 24, "midtop")
-        self._draw_text("PAUSED", self.font_tiny, C_DIM, px + pw // 2, py + 58, "midtop")
+        self._draw_text("PAUSED  ·  F1 규칙 요약", self.font_tiny, C_DIM, px + pw // 2, py + 58, "midtop")
 
         mx, my = pygame.mouse.get_pos()
         self.pause_resume_btn = pygame.Rect(px + 40, py + 88, pw - 80, 44)
-        self.pause_settings_btn = pygame.Rect(px + 40, py + 142, pw - 80, 44)
-        self.pause_exit_btn = pygame.Rect(px + 40, py + 196, pw - 80, 44)
+        self.pause_restart_btn = pygame.Rect(px + 40, py + 142, pw - 80, 44)
+        self.pause_settings_btn = pygame.Rect(px + 40, py + 196, pw - 80, 44)
+        self.pause_exit_btn = pygame.Rect(px + 40, py + 250, pw - 80, 44)
         moved = (mx, my) != getattr(self, "_pause_last_mouse", None)       # 마우스가 실제로 움직였을 때만 호버로 포커스를 옮김 (↑↓ 키 탐색이 되돌려지지 않게)
         self._pause_last_mouse = (mx, my)
         if moved:
-            for i, btn in enumerate((self.pause_resume_btn, self.pause_settings_btn, self.pause_exit_btn)):
+            for i, btn in enumerate((self.pause_resume_btn, self.pause_restart_btn, self.pause_settings_btn, self.pause_exit_btn)):
                 if btn.collidepoint(mx, my):    # 마우스가 다른 버튼 위에 있으면 키보드 포커스도 그쪽으로 옮겨서, 두 버튼이 동시에 하이라이트되지 않게 함
                     self.pause_focus = i
                     break
         self._button(self.pause_resume_btn, "계속하기", "blue", self.pause_focus == 0, "P")
-        self._button(self.pause_settings_btn, "환경 설정", "green", self.pause_focus == 1)
-        self._button(self.pause_exit_btn, "메인 메뉴로 나가기", "red", self.pause_focus == 2, "ESC")
+        self._button(self.pause_restart_btn, "다시 시작", "blue", self.pause_focus == 1, "R")
+        self._button(self.pause_settings_btn, "환경 설정", "green", self.pause_focus == 2)
+        self._button(self.pause_exit_btn, "메인 메뉴로 나가기", "red", self.pause_focus == 3, "ESC")
 
     # ---------------------------------------------------------------- 상단 HUD
     KO_ORB_FLIGHT = 0.7      # 처치한 상대 카드에서 K.O. 칸까지 날아가는 시간(초)
@@ -871,10 +900,9 @@ class UIRenderer:
         if left <= 0 or not getattr(match, "local_is_alive", True) or getattr(match, "is_spectating", False):
             return
         rects = self._hud_rects
-        specs = [("survivors", "① 남은 생존자 수입니다. 마지막 1명이 우승!  (Enter 또는 클릭으로 닫기)", "below-left"),
-                 ("aim", "② 조준 모드: 내 공격이 누구에게 갈지 정합니다. 처음에는 자동(AUTO) 그대로면 충분해요 (TAB / 1~5로 바꿀 수 있어요).", "below-left"),
-                 ("incoming", "③ 받을 공격: 초록→빨강으로 차오르면 위험! 줄을 지우면 막을 수 있어요.", "below-right"),
-                 ("ko", "④ 2줄 이상 지우면 상대에게 공격이 가요. 상대를 처치(K.O.)하면 배지가 쌓여 공격력이 올라요!", "below-left")]
+        specs = [("survivors", "① 남은 생존자 수. 마지막 1명이 우승!  (Enter/클릭으로 닫기)", "below-left"),
+                 ("aim", "② 조준 모드: 공격 대상을 정해요. 처음엔 자동(AUTO) 그대로 OK  (TAB / 1~5)", "below-left"),
+                 ]                                                                       # ③받을 공격 ④K.O.는 처음 일어날 때 '첫 경험 팁'으로 알려 줌 (처음부터 한꺼번에 가리지 않게)
         y_top = None
         alpha = 255 if left > 2.0 else int(255 * left / 2.0)
         for key, text, place in specs:
@@ -921,6 +949,23 @@ class UIRenderer:
         for i, sf in enumerate(surfs):
             self.screen.blit(sf, (r.x + 10, r.y + 5 + i * lh))
 
+    def _survivor_title(self, match):
+        """생존자 칸 제목: 평소 '생존자', 주간 변형이면 규칙 이름, 오늘의 도전이면 지난 최고 기록과의 비교(고스트)"""
+        if getattr(match, "practice", False):
+            return "연습"
+        mut = getattr(match, "mutator", None)
+        if mut and getattr(match, "weekly", None):
+            return f"생존자 · {mut['name']}"
+        if getattr(match, "daily", None):
+            ghost = getattr(match, "ghost", None)
+            if not ghost:
+                return "생존자 · 첫 시도"
+            left = int(ghost["secs"]) - int(match.elapsed)
+            if not getattr(match, "local_is_alive", True) or getattr(match, "match_finished", False):
+                return "생존자"
+            return f"생존자 · 기록까지 {left // 60}:{left % 60:02d}" if left > 0 else "생존자 · ★기록 경신 중"
+        return "생존자"
+
     def _render_top_banner(self, match, ox=0, oy=0):
         """상단 3분할 HUD: 생존자 / 조준(모드 칩 + 대상) / 배지·K.O."""
         w1, w2, w3, gap, h = 170, 400, 170, 10, 58
@@ -933,7 +978,7 @@ class UIRenderer:
         self._hud_rects["survivors"] = r1
         self._panel(r1, border=C_GOLD)
         practice = getattr(match, "practice", False)
-        self._draw_text("연습" if practice else "생존자", self.font_tiny, C_GOLD, r1.centerx, r1.y + 5, "midtop")
+        self._draw_text(self._survivor_title(match), self.font_tiny, C_GOLD, r1.centerx, r1.y + 5, "midtop")
         self._draw_text("연습 중" if practice else f"{match.alive_count} / {match.total_players}", self.font_num, C_TEXT, r1.centerx, r1.y + 16, "midtop")
         ratio = match.alive_count / max(1, match.total_players)
         self._draw_bar((r1.x + 14, r1.bottom - 9, w1 - 28, 3), ratio, C_GOLD)
@@ -951,8 +996,10 @@ class UIRenderer:
         chip_gap = 4
         chip_w = (w2 - 20 - chip_gap * (len(TARGET_MODES) - 1)) // len(TARGET_MODES)
         manual = getattr(match, 'local_manual_target_id', None)
+        self.target_chip_rects = {}
         for i, mode in enumerate(TARGET_MODES if aim_on else ()):
             cr = pygame.Rect(r2.x + 10 + i * (chip_w + chip_gap), r2.y + 6, chip_w, 19)
+            self.target_chip_rects[mode] = cr
             active = (mode == match.local_target_mode and not manual)
             if active:
                 pygame.draw.rect(self.screen, accent, cr, border_radius=9)
@@ -966,32 +1013,46 @@ class UIRenderer:
                 self._hud_tip = (TARGET_MODE_HELP.get(mode, ""), cr)
 
         name = target_p.get("name", "탐색 중...")[:12]
-        tag = "수동 지정" if manual else "TAB으로 변경"
-        if aim_on:
+        tag = "수동 지정 · 우클릭 해제" if manual else "TAB으로 변경"
+        spec_now = aim_on and getattr(match, 'is_spectating', False)
+        if spec_now:                                                # 관전 중에는 죽은 내 조준 대상/TAB 안내 대신 관전 안내 (TAB은 동작하지 않음)
+            self._draw_text("관전 중 · 조준은 사용할 수 없습니다", self.font_small, C_DIM, r2.centerx, r2.y + 37, "center")
+            att_count = 0
+        elif aim_on:
             self._draw_text(f"● {name}" + ("  (사람)" if is_human else ""), self.font_hud,
                             C_GREEN if is_human else C_TEXT, r2.x + 12, r2.y + 37, "midleft")
             if target_p:                                           # 대상의 위험도(쌓인 높이 + 곧 올라올 쓰레기): 한 방 더로 K.O.가 가능한지 한눈에
                 dg = min(1.0, match._danger(target_p) / float(BOARD_HEIGHT))
                 dcol = C_DANGER if dg >= 0.75 else (C_ORANGE if dg >= 0.5 else C_GREEN)
+                if is_colorblind():                                 # 색약 보정: 파랑/노랑/주황 + 글자로도 위험 단계를 알림
+                    dcol = (255, 120, 40) if dg >= 0.75 else ((255, 205, 70) if dg >= 0.5 else (80, 160, 255))
+                    if dg >= 0.5:
+                        self._draw_text("위험!" if dg >= 0.75 else "주의", self.font_tiny, dcol, r2.x + w2 - 14, r2.bottom - 8, "bottomright")
                 self._draw_bar((r2.x + 14, r2.bottom - 5, w2 - 28, 3), dg, dcol)
         else:
             self._draw_text("연습 모드" if getattr(match, "practice", False) else "공격 없이 끝까지 생존", self.font_hud, C_TEXT, r2.centerx, r2.y + 10, "midtop")
-        att_count = match.get_attackers_count_for(match.local_player_id)
-        if not getattr(match, "attacks_enabled", True):
+        if not spec_now:
+            att_count = match.get_attackers_count_for(match.local_player_id)
+        if spec_now:
+            pass
+        elif not getattr(match, "attacks_enabled", True):
             task = match.practice_current_task() if getattr(match, "practice", False) else None
             if getattr(match, "practice", False):
                 ttxt = f"과제 {task[0] + 1}/{len(match.PRACTICE_TASKS)} · {task[1]}" if task else "과제 모두 완료!  G 쓰레기 · B 초기화"
                 while len(ttxt) > 6 and self.font_small.size(ttxt)[0] > r2.w - 20:
                     ttxt = ttxt[:-2].rstrip(" ·") + "…"
                 self._draw_text(ttxt, self.font_small, C_GREEN, r2.centerx, r2.y + 36, "midtop")
-                self._draw_text("G 쓰레기 · B 초기화", self.font_tiny, C_DIM, r2.right - 10, r2.y + 14, "topright")
+                if getattr(match, "drill_on", False):
+                    self._draw_text(f"드릴 {match.drill_seconds()}초 · Lv.{match.drill_level() + 1} · 최고 {match.drill_best}초", self.font_tiny, C_ORANGE, r2.right - 10, r2.y + 14, "topright")
+                else:
+                    self._draw_text("G 쓰레기 · B 초기화 · V 드릴", self.font_tiny, C_DIM, r2.right - 10, r2.y + 14, "topright")
             else:
                 self._draw_text("서바이벌 모드", self.font_small, C_GREEN, r2.centerx, r2.y + 36, "midtop")
         elif att_count >= 2:
-            self._draw_text(f"피조준 {att_count}명  반격 +{match.get_attacker_bonus(att_count)}", self.font_small,
+            self._draw_text(f"나를 노림 {att_count}명  역습 +{match.get_attacker_bonus(att_count)}", self.font_small,
                             C_DANGER, r2.right - 12, r2.y + 37, "midright")
         elif att_count == 1:
-            self._draw_text("피조준 1명", self.font_small, C_ORANGE, r2.right - 12, r2.y + 37, "midright")
+            self._draw_text("나를 노림 1명", self.font_small, C_ORANGE, r2.right - 12, r2.y + 37, "midright")
         else:
             self._draw_text(tag, self.font_tiny, C_DIM, r2.right - 12, r2.y + 37, "midright")
 
@@ -1042,6 +1103,28 @@ class UIRenderer:
                 core = pygame.Rect(0, 0, max(sc(3), n // 4), max(sc(3), n // 4))
                 core.center = outer.center
                 pygame.draw.rect(surf, _mix(color, (255, 255, 255), 0.55), core, border_radius=max(1, core.w // 3))
+        elif skin == "pixel":                                                   # 각진 8비트: 밝은 윗/왼쪽 변, 어두운 아래/오른쪽 변, 가운데 단색
+            pygame.draw.rect(surf, _mix(color, (0, 0, 0), 0.50), outer)
+            bev = max(sc(2), n // 8)
+            body = pygame.Rect(outer.x, outer.y, outer.w - bev, outer.h - bev)
+            pygame.draw.rect(surf, _mix(color, (255, 255, 255), 0.35), body)
+            inner = pygame.Rect(outer.x + bev, outer.y + bev, outer.w - 2 * bev, outer.h - 2 * bev)
+            pygame.draw.rect(surf, color, inner)
+            if size >= 14:
+                step = max(sc(3), n // 5)
+                for gx in range(inner.x + step, inner.right - 1, step):
+                    pygame.draw.line(surf, _mix(color, (0, 0, 0), 0.18), (gx, inner.y), (gx, inner.bottom - 1), 1)
+                for gy in range(inner.y + step, inner.bottom - 1, step):
+                    pygame.draw.line(surf, _mix(color, (0, 0, 0), 0.18), (inner.x, gy), (inner.right - 1, gy), 1)
+        elif skin == "glass":                                                   # 반투명 유리: 옅은 몸통 + 밝은 테두리 + 위쪽 반사광
+            radius = int(round(max(2, size // 6) * S))
+            glass = pygame.Surface((n, n), pygame.SRCALPHA)
+            pygame.draw.rect(glass, (*color, 150), outer, border_radius=radius)
+            pygame.draw.rect(glass, (*_mix(color, (255, 255, 255), 0.6), 235), outer, max(1, sc(2)), border_radius=radius)
+            if size >= 12:
+                hl = pygame.Rect(outer.x + sc(3), outer.y + sc(3), outer.w - 2 * sc(3), max(sc(2), outer.h // 4))
+                pygame.draw.rect(glass, (255, 255, 255, 80), hl, border_radius=max(1, radius - sc(2)))
+            surf.blit(glass, (0, 0))
         elif skin == "flat":
             radius = int(round(max(1, size // 10) * S))
             pygame.draw.rect(surf, color, outer, border_radius=radius)
@@ -1110,6 +1193,8 @@ class UIRenderer:
     def _garbage_level_color(i):
         """받을 공격 게이지 i번째 줄(0=맨 아래)의 색: 적을 땐 초록, 쌓일수록 노랑 -> 빨강 (8줄 이상이면 빨강)"""
         t = min(1.0, i / 7.0)
+        if is_colorblind():                                   # 색약 보정: 초록-빨강 대신 파랑 -> 주황 (밝기 차이도 큼)
+            return _mix((70, 150, 255), (255, 140, 40), t)
         if t < 0.5:
             return _mix((90, 225, 130), (255, 222, 90), t * 2.0)
         return _mix((255, 222, 90), (255, 84, 94), (t - 0.5) * 2.0)
@@ -1347,7 +1432,7 @@ class UIRenderer:
         rect = pygame.Rect(self._right_x(ox), self.main_board_y + oy, 108, 266)
         self._panel(rect)
         self._draw_text("다음 블록", self.font_tiny, C_ACCENT, rect.centerx, rect.y + 8, "midtop")
-        for i in range(min(5, len(engine.next_queue))):
+        for i in range(min(getattr(self, "next_visible", 5), len(engine.next_queue))):
             scale = 22 if i == 0 else 15
             cy = rect.y + 56 if i == 0 else rect.y + 108 + (i - 1) * 40
             self._render_preview_piece(engine.next_queue[i], rect.centerx, cy, scale=scale, dim=(i > 0))
@@ -1628,7 +1713,8 @@ class UIRenderer:
                 bcol = _mix((255, 200, 80), (255, 255, 255), 0.55 * pl) if is_spec else _mix((255, 84, 96), (255, 190, 190), 0.5 * pl)
                 self._draw_brackets(board_rect, bcol)
             # 이름/K.O. 알약/홀드 아이콘 계산(글자 폭 측정 포함)은 카드 내용이 바뀔 때만 다시 함
-            sig = (p["name"], is_human, is_alive, is_targeted, is_spec, colors.get(pid, 0), p.get("ko_count", 0), bw, show_names, detailed,
+            is_rival = (pid == getattr(match, "rival_id", None))
+            sig = (p["name"], is_rival, is_human, is_alive, is_targeted, is_spec, colors.get(pid, 0), p.get("ko_count", 0), bw, show_names, detailed,
                    strip_w, p.get("hold"), id(self.font_small), id(self.font_tiny), self._ver)
             info = self._card_info.get(pid) if self.mini_fast else None
             if info is not None and info[0] == sig:
@@ -1639,6 +1725,8 @@ class UIRenderer:
                     name_str, name_col = f"★{p['name'][:maxc]}", NAME_COLORS[colors.get(pid, 0)][1]
                 elif is_targeted:
                     name_str, name_col = f"▶{p['name'][:maxc]}", C_DANGER
+                elif is_rival and is_alive:                        # 라이벌 봇(나를 자주 탈락시킨 상대): 금빛 ◆ 표식
+                    name_str, name_col = f"◆{p['name'][:maxc]}", (255, 190, 80)
                 elif not is_alive:
                     name_str, name_col = p["name"][:max(6, maxc)], (86, 92, 112)
                 else:
@@ -2022,6 +2110,7 @@ class UIRenderer:
 
     # ---------------------------------------------------------------- 최종 순위표 (애니메이션)
     def reset_standings(self):
+        self.result_focus_id = "restart"        # 결과 화면은 '한 판 더'가 기본 (네트워크는 버튼 목록의 첫 항목으로 보정됨)
         self._standings_t0 = None
         self.standings_scroll = 0
 
@@ -2383,8 +2472,10 @@ class UIRenderer:
         ids = [s[0] for s in specs]
         if self.result_focus_id not in ids:
             self.result_focus_id = ids[0]
+        res_moved = (mx, my) != getattr(self, "_result_last_mouse", None)        # 마우스가 실제로 움직였을 때만 호버로 포커스를 옮김
+        self._result_last_mouse = (mx, my)
         for bid, rect, _label, _style, _hint in specs:
-            if rect.collidepoint(mx, my):       # 마우스가 다른 버튼 위에 있으면 키보드 포커스도 그쪽으로 옮김 (이중 하이라이트 방지)
+            if res_moved and rect.collidepoint(mx, my):       # 마우스가 다른 버튼 위에 있으면 키보드 포커스도 그쪽으로 옮김 (이중 하이라이트 방지)
                 self.result_focus_id = bid
                 break
         for bid, rect, label, style, hint in specs:
@@ -2422,8 +2513,9 @@ class UIRenderer:
             name_col = NAME_COLORS[match.get_name_colors().get(match.spectate_target_id, 0)][1]
         self._draw_text(f"{name}  ({who}, K.O. {ko})", self.font_hud, name_col, rect.x + 88, rect.y + 19, "midleft")
         net_on = match.net_mgr is not None and match.net_mgr.mode != "NONE"
-        hints = [("← →", "대상 변경"), ("클릭", "미니 보드 선택")]
+        hints = [("← →", "대상 변경"), ("클릭", "미니 보드 선택"), ("S", "결과 화면")]
         if not net_on:
+            hints.append(("F", f"배속 ×{getattr(match, 'spectate_speed', 1)}"))
             hints.append(("R", "재도전"))
             hints.append(("P", "연습"))
         hints.append(("ESC", "일시정지" if not net_on else "메뉴"))

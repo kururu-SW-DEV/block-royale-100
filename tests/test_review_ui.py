@@ -93,7 +93,7 @@ def test_key_conflict_resolution_handling_and_number_keys():
         old_hold = s2.get_action_keys("pause")[0]
         moved2 = s2.set_action_key("hold", old_hold)
         assert any(sw for _a, sw in moved2) or s2.get_action_keys("pause"), "동작이 키를 잃음"
-        for act in [a for a, _n in __import__("settings_manager").ACTION_NAMES]:
+        for act in [a for a, _n in __import__("settings_manager").ACTION_NAMES if a != "rotate_180"]:     # 180도 회전은 선택 키(기본 비어 있음)
             assert s2.get_action_keys(act), f"{act}에 키가 없음"
         keys_seen = {}
         for act in [a for a, _n in __import__("settings_manager").ACTION_NAMES]:
@@ -146,8 +146,8 @@ def test_key_conflict_resolution_handling_and_number_keys():
     app.state = "SETTINGS"; app.previous_state = "MENU"; app.settings_tab = "keys"
     app._render_settings()
     key = lambda k: app._handle_event(pygame.event.Event(pygame.KEYDOWN, key=k, mod=0, unicode="", scancode=0))
-    for _ in range(3):
-        key(pygame.K_DOWN)                                   # 카드 3줄 지나 핸들링 행으로
+    for _ in range(((len(__import__("settings_manager").ACTION_NAMES) + 2) // 3)):
+        key(pygame.K_DOWN)                                   # 카드 줄(3개씩)을 지나 핸들링 행으로
     app._render_settings()
     assert app._settings_focus_id() == "hf_das", app._settings_focus_id()
     before = app.settings.get("das_ms")
@@ -591,7 +591,10 @@ def test_late_game_relayout_coach_orbs_and_heartbeat():
     app.settings.data["coach_done"] = False
     app.start_game(mode="SOLO", total_players=100)
     m = app.match
-    assert m.coach_until > time.time() and app.settings.get("coach_done") is True, "첫 경기에만 코치 마크"
+    assert m.coach_until > time.time() and m.coach_pending and app.settings.get("coach_done") is False, "첫 경기에만 코치 마크 (바로 나가면 다음에 다시 보이도록 coach_done은 아직 저장 안 함)"
+    m.elapsed = 11.0
+    app._check_tips()
+    assert app.settings.get("coach_done") is True, "코치를 볼 시간(10초)이 지나면 coach_done 저장"
     app._handle_game_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN, mod=0))
     assert m.coach_until == 0.0, "Enter로 코치 마크를 닫을 수 있음"
     m.coach_until = time.time() + 15

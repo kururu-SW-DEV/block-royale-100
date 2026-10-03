@@ -18,8 +18,14 @@ class CoreMixin:
         """설정의 색상 모드(기본/색약 보정)와 게임 화면 글자 크기를 적용"""
         from config import apply_color_mode
         apply_color_mode(self.settings.get("color_mode"))
-        self.renderer.block_skin = self.settings.get("block_skin")
-        self.renderer.set_text_boost(2 if self.settings.get("text_size") == "large" else 0)
+        from stats_manager import unlocked_skin_ids
+        skin = self.settings.get("block_skin")
+        stats = getattr(self, "stats_mgr", None)                  # 앱 초기화 중에는 전적이 아직 없을 수 있음
+        self.renderer.block_skin = skin if (stats is None or skin in unlocked_skin_ids(stats.data)) else "classic"      # 잠긴 스킨(전적 초기화 등)은 기본으로
+        boost = 2 if self.settings.get("text_size") == "large" else 0
+        self.renderer.set_text_boost(boost)
+        for name, base in getattr(self, "_menu_font_base", {}).items():       # 메뉴/설정/로비의 작은 글씨도 같이 키움
+            getattr(self, name).size_pt = base + boost
         self.renderer.clear_visual_caches()                     # 색이 바뀐 블록/패널 캐시를 비워 새 색으로 다시 만들게 함
 
     def apply_gameplay_options(self):
@@ -139,6 +145,13 @@ class CoreMixin:
     def toggle_mute(self):
         self.sound_mgr.toggle_sound()
 
+    def _request_menu_exit(self):
+        """결과/관전 화면에서 메인 메뉴로: 참가자가 있는 방장이 나가면 방이 닫히므로 확인 창을 먼저 띄움"""
+        if self.net_mgr.mode == "HOST" and self.net_mgr.clients:
+            self._confirm_leave_network_game()
+        else:
+            self.return_to_menu()
+
     def return_to_menu(self):
         self.settings.save()                     # 경기 중 바꾼 조준 모드 등 (조작 중에는 저장하지 않고 여기서 한 번에)
         self.victory_played = False
@@ -161,7 +174,10 @@ class CoreMixin:
         self.state = "MENU"
 
     def _build_key_hints(self):
-        """인게임 하단 조작 안내 바에 표시할 (동작, 키) 목록 (현재 키 설정 반영)"""
+        """인게임 하단 조작 안내 바에 표시할 (동작, 키) 목록 (현재 키 설정 반영). 설정이 '끔'(또는 '처음 10판만'인데 이미 익숙함)이면 빈 목록"""
+        mode = self.settings.get("key_hints", "always")
+        if mode == "off" or (mode == "novice" and self.stats_mgr.data.get("total_games", 0) >= 10):
+            return []
         def keys(action, limit=2):
             return "/".join(short_key_name(k) for k in self.settings.get_action_keys(action)[:limit])
         hints = [
@@ -174,10 +190,12 @@ class CoreMixin:
             (keys("target_cycle", 1), "조준"),
             ("1~5", "조준모드"),
         ]
+        if self.settings.get_action_keys("rotate_180"):
+            hints.insert(3, (keys("rotate_180", 1), "180°"))                 # 키를 지정한 사람에게만 안내
         if self.match is not None and not self.match.attacks_enabled:
             hints = [h for h in hints if h[1] not in ("조준", "조준모드")]      # 서바이벌: 조준 개념 없음
         if self.match is not None and self.match.practice:
-            hints += [("G/Shift+G", "쓰레기 4/8줄"), ("B", "초기화")]        # 항목이 10개를 넘으면 안내 바가 3줄이 되어 화면 아래로 잘림
+            hints += [("G · B · V", "쓰레기 · 초기화 · 압박 드릴")]        # 항목이 10개를 넘으면 안내 바가 3줄이 되어 화면 아래로 잘림
         if self.net_mgr.mode == "NONE":
             hints.append((keys("pause", 1), "일시정지"))
         hints.append(("T", "설정"))
@@ -193,10 +211,12 @@ class CoreMixin:
         except Exception:
             return "127.0.0.1"
 
-    def start_game(self, mode="SOLO", total_players=100, initial_players=None, practice=False, daily=None):
+    def start_game(self, mode="SOLO", total_players=100, initial_players=None, practice=False, daily=None, weekly=None):
         """practice=True: 연습 모드(혼자, 전적 없음). daily="YYYYMMDD": 오늘의 도전(같은 날은 같은 블록 순서/상대 구성, 100인 혼합 난이도 배틀로얄)"""
         self._end_text(commit=False)
         self.renderer.reset_standings()
+        self._lobby_return_t0 = None
+        self.renderer.lobby_return_left = None
         self._finish_lock_set = False
         self._defeat_played = False
         self.net_mgr.lobby_return = False
@@ -220,7 +240,16 @@ class CoreMixin:
         self.das_timer = 0.0
         self.arr_timer = 0.0
         self.soft_drop_timer = 0.0
-        seed = int(daily) if daily else None
+        import config as _cfg
+        mutator = None
+        if weekly:                                                      # 주간 변형 규칙: 같은 주는 같은 블록 순서/상대 구성
+            mutator = next((m for m in _cfg.WEEKLY_MUTATORS if m["id"] == weekly[1]), None) if isinstance(weekly, tuple) else _cfg.weekly_mutator()
+            weekly = weekly[0] if isinstance(weekly, tuple) else _cfg.week_key()
+            total_players = mutator.get("players", 100)
+        seed = int(daily) if daily else (_cfg.weekly_seed(weekly) if weekly else None)
+        solo_rules = (mode == "SOLO" and not practice)
+        rival = self.stats_mgr.rival_id() if solo_rules and not daily else None
+        ghost = self.stats_mgr.daily_ghost(daily) if daily else None
         self.match = BattleRoyaleMatch(
             total_players=2 if practice else (100 if daily else total_players),
             local_player_id=my_id,
@@ -228,12 +257,13 @@ class CoreMixin:
             net_mgr=self.net_mgr if mode in ["HOST", "CLIENT"] else None,
             initial_players=initial_players,
             sound_mgr=self.sound_mgr,
-            bot_difficulty="mixed" if daily else self.bot_difficulty,
+            bot_difficulty="mixed" if daily else (mutator.get("difficulty", self.bot_difficulty) if mutator else ((self.net_mgr.match_difficulty or self.bot_difficulty) if mode == "CLIENT" else self.bot_difficulty)),      # 참가자는 호스트가 정한 봇 난이도로 기록(전적/사다리가 자기 설정으로 잘못 기록되던 문제)
             # 게임 모드: 참가자는 호스트가 정한 값을 따르고, 그 외에는 내 설정을 씀 (오늘의 도전은 항상 배틀로얄)
-            attacks_enabled=True if daily else (self.net_mgr.match_attacks if mode == "CLIENT" else self.settings.get("game_mode") != "survival"),
-            practice=practice, seed=seed, daily=daily
+            attacks_enabled=True if (daily or weekly) else (self.net_mgr.match_attacks if mode == "CLIENT" else self.settings.get("game_mode") != "survival"),
+            practice=practice, seed=seed, daily=daily, weekly=weekly, mutator=mutator, rival_id=rival, ghost=ghost
         )
         self.match.local_color = self.name_color
+        self.match.drill_best = int(self.settings.get("drill_best", 0) or 0)
         self.match.set_target_mode(self.settings.get("target_mode"))        # 마지막으로 쓴 조준 모드를 이어서 사용
         self.match.novice = (not practice) and self.stats_mgr.data.get("total_games", 0) < 3        # 처음 3판: 조준 칩은 자동만 또렷하게
         self.match.log_enabled = bool(self.settings.get("match_log", False)) and not practice
@@ -242,8 +272,8 @@ class CoreMixin:
             lead = self.match.COUNTDOWN_SECS
             self.match.countdown_until = time.time() + lead
         if not practice and not self.settings.get("coach_done"):                             # 처음 하는 경기: HUD 핵심 3곳을 15초 동안 설명 (한 번만, 카운트다운 동안에도 보임)
-            self.match.coach_until = time.time() + lead + 15.0
-            self.settings.set("coach_done", True)
+            self.match.coach_until = time.time() + lead + 12.0
+            self.match.coach_pending = True                  # coach_done은 코치를 볼 시간이 지난 뒤에(_check_tips) 저장: 바로 나가면 다음에 다시 보임
         self.apply_gameplay_options()
         if getattr(self, "use_bot_pool", False) and mode != "CLIENT":
             bot_pool.start()                       # 봇 계산을 여러 CPU 코어에 나눠 맡김 (준비될 때까지는 직접 계산)
@@ -259,8 +289,11 @@ class CoreMixin:
         """경기 종료 후 '재도전': 솔로는 새 게임, 네트워크는 같은 방의 대기실로 복귀 (경기 중 탈락 상태에서는 무시)"""
         if self.net_mgr.mode == "NONE":
             daily = getattr(self.match, "daily", None) if self.match is not None else None
+            weekly = getattr(self.match, "weekly", None) if self.match is not None else None
             if daily:
                 self.start_game(mode="SOLO", daily=daily)             # 오늘의 도전은 재도전도 같은 도전(같은 블록 순서/상대)
+            elif weekly:
+                self.start_game(mode="SOLO", weekly=(weekly, self.match.mutator["id"]))      # 주간 변형 규칙도 같은 규칙으로 재도전
             else:
                 self.start_game(mode="SOLO", total_players=self.target_player_count)
         elif self.match is not None and self.match.match_finished:
@@ -279,6 +312,8 @@ class CoreMixin:
         self.is_paused = False
         self.modal = None
         self._notice_shown = False
+        self._lobby_return_t0 = None
+        self.renderer.lobby_return_left = None
         self.key_left_down = self.key_right_down = self.key_down_down = False
         self.h_dir = 0
         self.sound_mgr.play_menu_bgm()

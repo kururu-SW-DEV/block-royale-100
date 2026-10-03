@@ -44,6 +44,11 @@ class ModalMixin:
         self.sound_mgr.play('move')
         if bid in ("leave", "ok_menu"):
             self.return_to_menu()
+        elif bid == "close_room":
+            self.net_mgr.stop()
+            self.state = "MENU"
+        elif bid == "restart_ok":
+            self._restart_after_match()
         elif bid == "quit_app":
             self._quit_confirmed = True
             pygame.event.post(pygame.event.Event(pygame.QUIT))

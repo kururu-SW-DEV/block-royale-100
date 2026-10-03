@@ -270,6 +270,9 @@ def test_client_returns_to_lobby_without_render_crash():
     fake.lobby_return = True
     real, app.net_mgr = app.net_mgr, fake
     try:
+        app._tick_game(1 / 60)              # 경기가 끝난 뒤라면 순위표를 읽을 시간(10초)을 주고 안내만 띄움
+        assert app.state == "GAME" and app.match is not None and app.renderer.lobby_return_left is not None
+        app._lobby_return_t0 -= 11.0        # 10초가 지나면 자동으로 대기실로
         app._tick_game(1 / 60)              # 예전에는 여기서 AttributeError('NoneType'...)
         assert app.state == "CLIENT_LOBBY" and app.match is None
         app.state = "GAME"                  # 상태가 어긋난 채로 호출돼도 죽지 않아야 함

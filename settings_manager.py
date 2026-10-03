@@ -57,18 +57,22 @@ SHAKE_SCALE = {"off": 0.0, "low": 0.4, "normal": 1.0}
 SHAKE_LABELS = {"off": "끔", "low": "약하게", "normal": "보통"}
 
 # 블록 스킨: 게임 화면의 블록 모양 (색은 색상 모드 설정을 따름)
-BLOCK_SKIN_OPTIONS = ["classic", "neon", "flat", "jelly"]
+BLOCK_SKIN_OPTIONS = ["classic", "neon", "flat", "jelly", "pixel", "glass"]      # pixel/glass는 해금 스킨 (stats_manager.SKIN_UNLOCKS)
 BLOCK_SKIN_LABELS = {
     "classic": "클래식",
     "neon": "네온",
     "flat": "플랫",
     "jelly": "젤리",
+    "pixel": "픽셀 (해금)",
+    "glass": "유리 (해금)",
 }
 BLOCK_SKIN_DESCS = {
     "classic": "입체감 있는 기본 블록",
     "neon": "테두리가 빛나는 블록",
     "flat": "깔끔한 단색 블록",
     "jelly": "둥글고 윤기 나는 블록",
+    "pixel": "8비트 느낌의 각진 픽셀 블록",
+    "glass": "투명하게 비치는 유리 블록",
 }
 
 # 기본 조작키 프리셋
@@ -82,7 +86,8 @@ KEY_PRESETS = {
         "rotate_ccw": [pygame.K_z],
         "hold": [pygame.K_c, pygame.K_LSHIFT],
         "target_cycle": [pygame.K_TAB],
-        "pause": [pygame.K_p]
+        "pause": [pygame.K_p],
+        "rotate_180": []
     },
     "wasd": {
         "move_left": [pygame.K_a],
@@ -93,7 +98,8 @@ KEY_PRESETS = {
         "rotate_ccw": [pygame.K_j],
         "hold": [pygame.K_l, pygame.K_LSHIFT],
         "target_cycle": [pygame.K_TAB],
-        "pause": [pygame.K_p]
+        "pause": [pygame.K_p],
+        "rotate_180": []
     }
 }
 
@@ -106,12 +112,13 @@ ACTION_NAMES = [
     ("rotate_ccw", "반시계 회전"),
     ("hold", "홀드 (블록 보관)"),
     ("target_cycle", "타겟 모드 순환"),
-    ("pause", "일시 정지")
+    ("pause", "일시 정지"),
+    ("rotate_180", "180도 회전 (선택)"),
 ]
 
 DEFAULT_SETTINGS = {
     "fullscreen": False,
-    "resolution": "1280x720",     # 첫 실행 기본값: HD (1280x720)
+    "resolution": "auto",         # 첫 실행 기본값: 자동(모니터 작업 영역에 맞춤). 예전 저장값(1280x720 등)은 그대로 유지됨
     "bot_difficulty": "mixed",
     "bgm_enabled": True,
     "bgm_volume": 60,      # 0 ~ 100
@@ -128,7 +135,13 @@ DEFAULT_SETTINGS = {
     "arr_ms": 33,                # 자동 반복 간격 (ARR, ms)
     "sdf_ms": 35,                # 소프트 드롭 낙하 간격 (ms, 작을수록 빠름)
     "color_mode": "normal",      # 블록 색상: "normal"(기본) / "colorblind"(색약 보정)
-    "text_size": "normal",       # 게임 화면 글자 크기: "normal"(보통) / "large"(크게)
+    "text_size": "normal",       # 글자 크기: "normal"(보통) / "large"(크게) - 게임 화면과 메뉴/설정/로비의 작은 글씨에 적용
+    "key_hints": "always",       # 게임 화면 아래 조작 안내 바: "always"(항상) / "novice"(처음 10판만) / "off"(끔)
+    "warn_volume": 100,          # 경고음(피격 경보/심장 박동) 상대 음량 0~100 (효과음 음량에 곱해짐)
+    "tips_seen": [],             # 이미 보여 준 첫 경험 팁 id 목록 (설정에서 다시 보기로 비움)
+    "title": "",                 # 칭호: 달성한 업적 id 중 하나(메인 메뉴 프로필에 표시), 비어 있으면 없음
+    "drill_best": 0,             # 연습 모드 압박 드릴에서 가장 오래 버틴 시간(초)
+    "tips_replay": False,        # 팁 다시 보기를 눌렀다면 True: 숙련자(10판 이상)에게도 아직 안 본 팁을 보여 줌 (다 보면 꺼짐)
     "block_skin": "classic",     # 블록 모양: BLOCK_SKIN_OPTIONS 중 하나
     "match_log": False,          # 사람 테스트용 경기 로그를 저장할지 (경기마다 JSON 한 개, 기본 끔)
     "onboard_done": False,       # 첫 실행 기본값(50인 쉬움 봇)을 이미 적용했는지. 전적이 있는 사용자는 설정을 바꾸지 않고 표시만 함
@@ -177,7 +190,7 @@ def _valid_setting(key, value):
     if isinstance(default, int):
         if not isinstance(value, int) or isinstance(value, bool):
             return False, None
-        if key in ("bgm_volume", "sfx_volume"):
+        if key in ("bgm_volume", "sfx_volume", "warn_volume"):
             value = max(0, min(100, value))
         elif key == "target_player_count":
             value = max(2, min(100, value))
@@ -199,6 +212,8 @@ def _valid_setting(key, value):
         if key == "color_mode" and value not in ("normal", "colorblind"):
             return False, None
         if key == "text_size" and value not in ("normal", "large"):
+            return False, None
+        if key == "key_hints" and value not in ("always", "novice", "off"):
             return False, None
         if key == "block_skin" and value not in BLOCK_SKIN_OPTIONS:
             return False, None
@@ -280,11 +295,13 @@ class SettingsManager:
         self.set("bgm_stage_set", new_val)
         return new_val
 
-    def cycle_block_skin(self, step=1):
+    def cycle_block_skin(self, step=1, available=None):
+        """available: 지금 쓸 수 있는 스킨 목록 (없으면 전부). 잠긴 스킨은 건너뜀"""
+        opts = [o for o in BLOCK_SKIN_OPTIONS if available is None or o in available] or ["classic"]
         cur = self.get("block_skin", "classic")
-        if cur not in BLOCK_SKIN_OPTIONS:
-            cur = "classic"
-        new_val = BLOCK_SKIN_OPTIONS[(BLOCK_SKIN_OPTIONS.index(cur) + step) % len(BLOCK_SKIN_OPTIONS)]
+        if cur not in opts:
+            cur = opts[0]
+        new_val = opts[(opts.index(cur) + step) % len(opts)]
         self.set("block_skin", new_val)
         return new_val
 

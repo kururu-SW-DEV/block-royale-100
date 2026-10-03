@@ -100,6 +100,7 @@ class SoundManager:
         self._bgm_bake = 0.60          # BGM 합성 시 곡 자체에 반영하는 기준 음량 (재생 음량 설정과 무관하게 항상 동일)
         self._bgm_thread = None
         self.sfx_volume = 0.70
+        self.warn_scale = 1.0         # 경고음(피격 경보/심장 박동/경고) 상대 음량 0~1
         self.bgm_enabled = True
         self.sfx_enabled = True
         self.is_bgm_playing = False
@@ -1392,6 +1393,11 @@ class SoundManager:
                     + 0.15 * np.sin(6 * np.pi * f * t)) * np.exp(-t * 13.0) * 0.33
             self.sounds[f"combo_{i}"] = self._pack_sound(bell)
 
+    WARN_SOUNDS = frozenset({'warning', 'hit_1', 'hit_2', 'hit_3', 'heartbeat'})
+
+    def set_warn_scale(self, scale):
+        self.warn_scale = max(0.0, min(1.0, float(scale)))
+
     def play(self, sound_name, piece=None, combo=None):
         """효과음 재생. piece: 블록 종류에 따라 음높이 변경(lock/land), combo: 콤보 단계에 따라 음높이 변경(clear/quad/tspin)"""
         if piece and sound_name in ('lock', 'land'):
@@ -1405,13 +1411,16 @@ class SoundManager:
             sound_name = f"combo_{min(max(1, combo or 1), len(self.COMBO_LADDER) - 1)}"
         if not (self.enabled and self.sfx_enabled) or self.sfx_volume <= 0.001:
             return
+        vol = self.sfx_volume * (self.warn_scale if sound_name in self.WARN_SOUNDS else 1.0)
+        if vol <= 0.001:
+            return
         variants = self.SOUND_VARIANTS.get(sound_name)
         if variants:
             sound_name = random.choice(variants)
         snd = self.sounds.get(sound_name)
         if snd:
             try:
-                snd.set_volume(self.sfx_volume)
+                snd.set_volume(vol)
                 snd.play()
             except Exception:
                 pass

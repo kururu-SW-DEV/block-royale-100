@@ -166,7 +166,7 @@ def test_achievements():
     from stats_manager import StatsManager, ACHIEVEMENTS, ACHIEVEMENT_IDS
     path = os.path.join(tempfile.mkdtemp(), "stats.json")
     sm = StatsManager(path)
-    assert len(ACHIEVEMENTS) == 10 and len(set(ACHIEVEMENT_IDS)) == 10
+    assert len(ACHIEVEMENTS) == 11 and len(set(ACHIEVEMENT_IDS)) == 11      # 11번째: 복수의 화신(라이벌 처치)
     sm.record_match(40, 100, 0, 5, 1, 60)
     assert sm.last_new_achievements == [] and sm.achievements_done() == []
     sm.record_match(1, 100, 6, 50, 3, 300)
@@ -198,14 +198,14 @@ def test_achievements():
     app.stats_mgr.reset_stats()
     app.stats_mgr.record_match(1, 100, 6, 50, 3, 300)
     app.state = "RECORDS"
-    for mode in ("achv", "survival", "battle"):
+    for mode in ("achv", "trend", "survival", "battle"):
         app.records_mode = mode
         app._render_records()
     order = []
-    for _ in range(3):
+    for _ in range(4):
         app._handle_records_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT, mod=0, unicode=""))
         order.append(app.records_mode)
-    assert order == ["survival", "achv", "battle"], order
+    assert order == ["survival", "trend", "achv", "battle"], order
 
 
 if __name__ == "__main__":

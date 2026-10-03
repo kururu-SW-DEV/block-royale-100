@@ -9,7 +9,7 @@ import datetime
 import time
 
 from app_common import (
-    APP_VERSION, BOT_DIFFICULTY_LABELS, C_ACCENT, C_DANGER, C_GOLD, C_GREEN, C_TEXT,
+    APP_VERSION, BOT_DIFFICULTY_LABELS, C_ACCENT, C_DANGER, C_GOLD, C_GREEN, C_ORANGE, C_TEXT,
     LADDER, LADDER_MIN_PLAYERS, LADDER_NAMES, LADDER_RANK,
     NAME_COLORS, SCREEN_HEIGHT, SCREEN_WIDTH, _mix, pygame
 )
@@ -18,7 +18,7 @@ CARD_BG = (22, 28, 48)
 COL_SUB = (160, 172, 205)          # 보조 글자 (배경 대비 충분한 밝기)
 COL_HINT = (140, 152, 185)         # 가장 어두운 글자의 하한
 PILL_GAP = 10                       # 오른쪽 위 알약 사이 간격 (모두 같게)
-UTIL_ROW = ["practice", "daily", "records", "settings", "toggle_sound", "toggle_fs"]
+UTIL_ROW = ["practice", "daily", "weekly", "records", "settings", "toggle_sound", "toggle_fs"]
 
 DESCRIPTIONS = {
     "quick_play": "봇과 바로 대전합니다.  ← → 로 인원, D 로 봇 난이도를 바꿀 수 있어요.",
@@ -26,6 +26,7 @@ DESCRIPTIONS = {
     "join_room": "LAN에서 열린 방을 자동으로 찾거나, 호스트 IP 주소로 직접 접속합니다.",
     "match_summary": "이름, 참가 인원, 봇 난이도를 바꾸려면 Enter — 설정 화면으로 이동합니다.",
     "practice": "혼자 연습합니다. G 키로 쓰레기 줄을 받아 보고 B 키로 보드를 초기화합니다. 전적에는 기록되지 않아요.",
+    "weekly": "이번 주 변형 규칙: 매주 규칙 하나가 바뀐 경기를 같은 블록 순서·같은 상대로 겨룹니다. (소수 정예 / 퍼펙트 폭격 / 안개 속 / 후반 가속 순환)",
     "daily": "오늘의 도전: 하루에 한 번 정해지는 같은 블록 순서·같은 상대(100인, 혼합 난이도)로 내 순위를 겨룹니다.",
     "records": "지난 경기 기록과 통계를 봅니다.",
     "settings": "화면, 소리, 조작키, 게임 설정을 바꿉니다.",
@@ -37,7 +38,7 @@ DESCRIPTIONS = {
 
 class MenuMixin:
     MENU_FOCUS_ORDER = ["quick_play", "host_room", "join_room", "match_summary",
-                        "practice", "daily", "records", "settings", "toggle_sound", "toggle_fs", "quit_game"]
+                        "practice", "daily", "weekly", "records", "settings", "toggle_sound", "toggle_fs", "quit_game"]
 
     # ------------------------------------------------------------------ 상태 갱신
     def _menu_focus_id(self):
@@ -89,6 +90,8 @@ class MenuMixin:
             self.start_game(mode="SOLO", practice=True)
         elif btn_id == "daily":
             self.start_game(mode="SOLO", daily=datetime.date.today().strftime("%Y%m%d"))
+        elif btn_id == "weekly":
+            self.start_game(mode="SOLO", weekly=True)
         elif btn_id == "records":
             self.records_mode = "survival" if self.settings.get("game_mode") == "survival" else "battle"   # 현재 게임 모드의 전적을 먼저 보여줌
             self.records_scroll = 0
@@ -127,6 +130,8 @@ class MenuMixin:
                 self._menu_activate("practice")
             elif k == pygame.K_c:
                 self._menu_activate("daily")
+            elif k == pygame.K_w:
+                self._menu_activate("weekly")
             elif k == pygame.K_UP or (k == pygame.K_TAB and shift):
                 self.menu_focus = (self.menu_focus - 1) % n
                 self.sound_mgr.play('move')
@@ -299,7 +304,11 @@ class MenuMixin:
         col = NAME_COLORS[self.name_color][1]
         pygame.draw.circle(self.screen, col, (rect.x + 26, rect.centery), 8)
         name = self._menu_fit(self.player_name, self.font_mid, 118)
-        self._t(name, self.font_mid, col, rect.x + 44, rect.centery, "midleft")
+        nr = self._t(name, self.font_mid, col, rect.x + 44, rect.centery, "midleft")
+        title_id = self.settings.get("title", "")
+        title_txt = next((a[1] for a in __import__("stats_manager").ACHIEVEMENTS if a[0] == title_id and title_id in self.stats_mgr.achievements_done()), "")
+        if title_txt:                                           # 칭호(달성한 업적 이름): 이름 오른쪽에 작게
+            self._t(self._menu_fit(title_txt, self.font_tiny, 80), self.font_tiny, C_GOLD, nr.right + 8, rect.centery + 1, "midleft")
         diff = BOT_DIFFICULTY_LABELS.get(self.settings.get("bot_difficulty", "mixed"), "혼합").split(" (")[0]
         flash = (time.time() - self._menu_flash) < 0.35
         self._t(f"{self.target_player_count}명 · {diff}" + (" · 서바이벌" if self.settings.get("game_mode") == "survival" else " · 배틀로얄"), self.font_small, C_GOLD if flash else COL_SUB, rect.right - 36, rect.centery, "midright")
@@ -320,6 +329,8 @@ class MenuMixin:
                             C_GREEN if snd_on else C_DANGER, dot=C_GREEN if snd_on else (110, 120, 150)) - PILL_GAP
         x = self._menu_pill("settings", x, 18, "설정", "S", C_ACCENT) - PILL_GAP
         x = self._menu_pill("records", x, 18, "전적", "R", C_GOLD) - PILL_GAP
+        wk_done = self.stats_mgr.weekly_best(__import__("config").week_key()) > 0
+        x = self._menu_pill("weekly", x, 18, "주간 변형", "W", C_ORANGE, dot=None if wk_done else C_ORANGE) - PILL_GAP
         today = datetime.date.today().strftime("%Y%m%d")
         done = self.stats_mgr.daily_best(today) > 0                                  # 오늘의 도전을 이미 했으면 점 없음, 아직이면 초록 점
         x = self._menu_pill("daily", x, 18, "오늘의 도전", "C", C_GREEN, dot=None if done else C_GREEN) - PILL_GAP
@@ -367,7 +378,7 @@ class MenuMixin:
 
         # 5. 하단 바: 버전 · 키 안내 · 게임 종료
         self._t(f"v{APP_VERSION}", self.font_tiny, COL_HINT, 24, SCREEN_HEIGHT - 42, "topleft")
-        self._keycap_row([("↑↓←→", "이동"), ("Enter", "선택"), ("R", "전적"), ("S", "설정"), ("Esc", "종료")],
+        self._keycap_row([("↑↓←→", "이동"), ("Enter", "선택"), ("R", "전적"), ("S", "설정"), ("F1", "규칙"), ("Esc", "종료")],
                          cx, SCREEN_HEIGHT - 42, gap=20, font=self.font_small, label_col=COL_SUB)
         quit_r = pygame.Rect(SCREEN_WIDTH - 24 - 112, SCREEN_HEIGHT - 50, 112, 34)
         self.menu_buttons['quit_game'] = quit_r

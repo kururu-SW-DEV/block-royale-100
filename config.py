@@ -2,7 +2,7 @@
 Block Royale 100 - Configuration & Constants
 """
 
-APP_VERSION = "1.1.2"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
+APP_VERSION = "1.1.3"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
 
 # 화면 해상도 설정
 SCREEN_WIDTH = 1366
@@ -87,8 +87,16 @@ PIECE_COLORS_COLORBLIND = {
 }
 
 
+COLOR_MODE = {"mode": "normal"}        # 현재 색상 모드 (HUD의 위험 신호 색을 고를 때도 참조)
+
+
+def is_colorblind():
+    return COLOR_MODE["mode"] == "colorblind"
+
+
 def apply_color_mode(mode):
     """블록 색상 팔레트를 기본/색약 보정으로 바꿈 (PIECE_COLORS 딕셔너리를 그 자리에서 갱신하므로 이미 import한 곳에도 반영)"""
+    COLOR_MODE["mode"] = "colorblind" if mode == "colorblind" else "normal"
     PIECE_COLORS.update(PIECE_COLORS_DEFAULT)
     if mode == "colorblind":
         PIECE_COLORS.update(PIECE_COLORS_COLORBLIND)
@@ -131,6 +139,34 @@ MIN_PLAYERS = 2
 MAX_PLAYERS = 100
 DEFAULT_TARGET_MODE = 'AUTO'  # AUTO, KO, ATTACKERS, BADGES, RANDOM
 TARGET_MODES = ['AUTO', 'KO', 'ATTACKERS', 'BADGES', 'RANDOM']
+
+# 주간 변형 규칙: 매주 하나씩 돌아가며 규칙 하나를 바꾼 경기를 열어 준다 (오늘의 도전과 별개). 같은 주는 같은 블록 순서/상대 구성.
+# 키: players(인원) / difficulty(봇 난이도) / perfect_attack(퍼펙트 클리어 공격 줄 수) / next_visible(NEXT 보이는 개수) / escalation_start(후반 증폭 시작 시각, 초)
+WEEKLY_MUTATORS = (
+    {"id": "elite", "name": "소수 정예", "desc": "30인 · 모두 어려움 봇", "players": 30, "difficulty": "hard"},
+    {"id": "perfect", "name": "퍼펙트 폭격", "desc": "퍼펙트 클리어 공격 2배 (20줄)", "perfect_attack": 20},
+    {"id": "fog", "name": "안개 속", "desc": "NEXT 블록이 1개만 보임", "next_visible": 1},
+    {"id": "rush", "name": "후반 가속", "desc": "공격력 증폭이 2분부터 시작", "escalation_start": 120.0},
+)
+
+
+def week_key(day=None):
+    """주 식별 키 'YYYYWww' (ISO 주차). day: datetime.date (없으면 오늘)"""
+    import datetime
+    iso = (day or datetime.date.today()).isocalendar()
+    return f"{iso[0]}W{iso[1]:02d}"
+
+
+def weekly_mutator(day=None):
+    """그 주의 변형 규칙 dict. 주차 번호로 돌아가며 정해짐"""
+    key = week_key(day)
+    return WEEKLY_MUTATORS[int(key[5:]) % len(WEEKLY_MUTATORS)]
+
+
+def weekly_seed(key):
+    """같은 주는 같은 블록 순서/상대 구성이 되도록 주 키를 정수 시드로"""
+    return int(key.replace("W", ""))
+
 
 # 퍼펙트 클리어(라인을 지워 보드 위 블록이 하나도 남지 않음) 보너스 공격 줄 수
 PERFECT_CLEAR_ATTACK = 10

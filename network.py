@@ -13,6 +13,7 @@ from config import DEFAULT_UDP_PORT, DISCOVERY_BROADCAST_PORT, NAME_COLOR_COUNT,
 
 PROTOCOL_VERSION = 1         # 호환되지 않는 패킷 변경 때 올림. JOIN_REQ의 proto와 다르면 호스트가 거절
 
+_DIFFS = ("mixed", "easy", "normal", "hard", "master")     # settings_manager.BOT_DIFFICULTY_OPTIONS와 같아야 함 (테스트로 확인)
 MAX_CHAT_LEN = 120            # 채팅 한 줄 최대 글자 수
 MAX_ATTACK_LINES = 20        # 패킷 1개당 허용되는 최대 공격 줄 수 (위조/오류 방어)
 MAX_CLIENT_PACKET = 8192     # 호스트가 클라이언트에게서 받는 패킷 최대 크기
@@ -234,6 +235,8 @@ class NetworkManager:
         self.lobby_return = False      # (클라이언트) 호스트가 경기를 마치고 대기실로 돌아왔다는 통보를 받음
         self.roster = []               # (클라이언트) 호스트가 알려준 참가자 명단 [{id, name, color, host}]
         self.roster_target = 0         # (클라이언트) 호스트가 정한 대전 인원
+        self.room_rules = {}           # (클라이언트) 호스트가 알려준 경기 규칙 {"diff": 봇 난이도, "mode": "battle"/"survival"} (대기실 표시용)
+        self.match_difficulty = None   # (클라이언트) 호스트가 시작 신호에 실어 보낸 봇 난이도 (전적 기록용). 없으면 None
         self.my_color = 0              # 내 이름 색상 번호 (JOIN 요청 / 호스트 채팅에 사용)
         self.profile_ack = None        # (클라이언트) 호스트가 확정해 준 내 이름/색 {name, color}
         self.chat_log = []             # 채팅 기록 [{seq, id, name, text, sys, rx}] (최대 100개)
@@ -493,6 +496,7 @@ class NetworkManager:
             "type": MsgType.GAME_START,
             "players_list": players_summary_list,
             "attacks": bool(attacks_enabled),
+            "diff": self.room_settings.get("diff"),
             "start_time": time.time()
         }
         # UDP 유실 방지 3회 버스트 전송
@@ -564,7 +568,8 @@ class NetworkManager:
         """(호스트) 참가자 전원에게 전체 명단과 대전 인원을 전송 (대기실에서 모두가 같은 명단을 보도록)"""
         if not self.running or self.mode != "HOST" or not self.clients:
             return
-        self._host_broadcast({"type": MsgType.ROSTER, "players": self.roster_list(), "target": self.room_settings.get("target", 0)})
+        self._host_broadcast({"type": MsgType.ROSTER, "players": self.roster_list(), "target": self.room_settings.get("target", 0),
+                              "diff": self.room_settings.get("diff"), "mode": self.room_settings.get("mode")})
 
     def unique_name(self, base, exclude_addr=None, exclude_host=False):
         """(호스트) 다른 참가자/호스트와 겹치지 않는 이름 (겹치면 #번호를 붙임). exclude_*: 이름을 바꾸는 본인은 제외"""
@@ -690,6 +695,8 @@ class NetworkManager:
         self.lobby_return = False
         self.roster = []
         self.roster_target = 0
+        self.room_rules = {}
+        self.match_difficulty = None
         self.chat_log.clear()
         self._chat_seen.clear()
         self.host_left = False
@@ -801,6 +808,12 @@ class NetworkManager:
                     tg = msg.get("target")
                     if isinstance(tg, int) and not isinstance(tg, bool):
                         self.roster_target = max(0, min(100, tg))
+                    rules = {}
+                    if msg.get("diff") in _DIFFS:
+                        rules["diff"] = msg["diff"]
+                    if msg.get("mode") in ("battle", "survival"):
+                        rules["mode"] = msg["mode"]
+                    self.room_rules = rules
 
                 elif mtype == MsgType.PROFILE_ACK:
                     self.profile_ack = {"name": _sanitize_name(msg.get("name"), "Player"), "color": _sanitize_color(msg.get("color"))}
@@ -840,6 +853,7 @@ class NetworkManager:
                         self.initial_players = [
                             {"id": e["id"][:32], "name": _sanitize_name(e.get("name"), "?"), "is_ai": bool(e.get("is_ai"))} for e in plist]
                         self.match_attacks = bool(msg.get("attacks", True))
+                        self.match_difficulty = msg["diff"] if msg.get("diff") in _DIFFS else None
                         self.game_started = True
                         print(f"[Network] Game start received from host! Total players: {len(self.initial_players)}")
 

@@ -54,7 +54,21 @@ def _screens(app):
         app.state = "CLIENT_LOBBY"
         app._render_client_lobby()
 
+    def trend():
+        app.state = "RECORDS"
+        app.records_mode = "trend"
+        app._render_records()
+        app.records_mode = "battle"
+
+    def rules():
+        app.state = "MENU"
+        app._render_menu()
+        app.rules_open = True
+        app._render_rules()
+        app.rules_open = False
+
     return [("menu", menu), ("settings-match", settings("match")), ("settings-general", settings("general")),
+            ("settings-audio", settings("audio")), ("settings-help", settings("help")), ("records-trend", trend), ("rules-card", rules),
             ("settings-keys", settings("keys")), ("records", records), ("host-lobby", host_lobby),
             ("join-menu", join_menu), ("client-lobby", client_lobby)]
 

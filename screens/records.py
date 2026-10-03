@@ -45,7 +45,7 @@ class RecordsMixin:
                 self.records_scroll = max(0, min(self.records_max_scroll, self.records_scroll + step))
             return
         if event.type == pygame.KEYDOWN and event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_TAB, pygame.K_a, pygame.K_d):
-            order = ("battle", "survival", "achv")
+            order = ("battle", "survival", "trend", "achv")
             step = -1 if event.key in (pygame.K_LEFT, pygame.K_a) else 1
             self._records_set_mode(order[(order.index(self.records_mode) + step) % len(order)] if self.records_mode in order else "battle")
             return
@@ -57,7 +57,7 @@ class RecordsMixin:
             mx, my = event.pos
             for btn_id, rect in self.records_buttons.items():
                 if rect.collidepoint(mx, my):
-                    if btn_id in ("mode_battle", "mode_survival", "mode_achv"):
+                    if btn_id in ("mode_battle", "mode_survival", "mode_trend", "mode_achv"):
                         self._records_set_mode(btn_id[5:])
                     elif btn_id.startswith("size_"):
                         self._records_set_filter(size=None if btn_id == "size_all" else btn_id[5:])
@@ -93,7 +93,7 @@ class RecordsMixin:
 
         # 2. 모드 탭 (배틀로얄 / 서바이벌): 전적은 모드별로 따로 집계
         tab_y = box_y - 34
-        for i, (mid, label, col) in enumerate((("battle", "배틀로얄", C_GOLD), ("survival", "서바이벌", C_GREEN), ("achv", "업적", C_ORANGE))):
+        for i, (mid, label, col) in enumerate((("battle", "배틀로얄", C_GOLD), ("survival", "서바이벌", C_GREEN), ("trend", "추이", C_ACCENT), ("achv", "업적", C_ORANGE))):
             r = pygame.Rect(box_x + i * 110, tab_y, 104, 30)
             self.records_buttons["mode_" + mid] = r
             on = self.records_mode == mid
@@ -101,16 +101,16 @@ class RecordsMixin:
             pygame.draw.rect(self.screen, _mix((16, 20, 34), col, 0.30 if on else (0.14 if hov else 0.05)), r, border_radius=8)
             pygame.draw.rect(self.screen, col if on else (60, 72, 104), r, 2 if on else 1, border_radius=8)
             self._t(label, self.font_small, col if on else C_DIM, r.centerx, r.centery, "center")
-        self._t("← → 탭 · 1~4 규모 · F 난이도" if self.records_mode != "achv" else "← → 탭", self.font_tiny, C_DIM, box_x + box_w, tab_y + 15, "midright")
+        self._t("1~4 규모 · F 난이도" if self.records_mode != "achv" else "← → 탭", self.font_tiny, C_DIM, box_x + box_w, tab_y + 15, "midright")
         if self.records_mode == "achv":
             self._render_achievements(box_x, box_y, box_w)
             self._records_bottom_buttons(mx, my, box_x, box_y, box_w)
             return
         # 필터 칩: 인원 규모(1~4) / 난이도(F). 필터를 걸면 전체 누적이 아니라 최근 100경기 중 조건에 맞는 경기로 다시 집계
-        chip_x = box_x + 332
+        chip_x = box_x + 448
         size_chips = [("size_all", "전체", None)] + [("size_" + b[0], f"{b[3].split(' ')[0][0]} {b[1]}~{b[2]}", b[0]) for b in SIZE_BUCKETS]
         for cid, label, val in size_chips:
-            w = 52 if val is None else 86
+            w = 46 if val is None else 76
             r = pygame.Rect(chip_x, tab_y, w, 30)
             self.records_buttons[cid] = r
             on = self.records_size == val
@@ -119,7 +119,7 @@ class RecordsMixin:
             pygame.draw.rect(self.screen, C_ACCENT if on else (60, 72, 104), r, 2 if on else 1, border_radius=8)
             self._t(label, self.font_tiny, C_ACCENT if on else C_DIM, r.centerx, r.centery, "center")
             chip_x += w + 6
-        r = pygame.Rect(chip_x + 8, tab_y, 132, 30)
+        r = pygame.Rect(chip_x + 4, tab_y, 126, 30)
         self.records_buttons["diff_cycle"] = r
         on = self.records_diff is not None
         pygame.draw.rect(self.screen, _mix((16, 20, 34), C_ORANGE, 0.28 if on else (0.14 if r.collidepoint(mx, my) else 0.04)), r, border_radius=8)
@@ -128,7 +128,12 @@ class RecordsMixin:
         self._t(diff_txt, self.font_tiny, C_ORANGE if on else C_DIM, r.centerx, r.centery, "center")
 
         # 3. 상단 4대 통계 요약 카드 (Summary Cards)
-        sm = self.stats_mgr.get_summary(self.records_mode, size=self.records_size, difficulty=self.records_diff)
+        sm = self.stats_mgr.get_summary("survival" if (self.records_mode == "trend" and self.settings.get("game_mode") == "survival") else ("battle" if self.records_mode == "trend" else self.records_mode),
+                                        size=self.records_size, difficulty=self.records_diff)
+        if self.records_mode == "trend":
+            self._render_trend(box_x, box_y, box_w, sm)
+            self._records_bottom_buttons(mx, my, box_x, box_y, box_w)
+            return
         if sm.get("filtered"):
             self._t("필터 적용 중 · 최근 100경기 중 조건에 맞는 경기만 집계합니다", self.font_tiny, C_ORANGE, box_x + 25, box_y + 4)
         card_w = (box_w - 75) // 4
@@ -248,13 +253,73 @@ class RecordsMixin:
 
         self._records_bottom_buttons(mx, my, box_x, box_y, box_w)
 
+    @staticmethod
+    def trend_points(recent):
+        """최근 경기(오래된 것부터)를 (0~1 상위 비율 점수, 우승 여부, 순위, 인원) 목록으로. 점수 1.0 = 1위, 0.0 = 꼴찌 (인원 규모가 달라도 비교 가능)"""
+        pts = []
+        for m in recent:
+            total = max(2, int(m.get("total_players", 100) or 100))
+            rank = max(1, min(total, int(m.get("rank", total) or total)))
+            pts.append((1.0 - (rank - 1) / (total - 1), bool(m.get("won")), rank, total))
+        return pts
+
+    @staticmethod
+    def trend_summary(pts):
+        """(최근 10판 평균 점수, 그 이전 10판 평균 점수 또는 None). 경기가 없으면 (None, None)"""
+        if not pts:
+            return None, None
+        last = [p[0] for p in pts[-10:]]
+        prev = [p[0] for p in pts[-20:-10]]
+        return sum(last) / len(last), (sum(prev) / len(prev) if prev else None)
+
+    def _render_trend(self, box_x, box_y, box_w, sm):
+        """순위 추이: 최근 경기마다 '상위 몇 %였는지'를 꺾은선으로 (위로 갈수록 좋음). 인원 규모가 달라도 비교할 수 있게 정규화"""
+        pts = self.trend_points(sm["recent_matches"])
+        ix, iw = box_x + 30, box_w - 60
+        self._t("순위 추이" + (" (필터 적용)" if sm.get("filtered") else ""), self.font_mid, C_TEXT, ix, box_y + 20)
+        self._t("최근 경기 · 위로 갈수록 좋은 성적 (인원 규모로 보정)", self.font_tiny, C_DIM, ix + iw, box_y + 24, "topright")
+        if len(pts) < 2:
+            empty = pygame.Rect(ix, box_y + 80, iw, 200)
+            pygame.draw.rect(self.screen, (18, 23, 40), empty, border_radius=12)
+            pygame.draw.rect(self.screen, (40, 52, 84), empty, 1, border_radius=12)
+            self._t("추이를 그리려면 경기가 2판 이상 필요합니다", self.font_menu, C_TEXT, empty.centerx, empty.y + 70, "midtop")
+            self._t("경기를 더 하거나 위의 규모/난이도 필터를 바꿔 보세요", self.font_small, C_DIM, empty.centerx, empty.y + 112, "midtop")
+            return
+        gx, gy, gw, gh = ix + 54, box_y + 64, iw - 70, 330
+        pygame.draw.rect(self.screen, (14, 18, 32), (gx - 10, gy - 12, gw + 20, gh + 24), border_radius=10)
+        for frac, label in ((1.0, "1위"), (0.75, "상위 25%"), (0.5, "50%"), (0.25, "하위 25%"), (0.0, "꼴찌")):
+            yy = gy + int(gh * (1.0 - frac))
+            pygame.draw.line(self.screen, (40, 52, 84) if frac not in (0.0, 1.0) else (66, 82, 124), (gx, yy), (gx + gw, yy), 1)
+            self._t(label, self.font_tiny, C_DIM, gx - 10, yy, "midright")
+        n = len(pts)
+        xs = [gx + int(gw * (i / (n - 1))) for i in range(n)]
+        ys = [gy + int(gh * (1.0 - p[0])) for p in pts]
+        pygame.draw.lines(self.screen, (70, 96, 150), False, list(zip(xs, ys)), 1)
+        avg = []                                                # 5판 이동 평균
+        for i in range(n):
+            w = pts[max(0, i - 4):i + 1]
+            avg.append(sum(p[0] for p in w) / len(w))
+        pygame.draw.lines(self.screen, C_ACCENT, False, [(xs[i], gy + int(gh * (1.0 - avg[i]))) for i in range(n)], 3)
+        for i, p in enumerate(pts):
+            pygame.draw.circle(self.screen, C_GOLD if p[1] else (150, 170, 215), (xs[i], ys[i]), 5 if p[1] else 3)
+        last, prev = self.trend_summary(pts)
+        pct = int(round((1.0 - last) * 100)) if last is not None else None
+        parts = [f"최근 {min(10, n)}판 평균: 상위 {max(1, pct)}%"]
+        if prev is not None:
+            d = (last - prev) * 100
+            parts.append(f"이전 {min(10, n - 10)}판보다 {'+' if d >= 0 else ''}{d:.0f}%p " + ("상승" if d > 1 else ("하락" if d < -1 else "비슷")))
+        wins = sum(1 for p in pts if p[1])
+        parts.append(f"우승 {wins}회 / {n}판")
+        self._t("   ·   ".join(parts), self.font_info, C_GREEN if (prev is None or last >= prev) else C_ORANGE, ix, gy + gh + 30)
+        self._t("● 우승   파란 선: 5판 이동 평균", self.font_tiny, C_DIM, ix + iw, gy + gh + 34, "topright")
+
     def _render_achievements(self, box_x, box_y, box_w):
-        """업적 탭: 10개 카드 (달성은 밝게, 미달성은 흐리게 + 조건 표시)"""
+        """업적 탭: 카드 (한 줄 6개) (달성은 밝게, 미달성은 흐리게 + 조건 표시)"""
         done = set(self.stats_mgr.achievements_done())
         prog = self.stats_mgr.achievement_progress()
         self._t(f"달성한 업적  {len(done)} / {len(ACHIEVEMENTS)}", self.font_mid, C_TEXT, box_x + 25, box_y + 20)
         self._t("배틀로얄 경기에서 달성하면 기록됩니다 (서바이벌/연습은 해당 없음)", self.font_tiny, C_DIM, box_x + box_w - 25, box_y + 26, "topright")
-        cols, rows = 5, 2
+        cols, rows = 6, 2                                              # 업적이 11개라 한 줄에 6개
         gap = 12
         cw = (box_w - 50 - gap * (cols - 1)) // cols
         ch = 168

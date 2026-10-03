@@ -37,11 +37,12 @@ from screens.records import RecordsMixin
 from screens.widgets import WidgetsMixin
 from screens.text_input import TextInputMixin
 from screens.modal import ModalMixin
+from screens.rules import RulesMixin
 from screens.menu import MenuMixin
 from screens.lobby import LobbyMixin
 
 
-class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsMixin, TextInputMixin, ModalMixin, MenuMixin, LobbyMixin):
+class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsMixin, TextInputMixin, ModalMixin, MenuMixin, LobbyMixin, RulesMixin):
     def __init__(self):
         pygame.init()
         pygame.display.set_caption("BLOCK ROYALE 100 (배틀로얄 블록 퍼즐)")
@@ -68,6 +69,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         self.sound_mgr.set_sfx_enabled(self.settings.get("sfx_enabled", True))
         self.sound_mgr.set_bgm_volume(self.settings.get("bgm_volume", 60) / 100.0)
         self.sound_mgr.set_sfx_volume(self.settings.get("sfx_volume", 70) / 100.0)
+        self.sound_mgr.set_warn_scale(self.settings.get("warn_volume", 100) / 100.0)
         
         self.net_mgr = NetworkManager()
         try:
@@ -111,9 +113,11 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         self.font_help = HiFont(font_name, 14, bold=False)    # 설정 화면: 도움말/보조 줄
         self.font_sec = HiFont(font_name, 13, bold=True)      # 설정 화면: 섹션 제목
         self.font_input = HiFont("consolas", 22, bold=True)
+        self._menu_font_base = {n: getattr(self, n).size_pt for n in ("font_small", "font_tiny", "font_help", "font_sec", "font_info")}
         
         # 상태 관리: 'MENU', 'SETTINGS', 'RECORDS', 'HOST_LOBBY', 'JOIN_MENU', 'CLIENT_LOBBY', 'GAME'
         self.state = "MENU"
+        self.rules_open = False             # F1 규칙 요약 카드가 열려 있는가
         self.previous_state = "MENU"
         self.is_paused = False
         
@@ -232,6 +236,10 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                         self._confirm_quit_app()                 # 창 X 버튼도 바로 끄지 않고 확인
                     elif not any(b[0] == "quit_app" for b in self.modal["buttons"]):
                         self._pending_quit = True                # 떠 있는 다른 알림 창을 덮어쓰지 않고, 닫은 뒤에 종료 확인
+                elif self.rules_open and event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                    self._handle_rules_event(event)
+                elif self.rules_open and event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONUP, pygame.MOUSEWHEEL):
+                    pass
                 elif self.modal is not None and event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
                     self._handle_modal_event(event)
                 elif self.modal is not None and event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONUP, pygame.MOUSEWHEEL):
@@ -280,6 +288,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                 
             if self.modal is not None:
                 self._render_modal()
+            if self.rules_open:
+                self._render_rules()
             pygame.display.flip()
             
         self.settings.save()
@@ -299,6 +309,10 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         self.settings.set("onboard_done", True, autosave=False)
 
     def _handle_event(self, event):
+        if (event.type == pygame.KEYDOWN and event.key == pygame.K_F1 and self.text_focus is None
+                and self.rebinding_action is None and self.state != "JOIN_MENU"):
+            self._open_rules()                                   # F1: 규칙 요약 카드 (어느 화면에서든)
+            return
         if self._text_input_event(event):
             return
         if self.state == "SETTINGS":

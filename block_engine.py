@@ -73,6 +73,7 @@ class BlockEngine:
         self.badge_rate = 0.0           # 배지 공격력 증폭률 (상쇄 이전에 적용)
         self.last_clear_info = None     # 직전 클리어 상세 (T-Spin, B2B, 행 인덱스 등)
         self.cleared_row_indices = []   # 라인 클리어 시각 이펙트용 행 목록
+        self.perfect_clear_attack = PERFECT_CLEAR_ATTACK   # 주간 변형 규칙으로 바뀔 수 있음
         self.lock_events = 0            # 피스가 고정될 때마다 증가 (UI 이펙트/효과음 트리거용)
         self.perfect_clears = 0         # 퍼펙트 클리어 달성 횟수 (UI/중계 트리거용)
         self.garbage_pushed_total = 0   # 지금까지 보드에 올라온 쓰레기 줄 수 (효과음 트리거용)
@@ -195,6 +196,27 @@ class BlockEngine:
                 self.current_rot = new_rot
                 self.last_move_was_rotation = True
                 self.last_kick_index = kick_idx
+                self._on_piece_manipulated()
+                return True
+        return False
+
+    # 180도 회전 킥 후보 (dx, 위쪽이 +): 제자리 -> 위 -> 좌우 -> 좌우 위
+    ROT180_KICKS = [(0, 0), (0, 1), (1, 0), (-1, 0), (1, 1), (-1, 1)]
+
+    def rotate180(self):
+        """180도 회전(선택 키). SRS에는 없는 동작이라 간단한 킥 목록만 쓰며, T-스핀 판정은 기존 3-코너 규칙을 그대로 따름(킥 번호로 인한 정식 판정은 없음)"""
+        if self.game_over or self.current_piece == 'O':
+            return False
+        new_rot = (self.current_rot + 2) % 4
+        for kick_idx, (kx, ky) in enumerate(self.ROT180_KICKS):
+            test_x = self.current_x + kx
+            test_y = self.current_y - ky
+            if not self._check_collision(test_x, test_y, new_rot):
+                self.current_x = test_x
+                self.current_y = test_y
+                self.current_rot = new_rot
+                self.last_move_was_rotation = True
+                self.last_kick_index = min(kick_idx, 3)
                 self._on_piece_manipulated()
                 return True
         return False
@@ -327,7 +349,7 @@ class BlockEngine:
             # 퍼펙트 클리어: 줄을 지운 뒤 보드에 블록이 하나도 없으면 큰 보너스 공격
             is_pc = all(cell is None for row in self.grid for cell in row)
             if is_pc:
-                base_attack += PERFECT_CLEAR_ATTACK
+                base_attack += self.perfect_clear_attack
                 self.perfect_clears += 1
                 self.score += 3000
 

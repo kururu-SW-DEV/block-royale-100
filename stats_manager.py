@@ -44,6 +44,7 @@ ACHIEVEMENTS = (
     ("marathon", "마라토너", "한 판에서 7분 이상 생존", lambda c: c["secs"] >= 420),      # 8~9분에 끝나는 경기라 10분은 사실상 우승권만 가능했음 -> 7분
     ("ladder_all", "사다리 정복", "난이도 사다리 4단계 모두 클리어", lambda c: c["ladder_n"] >= 4),
     ("daily3", "꾸준한 도전자", "오늘의 도전을 3일 이상 플레이", lambda c: c["daily_n"] >= 3),
+    ("revenge", "복수의 화신", "나를 자주 탈락시킨 라이벌 봇을 처치", lambda c: c.get("revenge_n", 0) >= 1),
 )
 ACHIEVEMENT_IDS = tuple(a[0] for a in ACHIEVEMENTS)
 
@@ -62,7 +63,10 @@ DEFAULT_STATS = {
     "daily": {},                      # 오늘의 도전 날짜별 최고 순위 {"20260930": 12} (최근 30일만 유지)
     "ladder": [],                     # 클리어한 난이도 목록 (LADDER 중)
     "achievements": [],               # 달성한 업적 id (ACHIEVEMENTS 중, 배틀로얄 전적에만)
-    "best_by_size": {}                # 규모별 최고 순위 {"small": 3, "mid": 8, "large": 28} (플레이한 규모만)
+    "best_by_size": {},               # 규모별 최고 순위 {"small": 3, "mid": 8, "large": 28} (플레이한 규모만)
+    "daily_meta": {},                 # 오늘의 도전 날짜별 {"rank": 최고 순위, "secs": 그때 버틴 시간, "tries": 시도 횟수} (고스트 비교용, 최근 30일)
+    "weekly": {},                     # 주간 변형 규칙 주별 최고 순위 {"2026W40": 7} (최근 20주)
+    "rivals": {}                      # 라이벌 봇: {"losses": {봇 id: 나를 탈락시킨 횟수}, "revenges": 라이벌을 처치한 횟수}
 }
 
 def _backup_corrupt(path):
@@ -119,6 +123,25 @@ class StatsManager:
                 if isinstance(v, dict):
                     target[k] = {kk: int(vv) for kk, vv in v.items()
                                  if isinstance(kk, str) and len(kk) == 8 and kk.isdigit() and isinstance(vv, (int, float)) and not isinstance(vv, bool) and vv >= 1}
+            elif k == "daily_meta":
+                if isinstance(v, dict):
+                    clean = {}
+                    for kk, vv in v.items():
+                        if (isinstance(kk, str) and len(kk) == 8 and kk.isdigit() and isinstance(vv, dict)
+                                and all(isinstance(vv.get(f), int) and not isinstance(vv.get(f), bool) and vv.get(f) >= 0 for f in ("rank", "secs", "tries"))):
+                            clean[kk] = {f: int(vv[f]) for f in ("rank", "secs", "tries")}
+                    target[k] = clean
+            elif k == "weekly":
+                if isinstance(v, dict):
+                    target[k] = {kk: int(vv) for kk, vv in v.items()
+                                 if isinstance(kk, str) and len(kk) == 7 and kk[4] == "W" and isinstance(vv, (int, float)) and not isinstance(vv, bool) and vv >= 1}
+            elif k == "rivals":
+                if isinstance(v, dict):
+                    losses = v.get("losses", {})
+                    rev = v.get("revenges", 0)
+                    target[k] = {"losses": {kk: int(vv) for kk, vv in (losses.items() if isinstance(losses, dict) else [])
+                                            if isinstance(kk, str) and kk.startswith("BOT_") and isinstance(vv, (int, float)) and not isinstance(vv, bool) and vv >= 1},
+                                 "revenges": int(rev) if isinstance(rev, (int, float)) and not isinstance(rev, bool) and rev >= 0 else 0}
             elif k == "achievements":                      # 업적: 알려진 id만
                 if isinstance(v, list):
                     target[k] = [x for x in ACHIEVEMENT_IDS if x in v]
@@ -184,6 +207,21 @@ class StatsManager:
         return {"first_ko": (min(mk, 1), 1), "ko5": (min(mk, 5), 5), "ko10": (min(mk, 10), 10), "combo8": (min(cb, 8), 8),
                 "marathon": (min(int(best_secs), 420), 420), "ladder_all": (len(d.get("ladder", [])), 4), "daily3": (min(len(d.get("daily", {})), 3), 3)}
 
+    def rival_id(self):
+        """나를 가장 많이 탈락시킨 봇 id (2번 이상일 때만 라이벌로 인정). 없으면 None"""
+        losses = self.data.get("rivals", {}).get("losses", {})
+        if not losses:
+            return None
+        bid = max(sorted(losses), key=lambda b: losses[b])
+        return bid if losses[bid] >= 2 else None
+
+    def daily_ghost(self, date_key):
+        """오늘의 도전의 지난 최고 기록 {"rank","secs","tries"} (처음이면 None)"""
+        return self.data.get("daily_meta", {}).get(date_key)
+
+    def weekly_best(self, week_key):
+        return self.data.get("weekly", {}).get(week_key, 0)
+
     def achievements_done(self):
         """달성한 업적 id 목록 (ACHIEVEMENTS 순서)"""
         return [x for x in ACHIEVEMENT_IDS if x in self.data.get("achievements", [])]
@@ -200,7 +238,8 @@ class StatsManager:
         """오늘의 도전(date_key="YYYYMMDD")에서의 최고 순위 (아직 안 했으면 0)"""
         return self._bucket(mode).get("daily", {}).get(date_key, 0)
 
-    def record_match(self, rank, total_players, kos, lines, max_combo, survival_sec, mode="battle", difficulty="mixed", daily=None):
+    def record_match(self, rank, total_players, kos, lines, max_combo, survival_sec, mode="battle", difficulty="mixed", daily=None,
+                     weekly=None, killer=None, revenge=False):
         """경기 완료 시 전적 기록 및 통계 갱신 (mode: "battle" 배틀로얄 / "survival" 서바이벌)"""
         d = self._bucket(mode)
         prev_games = d.get("total_games", 0)
@@ -223,6 +262,30 @@ class StatsManager:
                 dd[daily] = rank
             for old_key in sorted(dd)[:-30]:
                 del dd[old_key]
+            meta = d.setdefault("daily_meta", {})          # 고스트 비교용: 최고 순위(같으면 더 오래 버틴 기록)와 시도 횟수
+            cur = meta.get(daily, {"rank": 10 ** 6, "secs": 0, "tries": 0})
+            better = rank < cur["rank"] or (rank == cur["rank"] and int(survival_sec) > cur["secs"])
+            meta[daily] = {"rank": rank if better else cur["rank"], "secs": int(survival_sec) if better else cur["secs"], "tries": cur["tries"] + 1}
+            for old_key in sorted(meta)[:-30]:
+                del meta[old_key]
+        if weekly:                                         # 주간 변형 규칙: 주별 최고 순위 (최근 20주)
+            wk = d.setdefault("weekly", {})
+            if weekly not in wk or rank < wk[weekly]:
+                wk[weekly] = rank
+            for old_key in sorted(wk)[:-20]:
+                del wk[old_key]
+        if mode == "battle" and killer and isinstance(killer, str) and killer.startswith("BOT_") and rank > 1:   # 라이벌 집계: 나를 탈락시킨 봇
+            rv = d.setdefault("rivals", {})
+            losses = rv.setdefault("losses", {})
+            losses[killer] = losses.get(killer, 0) + 1
+            if len(losses) > 30:                           # 오래된 기록이 쌓이지 않게 횟수가 적은 것부터 정리
+                for k_ in sorted(losses, key=lambda x: losses[x])[:len(losses) - 30]:
+                    del losses[k_]
+        if mode == "battle" and revenge:
+            rv = d.setdefault("rivals", {})
+            rv["revenges"] = rv.get("revenges", 0) + 1
+            rv.setdefault("losses", {}).clear()            # 복수에 성공하면 라이벌 관계를 새로 시작
+
         self.last_ladder_clear = None                      # 이번 경기로 새로 클리어한 난이도 (없으면 None)
         if (mode == "battle" and difficulty in LADDER and total_players >= LADDER_MIN_PLAYERS and rank <= LADDER_RANK
                 and difficulty not in d.setdefault("ladder", [])):
@@ -232,7 +295,8 @@ class StatsManager:
         self.last_new_achievements = []                    # 이번 경기로 새로 달성한 업적 id
         if mode == "battle":
             ctx = {"rank": rank, "total": total_players, "kos": kos, "lines": lines, "combo": max_combo, "secs": survival_sec,
-                   "ladder_n": len(d.get("ladder", [])), "daily_n": len(d.get("daily", {}))}
+                   "ladder_n": len(d.get("ladder", [])), "daily_n": len(d.get("daily", {})),
+                   "revenge_n": d.get("rivals", {}).get("revenges", 0)}
             have = d.setdefault("achievements", [])
             for aid, _title, _desc, ok in ACHIEVEMENTS:
                 if aid not in have and ok(ctx):
@@ -336,3 +400,22 @@ class StatsManager:
             "play_time_sec": d.get("total_play_time_sec", 0),
             "recent_matches": d.get("recent_matches", [])
         }
+
+
+# 해금 꾸밈: 업적/기록으로 열리는 블록 스킨. id -> (조건 설명, 조건 함수(전적 dict) -> bool). 기존 4종(classic/neon/flat/jelly)은 처음부터 사용 가능
+SKIN_UNLOCKS = {
+    "pixel": ("업적 3개 달성", lambda d: len(d.get("achievements", [])) >= 3),
+    "glass": ("로열 빅토리(우승) 1회", lambda d: d.get("victories", 0) >= 1),
+}
+
+
+def unlocked_skin_ids(stats_data):
+    """지금 쓸 수 있는 스킨 id 목록 (기본 4종 + 조건을 채운 해금 스킨)"""
+    out = ["classic", "neon", "flat", "jelly"]
+    out += [sid for sid, (_d, ok) in SKIN_UNLOCKS.items() if ok(stats_data)]
+    return out
+
+
+def locked_skin_hints(stats_data):
+    """아직 잠긴 스킨의 [(id, 조건 설명)]"""
+    return [(sid, desc) for sid, (desc, ok) in SKIN_UNLOCKS.items() if not ok(stats_data)]

@@ -45,9 +45,12 @@ class GameMixin:
                 self.match.coach_until = 0.0
                 return
             # 연습 모드: G = 쓰레기 줄 받기(Shift+G는 8줄), B = 보드 초기화. 조작키로 쓰고 있는 키는 조작키가 우선
-            if (self.match.practice and event.key in (pygame.K_g, pygame.K_b) and self.text_focus is None
+            if (self.match.practice and event.key in (pygame.K_g, pygame.K_b, pygame.K_v) and self.text_focus is None
                     and not any(event.key in self.settings.get_action_keys(a) for a, _n in ACTION_NAMES)):
-                if event.key == pygame.K_b:
+                if event.key == pygame.K_v:
+                    self.match.practice_toggle_drill()
+                    self.sound_mgr.play('rotate')
+                elif event.key == pygame.K_b:
                     self.match.practice_reset()
                 else:
                     self.match.practice_inject_garbage(8 if (event.mod & pygame.KMOD_SHIFT) else 4)
@@ -82,9 +85,15 @@ class GameMixin:
                     self._practice_after_match()
                 elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE, pygame.K_ESCAPE):
                     if time.time() >= self.result_lock_until:
-                        self.return_to_menu()
+                        self._request_menu_exit()
                 return
             if self.match.match_finished or not self.match.local_is_alive:
+                if (event.key == pygame.K_f and self.net_mgr.mode == "NONE" and not self.match.match_finished
+                        and not self.match.local_is_alive):
+                    # 솔로 탈락 뒤: F로 관전 배속 ×1 -> ×2 -> ×4 (결과까지 기다리는 시간을 줄임)
+                    self.match.spectate_speed = {1: 2, 2: 4}.get(getattr(self.match, "spectate_speed", 1), 1)
+                    self.sound_mgr.play('rotate')
+                    return
                 if getattr(self.match, 'is_spectating', False):
                     if event.key == pygame.K_LEFT:
                         self.match.cycle_spectate_target(-1)
@@ -115,7 +124,7 @@ class GameMixin:
                             self.renderer.pause_focus = 0
                             self.sound_mgr.pause_bgm()
                         else:
-                            self.return_to_menu()
+                            self._request_menu_exit()
                         return
                 else:
                     if event.key in (pygame.K_r, pygame.K_s, pygame.K_p) and time.time() < self.result_lock_until:
@@ -148,17 +157,20 @@ class GameMixin:
                     elif event.key == pygame.K_ESCAPE:
                         if time.time() < self.result_lock_until:
                             return
-                        self.return_to_menu()
+                        self._request_menu_exit()
                         return
 
             if self.is_paused:
                 if event.key in (pygame.K_UP, pygame.K_DOWN):
                     step = -1 if event.key == pygame.K_UP else 1
-                    self.renderer.pause_focus = (self.renderer.pause_focus + step) % 3
+                    self.renderer.pause_focus = (self.renderer.pause_focus + step) % 4
                     self.sound_mgr.play('move')
                     return
                 if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
                     self._activate_pause_focus()
+                    return
+                if event.key == pygame.K_r:
+                    self._activate_pause_focus(1)
                     return
                 if not self.settings.is_action_key(event.key, "pause") and event.key != pygame.K_ESCAPE:
                     return
@@ -186,6 +198,9 @@ class GameMixin:
                     self.sound_mgr.play('rotate')
             elif self.settings.is_action_key(event.key, "rotate_ccw"):
                 if self.match.local_engine.rotate(clockwise=False):
+                    self.sound_mgr.play('rotate')
+            elif self.settings.is_action_key(event.key, "rotate_180"):
+                if self.match.local_engine.rotate180():
                     self.sound_mgr.play('rotate')
             elif self.settings.is_action_key(event.key, "hard_drop"):
                 cleared = self.match.local_engine.hard_drop()
@@ -224,7 +239,7 @@ class GameMixin:
                 if not self.match.match_finished and self.match.local_is_alive:
                     self._confirm_leave_network_game()      # 진행 중인 경기는 실수로 ESC를 눌러도 바로 나가지 않고 확인 (솔로/네트워크 공통)
                     return
-                self.return_to_menu()
+                self._request_menu_exit()
                 return
                 
         elif event.type == pygame.KEYUP:
@@ -243,6 +258,12 @@ class GameMixin:
         elif event.type == pygame.MOUSEWHEEL and self.match.match_finished:
             self.renderer.scroll_standings(-event.y * 2)
 
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
+            # 우클릭: 수동 지정 해제 (조준 모드는 유지). 오버레이가 떠 있으면 무시
+            if (not self.is_paused and not self.match.match_finished and self.match.local_is_alive
+                    and getattr(self.match, "attacks_enabled", True) and self.match.release_manual_target()):
+                self.sound_mgr.play('rotate')
+
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mx, my = event.pos
             if getattr(self.match, "coach_until", 0.0) > time.time():
@@ -253,11 +274,14 @@ class GameMixin:
                 if getattr(self.renderer, 'pause_resume_btn', None) and self.renderer.pause_resume_btn.collidepoint(mx, my):
                     self._activate_pause_focus(0)
                     return
-                if getattr(self.renderer, 'pause_settings_btn', None) and self.renderer.pause_settings_btn.collidepoint(mx, my):
+                if getattr(self.renderer, 'pause_restart_btn', None) and self.renderer.pause_restart_btn.collidepoint(mx, my):
                     self._activate_pause_focus(1)
                     return
-                if getattr(self.renderer, 'pause_exit_btn', None) and self.renderer.pause_exit_btn.collidepoint(mx, my):
+                if getattr(self.renderer, 'pause_settings_btn', None) and self.renderer.pause_settings_btn.collidepoint(mx, my):
                     self._activate_pause_focus(2)
+                    return
+                if getattr(self.renderer, 'pause_exit_btn', None) and self.renderer.pause_exit_btn.collidepoint(mx, my):
+                    self._activate_pause_focus(3)
                     return
                 return                                           # 일시정지 창 뒤의 미니 보드는 클릭되지 않게 막음
             
@@ -278,7 +302,7 @@ class GameMixin:
                     return
                 if hasattr(self.renderer, 'result_return_btn') and self.renderer.result_return_btn and self.renderer.result_return_btn.collidepoint(mx, my):
                     self.sound_mgr.play('move')
-                    self.return_to_menu()
+                    self._request_menu_exit()
                     return
                 return                                           # 결과 오버레이 뒤의 미니 보드는 클릭되지 않게 막음
 
@@ -290,12 +314,61 @@ class GameMixin:
                         self.sound_mgr.play('move')
                         return
 
-            # 일반 인게임: 미니 보드 클릭으로 수동 타겟 지정
+            # 상단 조준 모드 칩 클릭: 그 모드 선택 (수동 지정은 해제)
+            for mode, rect in self.renderer.target_chip_rects.items():
+                if rect.collidepoint(mx, my) and self.match.local_is_alive and getattr(self.match, "attacks_enabled", True):
+                    self.settings.set("target_mode", self.match.set_target_mode(mode), autosave=False)
+                    self.sound_mgr.play('rotate')
+                    return
+
+            # 일반 인게임: 미니 보드 클릭으로 수동 타겟 지정 (이미 지정한 카드를 다시 누르면 해제)
             for pid, rect in self.renderer.mini_board_rects.items():
                 if rect.collidepoint(mx, my):
+                    if self.match.local_manual_target_id == pid:
+                        self.match.release_manual_target()
+                        self.sound_mgr.play('rotate')
+                        break
                     if self.match.set_manual_target(pid):
                         self.sound_mgr.play('attack')        # 실제로 조준이 바뀐 경우에만 소리
                     break
+
+    TIPS = [
+        ("garbage", "받은 공격은 잠시 '차징' 중이에요. 그 사이에 줄을 지우면 먼저 깎입니다! (초록→빨강으로 차오르면 위험)"),
+        ("multi", "여러 명이 나를 노리면 내 공격에 '역습 보너스'가 붙어요."),
+        ("ko", "K.O.를 낼 때마다 배지가 쌓여 공격력이 올라가요. (2·4·8·16 K.O.)"),
+        ("late", "후반전: 시간이 지날수록 모두의 공격력 배율이 올라갑니다."),
+    ]
+
+    def _tips_active(self):
+        if self.settings.get("tips_replay"):
+            return True
+        return self.stats_mgr.data.get("total_games", 0) < 10
+
+    def _check_tips(self):
+        """처음 일어나는 일에 맞춰 '첫 경험 팁'을 한 번만 보여 줌 (설정에서 다시 보기 가능). 연습/서바이벌/탈락 뒤에는 보이지 않음"""
+        m = self.match
+        if getattr(m, "coach_pending", False) and (m.elapsed >= 10.0 or m.match_finished):
+            m.coach_pending = False
+            self.settings.set("coach_done", True, autosave=False)
+        if (m.practice or not getattr(m, "attacks_enabled", True) or not m.local_is_alive or m.match_finished
+                or m.countdown_left() > 0 or getattr(m, "coach_until", 0.0) > time.time() or not self._tips_active()):
+            return
+        seen = list(self.settings.get("tips_seen", []) or [])
+        eng = m.local_engine
+        cond = {"garbage": eng.incoming_garbage > 0,
+                "multi": m.get_attackers_count_for(m.local_player_id) >= 2,
+                "ko": m.local_ko_count >= 1,
+                "late": m.attack_multiplier() > 1.0}
+        if any(f["category"] == "tip" and time.time() - f["birth"] < f["duration"] for f in m.floating_texts):
+            return                                            # 앞의 팁이 떠 있는 동안은 다음 팁을 미룸
+        for tid, text in self.TIPS:
+            if tid not in seen and cond.get(tid):
+                m.add_floating_text("TIP  " + text, (250, 240, 200), duration=7.0, size=22, category="tip")
+                seen.append(tid)
+                self.settings.set("tips_seen", seen, autosave=False)
+                if len(seen) >= len(self.TIPS) and self.settings.get("tips_replay"):
+                    self.settings.set("tips_replay", False, autosave=False)
+                break
 
     def _result_button_ids(self):
         """결과 화면(K.O.)에 실제로 보이는 버튼 id 목록 (왼쪽부터). ui_renderer._render_result_overlay의 분기와 맞춰야 함"""
@@ -321,10 +394,10 @@ class GameMixin:
             self.match.is_spectating = True
             self.match.cycle_spectate_target(0)
         elif bid == "return":
-            self.return_to_menu()
+            self._request_menu_exit()
 
     def _activate_pause_focus(self, idx=None):
-        """일시정지 메뉴 항목 실행 (0=계속하기 1=환경설정 2=나가기). 키보드 엔터/마우스 클릭 공용"""
+        """일시정지 메뉴 항목 실행 (0=계속하기 1=다시 시작 2=환경설정 3=나가기). 키보드 엔터/마우스 클릭 공용"""
         if idx is None:
             idx = self.renderer.pause_focus
         self.sound_mgr.play('move')
@@ -334,13 +407,19 @@ class GameMixin:
                 self.match.is_paused = False
             self.sound_mgr.unpause_bgm()
         elif idx == 1:
+            if self.match.match_finished or not self.match.local_is_alive:
+                self._restart_after_match()                         # 이미 끝난 판/탈락 뒤 관전 중이면 확인 없이 새 판
+            else:
+                self._open_modal("처음부터 다시 시작할까요?", ["진행 중인 판은 전적에 기록되지 않습니다.", "(오늘의 도전은 같은 도전으로 다시 시작합니다)"],
+                                 [("stay", "계속하기", "blue", "ESC"), ("restart_ok", "다시 시작", "red", "Y")])
+        elif idx == 2:
             self.previous_state = "GAME"
             self.state = "SETTINGS"
-        elif idx == 2:
+        elif idx == 3:
             if not self.match.match_finished and self.match.local_is_alive:
                 self._confirm_leave_network_game()
             else:
-                self.return_to_menu()
+                self._request_menu_exit()
 
     def _open_settings_from_game(self):
         self.sound_mgr.play('move')
@@ -446,7 +525,18 @@ class GameMixin:
         prev_alive = self.match.local_is_alive
         prev_ko = self.match.local_ko_count
         
-        self.match.update(dt)
+        steps = 1
+        if self.net_mgr.mode == "NONE" and not self.match.local_is_alive and not self.match.match_finished:
+            steps = max(1, min(4, int(getattr(self.match, "spectate_speed", 1))))      # 솔로 관전 배속: 같은 시간 단위로 여러 번 진행
+        for _ in range(steps):
+            self.match.update(dt)
+            if self.match.match_finished:
+                break
+        if self.match.match_finished or self.match.local_is_alive:
+            self.match.spectate_speed = 1
+        self._check_tips()
+        if self.match.practice and self.match.drill_best > self.settings.get("drill_best", 0):
+            self.settings.set("drill_best", int(self.match.drill_best), autosave=False)      # 최고 기록은 메뉴로 나갈 때 저장
         self._play_lock_feedback(dt)
         
         # 생존자 수에 따른 동적 BGM 스테이지 업데이트 (100인 -> 50인 -> 20인 이하)
@@ -495,14 +585,19 @@ class GameMixin:
                 survival_sec=survival_sec,
                 mode="battle" if self.match.attacks_enabled else "survival",
                 difficulty=self.match.bot_difficulty,
-                daily=self.match.daily
+                daily=self.match.daily,
+                weekly=self.match.weekly,
+                killer=self.match.local_killer_id if (self.match.attacks_enabled and not self.match.practice and self.net_mgr.mode == "NONE") else None,
+                revenge=bool(self.match.rival_defeated)
             )
             _mode = "battle" if self.match.attacks_enabled else "survival"
             if getattr(self.match, "log_enabled", False):
                 self._save_match_log(final_rank)
             self.match.new_achievements = list(getattr(self.stats_mgr, "last_new_achievements", []))
             self.match.ladder_clear = self.stats_mgr.last_ladder_clear
-            self.match.next_goal = (f"오늘의 도전 최고 #{self.stats_mgr.daily_best(self.match.daily)}위" if self.match.daily and not self.match.ladder_clear else None) or next_goal_text(final_rank, self.match.local_ko_count, self.match.total_players,
+            self.match.next_goal = ((f"오늘의 도전 최고 #{self.stats_mgr.daily_best(self.match.daily)}위" if self.match.daily and not self.match.ladder_clear else None)
+                                    or (f"이번 주 변형({self.match.mutator['name']}) 최고 #{self.stats_mgr.weekly_best(self.match.weekly)}위" if self.match.weekly and self.match.mutator and not self.match.ladder_clear else None)
+                                    or ("라이벌에게 복수 성공!" if self.match.rival_defeated else None)) or next_goal_text(final_rank, self.match.local_ko_count, self.match.total_players,
                                                   self.stats_mgr.best_in_size(_mode, self.match.total_players),
                                                   difficulty=self.match.bot_difficulty if _mode == "battle" else None,
                                                   cleared=self.stats_mgr.ladder_cleared(_mode), ladder_clear=self.match.ladder_clear)
@@ -557,6 +652,15 @@ class GameMixin:
         """게임 중: (클라이언트) 호스트 종료/연결 끊김 알림, (호스트) 참가자 이탈 알림 및 정리"""
         nm = self.net_mgr
         if nm.mode == "CLIENT" and nm.lobby_return:
+            if self.match is not None and self.match.match_finished:
+                # 방장이 대기실로 돌아갔어도 순위표를 읽을 시간을 줌: 10초 뒤 자동 이동, R/Enter로 바로 이동 가능
+                now = time.time()
+                if getattr(self, "_lobby_return_t0", None) is None:
+                    self._lobby_return_t0 = now
+                left = 10.0 - (now - self._lobby_return_t0)
+                self.renderer.lobby_return_left = max(0.0, left)
+                if left > 0:
+                    return False
             self._return_to_lobby()
             return True
         if nm.mode == "CLIENT" and not self._notice_shown:

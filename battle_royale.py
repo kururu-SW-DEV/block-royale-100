@@ -42,9 +42,14 @@ BOT_SEARCH_BUDGET = 0.008      # 프레임당 봇 전원의 탐색 시간 상한
 
 class BattleRoyaleMatch:
     def __init__(self, total_players=100, local_player_id="P1", local_player_name="Player", net_mgr=None, initial_players=None, sound_mgr=None, bot_difficulty="mixed", attacks_enabled=True,
-                 practice=False, seed=None, daily=None):
+                 practice=False, seed=None, daily=None, weekly=None, mutator=None, rival_id=None, ghost=None):
         self.practice = bool(practice)                 # 연습 모드: 봇 없이 혼자 (쓰레기 줄을 직접 넣어 보며 연습), 전적에 기록 안 함, 죽으면 판이 초기화
         self.daily = daily                             # 오늘의 도전 날짜 키("YYYYMMDD") 또는 None. 같은 날은 같은 블록 순서와 상대 구성
+        self.weekly = weekly                           # 주간 변형 규칙의 주 키("2026W40") 또는 None
+        self.mutator = dict(mutator) if mutator else None   # 이번 경기에 적용 중인 변형 규칙 (config.WEEKLY_MUTATORS 항목)
+        self.rival_id = rival_id                       # 나를 자주 탈락시킨 라이벌 봇 id (없으면 None)
+        self.rival_defeated = False                    # 이번 경기에서 라이벌을 내가 처치했는가 (복수 성공)
+        self.ghost = ghost                             # 오늘의 도전 지난 최고 기록 {"rank","secs","tries"} 또는 None (경기 중 비교 표시용)
         if seed is not None:
             random.seed(seed)                          # 봇 구성/난이도 선택이 같은 날 같게
         self.attacks_enabled = bool(attacks_enabled) and not self.practice   # False: 서바이벌 모드 (서로 공격/쓰레기 줄/K.O. 없이 각자 끝까지 생존)
@@ -107,6 +112,11 @@ class BattleRoyaleMatch:
         self.local_assists = 0            # K.O. 기여 횟수: 내가 4줄 이상 보내 둔 상대를 다른 플레이어가 마무리한 경우 (배지 보상은 없음)
         self._auto_lock = None            # 자동 조준 락온: (대상 id, 고정한 시각)
         self.practice_done = set()        # 연습 과제 중 완료한 번호
+        self.drill_on = False             # 연습 압박 드릴: 시간이 지날수록 더 큰 쓰레기 줄이 주기적으로 들어옴 (V 키)
+        self.drill_t0 = 0.0               # 이번 드릴 시작 시각(elapsed 기준)
+        self.drill_next = 0.0             # 다음 공격 시각
+        self.drill_best = 0               # 가장 오래 버틴 시간(초): 앱이 설정에서 읽어 넣고 갱신분을 저장
+        self.drill_last = 0               # 방금 끝난 드릴에서 버틴 시간(초)
         self.local_hits_from = {}         # 내가 받은 공격 줄 수: 보낸 사람 id -> 합계 (결과 화면 "패인 한 줄"용)
         self._hit_agg = None              # 1초 안에 연달아 받은 피격을 한 토스트로 합치기 위한 상태
         self.events = []                  # 사람 테스트용 경기 로그(설정에서 켠 경우만 기록): (경기 시각, 종류, 내용)
@@ -114,7 +124,30 @@ class BattleRoyaleMatch:
         self.commentary = []      # 전광판 중계 기록: dict(text, color, birth)
         
         self._setup_participants()
+        self._apply_mutator()
         self.add_commentary(f"경기 시작!  {self.total_players}명 배틀로얄", (120, 235, 255))
+        if self.mutator:
+            self.add_commentary(f"주간 변형: {self.mutator['name']} - {self.mutator['desc']}", (255, 190, 90), prio=1)
+        if self.daily and self.ghost:
+            gs = int(self.ghost["secs"])
+            self.add_commentary(f"오늘의 도전 {self.ghost['tries'] + 1}회째 · 지난 최고 {self.ghost['rank']}위 ({gs // 60}:{gs % 60:02d})  생존자 칸에서 기록과 비교", (255, 215, 90), prio=1)
+        if self.rival_id in self.players and not self.practice:
+            self.add_commentary(f"라이벌 등장!  {self._short_name(self.rival_id)} (◆ 표시)", (255, 170, 80), prio=1)
+
+    def _apply_mutator(self):
+        """주간 변형 규칙 적용 (후반 증폭 시작 시각, 퍼펙트 클리어 공격 줄 수). NEXT 개수는 렌더러가 mutator를 읽어 처리"""
+        m = self.mutator
+        if not m:
+            return
+        if "escalation_start" in m:
+            self.ESCALATION_START = float(m["escalation_start"])      # 인스턴스 값으로 덮어씀 (클래스 값은 그대로)
+        if "perfect_attack" in m:
+            self.local_engine.perfect_clear_attack = int(m["perfect_attack"])
+            for p in self.players.values():
+                bot = p.get("bot")
+                eng = getattr(bot, "engine", None)
+                if eng is not None:
+                    eng.perfect_clear_attack = int(m["perfect_attack"])
 
     def get_combat_stats(self):
         """실시간 e-스포츠 지표 (APM: 분당 공격력, LPM: 분당 라인 클리어, 경기 시간) 산출"""
@@ -168,10 +201,10 @@ class BattleRoyaleMatch:
             "events": self.events,
         }
 
-    def add_commentary(self, text, color=(255, 190, 70), prio=0):
-        """상단 전광판에 표시할 경기 중계 한 줄. prio=1(결승/우승/페이즈 등 중요 소식)은 대기 중인 일반 소식보다 먼저 방송됨"""
+    def add_commentary(self, text, color=(255, 190, 70), prio=0, mine=False):
+        """상단 전광판에 표시할 경기 중계 한 줄. prio=1(결승/우승/페이즈 등 중요 소식)은 대기 중인 일반 소식보다 먼저 방송됨. mine=True(내 기술/내 K.O.)는 대기열이 밀려도 일반 소식보다 나중에 버려짐"""
         self._commentary_seq = getattr(self, "_commentary_seq", 0) + 1
-        self.commentary.append({"text": text, "color": color, "birth": time.time(), "seq": self._commentary_seq, "prio": prio})
+        self.commentary.append({"text": text, "color": color, "birth": time.time(), "seq": self._commentary_seq, "prio": prio, "mine": bool(mine)})
         if len(self.commentary) > 40:
             del self.commentary[:-40]
 
@@ -327,6 +360,14 @@ class BattleRoyaleMatch:
         self.local_manual_target_id = None
         self.log_event("target_mode", mode=self.local_target_mode)
         return self.local_target_mode
+
+    def release_manual_target(self):
+        """수동으로 찍어 둔 대상만 해제 (조준 모드는 그대로). 해제했으면 True"""
+        if self.local_manual_target_id:
+            self.local_manual_target_id = None
+            self.log_event("target_manual_release")
+            return True
+        return False
 
     def set_manual_target(self, target_id):
         """특정 플레이어 클릭 시 수동 타겟 지정"""
@@ -693,6 +734,11 @@ class BattleRoyaleMatch:
             if last and recent and last != victim_id and self.players.get(last, {}).get("is_alive"):
                 killer_id = last
             
+        if victim_id == self.rival_id and killer_id == self.local_player_id and not self.rival_defeated and not self.practice:
+            self.rival_defeated = True                                 # 복수 성공: 전적/업적은 경기 종료 때 반영
+            self.add_floating_text(f"복수 성공!  라이벌 {self._short_name(victim_id)} 처치", (255, 215, 90), duration=3.0, size=28, category="action")
+            if self.sound_mgr:
+                self.sound_mgr.play('badge_up')
         if victim_id == self.local_player_id:
             self.local_death_attackers = self.get_attackers_count_for(victim_id)
             self.log_event("death", rank=self.next_rank_to_assign, attackers=self.local_death_attackers, killer=killer_id)      # 결과 화면의 "패인 한 줄"용: 탈락 순간 나를 노리던 상대 수
@@ -704,7 +750,7 @@ class BattleRoyaleMatch:
 
         vn = self._short_name(victim_id)
         if killer_id and killer_id in self.players:
-            self.add_commentary(f"{self._short_name(killer_id)} → {vn} K.O.", (255, 110, 110))
+            self.add_commentary(f"{self._short_name(killer_id)} → {vn} K.O.", (255, 110, 110), mine=(killer_id == self.local_player_id or victim_id == self.local_player_id))
         else:
             self.add_commentary(f"{vn} 탈락", (255, 110, 110))
         if self.total_players > self.alive_count >= 2 and self.alive_count in (2, 3, 5, 10):
@@ -788,6 +834,53 @@ class BattleRoyaleMatch:
         if self.practice and self.local_is_alive:
             self.local_engine.queue_garbage(lines, source="연습")
 
+    DRILL_LINES = (2, 3, 4, 5, 6)             # 30초마다 한 단계씩 커지는 공격 줄 수
+    DRILL_STEP_SECS = 30.0
+
+    def drill_level(self):
+        return min(len(self.DRILL_LINES) - 1, int((self.elapsed - self.drill_t0) // self.DRILL_STEP_SECS))
+
+    def drill_interval(self):
+        return max(5.0, 9.0 - self.drill_level())
+
+    def drill_seconds(self):
+        return max(0, int(self.elapsed - self.drill_t0)) if self.drill_on else 0
+
+    def practice_toggle_drill(self):
+        """연습 모드: 압박 드릴 켜기/끄기. 켜면 보드를 새로 시작하고 처음부터 버팀 시간을 잼"""
+        if not self.practice:
+            return False
+        self.drill_on = not self.drill_on
+        if self.drill_on:
+            self.practice_reset(announce=False)
+            self.drill_t0 = self.elapsed
+            self.drill_next = self.elapsed + 8.0
+            self.add_floating_text("압박 드릴 시작!  쓰레기 줄이 주기적으로 들어옵니다. 줄을 지워 막으세요 (V로 끄기)", (255, 190, 90), duration=3.2, size=24, category="action")
+        else:
+            self.add_floating_text("압박 드릴 종료", (140, 230, 255), duration=1.8, size=24, category="action")
+        return self.drill_on
+
+    def _drill_tick(self):
+        if not (self.practice and self.drill_on and self.local_is_alive) or self.elapsed < self.drill_next:
+            return
+        lines = self.DRILL_LINES[self.drill_level()]
+        self.local_engine.queue_garbage(lines, source="드릴")
+        self._play_hit_alarm(lines)
+        self.drill_next = self.elapsed + self.drill_interval()
+
+    def _drill_on_death(self):
+        """드릴 중 보드가 끝까지 쌓임: 버틴 시간 기록 후 새 판으로 이어서 계속"""
+        secs = self.drill_seconds()
+        self.drill_last = secs
+        new_best = secs > self.drill_best
+        if new_best:
+            self.drill_best = secs
+        self.add_floating_text(f"드릴 종료: {secs}초 버팀  ·  막은 줄 {int(self.local_engine.garbage_canceled_total)}" + ("  ★ 최고 기록!" if new_best else f"  (최고 {self.drill_best}초)"),
+                               (255, 215, 90) if new_best else (140, 230, 255), duration=3.6, size=24, category="action")
+        self.practice_reset(announce=False)
+        self.drill_t0 = self.elapsed
+        self.drill_next = self.elapsed + 8.0
+
     PRACTICE_TASKS = ("G로 받은 줄 상쇄하기", "4줄 한 번에 지우기(쿼드)", "3연속 콤보 만들기", "T-스핀 한 번 성공하기")
 
     def practice_current_task(self):
@@ -862,7 +955,7 @@ class BattleRoyaleMatch:
             self.local_engine.garbage_to_send += self.CLUTCH_BONUS
         bonus = f" +{self.CLUTCH_BONUS}줄" if self.attacks_enabled else ""
         self.add_floating_text(f"★ 위기 탈출!{bonus} ★", (255, 215, 0), duration=2.2, size=30, category="action")
-        self.add_commentary(f"{self._short_name(self.local_player_id)}  위기 탈출!", (255, 215, 0))
+        self.add_commentary(f"{self._short_name(self.local_player_id)}  위기 탈출!", (255, 215, 0), mine=True)
         self.trigger_screen_shake(8.0)
 
     def on_lines_cleared(self, cleared):
@@ -895,11 +988,11 @@ class BattleRoyaleMatch:
             if self.sound_mgr:
                 self.sound_mgr.play('perfect')
         if is_tspin:
-            self.add_commentary(f"{me}  {f'B2B x{chain} ' if is_b2b and chain >= 1 else ''}T-스핀!", (255, 150, 255))
+            self.add_commentary(f"{me}  {f'B2B x{chain} ' if is_b2b and chain >= 1 else ''}T-스핀!", (255, 150, 255), mine=True)
         elif cleared >= 4:
-            self.add_commentary(f"{me}  {f'B2B x{chain} ' if is_b2b and chain >= 1 else ''}쿼드!", (255, 215, 0))
+            self.add_commentary(f"{me}  {f'B2B x{chain} ' if is_b2b and chain >= 1 else ''}쿼드!", (255, 215, 0), mine=True)
         if self.local_engine.combo >= 4:
-            self.add_commentary(f"{me}  {self.local_engine.combo}연속 콤보!", (255, 120, 220))
+            self.add_commentary(f"{me}  {self.local_engine.combo}연속 콤보!", (255, 120, 220), mine=True)
 
         if is_tspin:
             self.trigger_screen_shake(14.0)
@@ -1011,10 +1104,14 @@ class BattleRoyaleMatch:
         # 2. 로컬 플레이어 타겟 갱신
         self.players[self.local_player_id]["target_id"] = self.get_target_for(self.local_player_id, self.local_target_mode)
         
+        self._drill_tick()
         # 3. 로컬 플레이어 게임 오버 검사
         if self.local_is_alive and self.local_engine.game_over:
             if self.practice:
-                self.practice_reset()
+                if self.drill_on:
+                    self._drill_on_death()
+                else:
+                    self.practice_reset()
             else:
                 self._eliminate_player(self.local_player_id)
             
@@ -1050,15 +1147,15 @@ class BattleRoyaleMatch:
                     self.sound_mgr.play('attack')
                 if len(targets) >= 2:
                     self.add_floating_text(f"★ 다중 포격! +{shown_attack}줄 × {len(targets)}명 ★", (255, 170, 90), duration=2.6, size=28, category="action")
-                    self.add_commentary(f"{self._short_name(self.local_player_id)}  {len(targets)}명에게 동시 포격! {shown_attack}줄", (255, 170, 90))
+                    self.add_commentary(f"{self._short_name(self.local_player_id)}  {len(targets)}명에게 동시 포격! {shown_attack}줄", (255, 170, 90), mine=True)
                     self.trigger_screen_shake(10.0)
                 
                 lbl = "[자동 반격]" if (self.local_target_mode == "ATTACKERS" and target_p.get("target_id") == self.local_player_id) else "[공격 발송]"
-                tags = []                                                  # 괄호 하나에 짧게: "(배지2 · 카운터+3 · ×1.4)"
+                tags = []                                                  # 괄호 하나에 짧게: "(배지2 · 역습+3 · ×1.4)"
                 if badge_lvl > 0:
                     tags.append(f"배지{badge_lvl}")
                 if attacker_bonus > 0:
-                    tags.append(f"카운터+{attacker_bonus}")
+                    tags.append(f"역습+{attacker_bonus}")
                 if mult > 1.0:
                     tags.append(f"×{mult:.1f}")                            # 후반 증폭이 걸린 상태임을 알림
                 bonus_str = f" ({' · '.join(tags)})" if tags else ""

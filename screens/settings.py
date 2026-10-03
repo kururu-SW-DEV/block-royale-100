@@ -44,7 +44,8 @@ COL_CTL_BG = (12, 15, 27)
 COL_CTL_EDGE = (60, 74, 110)
 
 TABS = [("match", "tab_match", "게임", C_GREEN), ("general", "tab_general", "화면", C_ACCENT),
-        ("audio", "tab_audio", "소리", C_ORANGE), ("keys", "tab_keys", "조작", C_GOLD)]
+        ("audio", "tab_audio", "소리", C_ORANGE), ("keys", "tab_keys", "조작", C_GOLD),
+        ("help", "tab_help", "기타", C_GREEN)]
 TAB_ORDER = [t[0] for t in TABS]
 
 # 키보드 탐색표: 탭 -> [(행 키, Enter, ←, →)]. 행 키는 화면에 그려지는 행과 도움말/포커스 표시에 쓰임
@@ -53,18 +54,24 @@ TAB_NAV = {
               ("attack", "attack_toggle", "attack=on", "attack=off"),
               ("name", "name_edit", None, None), ("color", None, "color_prev", "color_next"),
               ("shake", None, "shake_prev", "shake_next"),
-              ("matchlog", "matchlog_toggle", "matchlog=off", "matchlog=on")],
+              ],
+    "help": [("title", None, "title_prev", "title_next"), ("rules", "open_rules", None, None), ("tips_replay", "tips_replay", None, None),
+             ("matchlog", "matchlog_toggle", "matchlog=off", "matchlog=on")],
     "general": [("fs", "toggle_fs", "fs=window", "fs=full"), ("res", "res_next", "res_prev", "res_next"),
                 ("mini", "mini_detail", "mini_detail=detailed", "mini_detail=simple"),
                 ("block_skin", None, "skin_prev", "skin_next"),
                 ("color_mode", "color_mode", "color_mode=normal", "color_mode=colorblind"),
-                ("text_size", "text_size", "text_size=normal", "text_size=large")],
+                ("text_size", "text_size", "text_size=normal", "text_size=large"),
+                ("key_hints", "key_hints", "key_hints_prev", "key_hints_next")],
     "audio": [("bgm", "bgm_toggle", "bgm_dec", "bgm_inc"), ("stage_bgm", None, "stage_bgm_prev", "stage_bgm_next"),
-              ("sfx", "sfx_toggle", "sfx_dec", "sfx_inc"), ("sfx_test", "sfx_test", None, None)],
+              ("sfx", "sfx_toggle", "sfx_dec", "sfx_inc"), ("warn", "warn_next", "warn_prev", "warn_next"),
+              ("sfx_test", "sfx_test", None, None)],
 }
 KEY_CARDS = len(ACTION_NAMES)                 # 조작 탭: 0~8 = 키 카드, 9~11 = DAS/ARR/SDF, 12 = 프리셋
 HANDLING_ROWS = ("das", "arr", "sdf")
 PRESET_FOCUS = KEY_CARDS + 3
+
+HELP_SKIN_BASE = "게임 화면 블록의 모양을 바꿉니다. 색은 위의 '블록 색상' 설정을 따르며, 로고와 미니 보드는 그대로입니다."
 
 HELP = {
     "players": "한 판에 참가하는 총 인원입니다. 부족한 인원은 AI 봇이 채웁니다. 방 만들기에서는 방장이 정한 인원으로 시작합니다.",
@@ -72,13 +79,18 @@ HELP = {
     "name": "채팅, 대기실 명단, 미니 보드에 표시되는 이름입니다. 클릭하거나 Enter로 수정 (최대 16자).",
     "color": "이름 색: 채팅과 대기실 명단, 미니 보드의 내 이름에 쓰입니다.",
     "shake": "공격을 받거나 K.O.가 났을 때 화면이 흔들리는 정도입니다. 멀미가 나면 '약하게'나 '끔'을 고르세요.",
+    "tips_replay": "처음 일어나는 일(받은 공격, 역습 보너스, 첫 K.O., 후반전)에 한 번씩 뜨는 도움말 팁과 첫 판 설명 말풍선을 다음 경기부터 다시 보여 줍니다.",
+    "title": "달성한 업적의 이름을 칭호로 달 수 있습니다. 메인 메뉴의 프로필에 표시됩니다. 업적은 전적 기록실의 '업적' 탭에서 확인하세요.",
+    "rules": "게임의 공격표, K.O. 배지, 역습 보너스, 조준 모드, 경기 흐름을 한 화면으로 보여 줍니다. 게임 중에도 F1 키로 열 수 있습니다.",
     "matchlog": "켜면 경기가 끝날 때마다 받은/보낸 공격, 조준 변경, 탈락 원인을 담은 기록(JSON)을 저장 폴더의 match_logs에 남깁니다. 플레이 테스트 결과를 함께 볼 때 쓰며, 기본은 꺼짐입니다.",
     "fs": "창 모드와 전체 화면을 바꿉니다. F11 키로 언제든 전환할 수 있습니다.",
     "res": "창 크기를 고릅니다. 모니터에 들어가는 크기만 보이며 창 가장자리를 끌어서도 조절할 수 있습니다.",
     "res_off": "전체 화면에서는 모니터 해상도에 맞춰 자동으로 확대됩니다.",
     "mini": "자세히: 조작 중인 블록, 착지 위치, 홀드/다음 블록까지 표시 · 집중: 자세히와 같되 나를 노리는 상대, 내 조준 대상, 위기 카드만 또렷하게 · 간략: 쌓인 블록만 표시해 더 깔끔하고 가볍습니다.",
     "color_mode": "색약 보정은 블록 색을 밝기 차이가 큰 팔레트로 바꿉니다.",
-    "text_size": "게임 화면의 작은 글씨를 키웁니다. (메뉴 글자는 그대로입니다)",
+    "text_size": "게임 화면과 메뉴·설정·로비의 작은 글씨를 키웁니다. 글자가 잘려 보이면 '보통'으로 돌리세요.",
+    "key_hints": "게임 화면 아래의 조작 키 안내 바입니다. '처음 10판'은 익숙해지면 저절로 사라지고, '끔'은 화면이 더 넓어 보입니다. (T 설정/ESC는 그대로 사용 가능)",
+    "warn": "피격 경보음과 위기 때 나는 심장 박동 소리만 따로 줄이거나 끕니다. 효과음 음량에는 영향이 없습니다.",
     "block_skin": "게임 화면 블록의 모양을 바꿉니다. 색은 위의 '블록 색상' 설정을 따르며, 로고와 미니 보드는 그대로입니다.",
     "bgm": "배경음악 켜기/끄기와 음량. 생존자가 줄수록(100인 → 50인 → 20인) 곡이 더 긴박해집니다.",
     "stage_bgm": "경기 중(1/2/3단계) 배경음 세트를 고릅니다. '랜덤'이면 경기를 시작할 때마다 5가지 중 하나가 무작위로 재생됩니다.",
@@ -92,9 +104,10 @@ HELP = {
 
 # 탭별 '기본값으로' 대상 설정 키
 TAB_DEFAULT_KEYS = {
-    "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake", "match_log"],
-    "general": ["resolution", "mini_detail", "color_mode", "text_size", "block_skin"],
-    "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume"],
+    "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake"],
+    "help": ["match_log"],
+    "general": ["resolution", "mini_detail", "color_mode", "text_size", "block_skin", "key_hints"],
+    "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume", "warn_volume"],
     "keys": ["das_ms", "arr_ms", "sdf_ms"],
 }
 
@@ -303,13 +316,42 @@ class SettingsMixin:
                     self.renderer.mini_focus = (new == "focus")
                 else:
                     self.apply_visual_options()
+        elif btn_id in ("key_hints_prev", "key_hints_next", "key_hints"):
+            opts = ("always", "novice", "off")
+            cur = self.settings.get("key_hints", "always")
+            i = opts.index(cur) if cur in opts else 0
+            new = opts[(i + (-1 if btn_id == "key_hints_prev" else 1)) % len(opts)]
+            self.sound_mgr.play('rotate')
+            self.settings.set("key_hints", new)
+        elif btn_id in ("warn_prev", "warn_next"):
+            opts = (100, 50, 0)
+            cur = self.settings.get("warn_volume", 100)
+            i = opts.index(cur) if cur in opts else 0
+            new = opts[(i + (-1 if btn_id == "warn_prev" else 1)) % len(opts)]
+            self.settings.set("warn_volume", new)
+            self.sound_mgr.set_warn_scale(new / 100.0)
+            self.sound_mgr.play('hit_2')
+        elif btn_id in ("title_prev", "title_next"):
+            ids = [""] + self.stats_mgr.achievements_done()
+            cur = self.settings.get("title", "")
+            i = ids.index(cur) if cur in ids else 0
+            self.sound_mgr.play('rotate')
+            self.settings.set("title", ids[(i + (-1 if btn_id == "title_prev" else 1)) % len(ids)])
+        elif btn_id == "open_rules":
+            self._open_rules()
+        elif btn_id == "tips_replay":
+            self.sound_mgr.play('rotate')
+            self.settings.set("tips_seen", [], autosave=False)
+            self.settings.set("tips_replay", True, autosave=False)
+            self.settings.set("coach_done", False)
+            self.tips_replay_notice_until = time.time() + 3.0
         elif btn_id in ("shake_prev", "shake_next"):
             self.sound_mgr.play('rotate')
             self.settings.cycle_screen_shake(-1 if btn_id == "shake_prev" else 1)
             self.apply_gameplay_options()
         elif btn_id in ("skin_prev", "skin_next"):
             self.sound_mgr.play('rotate')
-            self.settings.cycle_block_skin(-1 if btn_id == "skin_prev" else 1)
+            self.settings.cycle_block_skin(-1 if btn_id == "skin_prev" else 1, available=__import__("stats_manager").unlocked_skin_ids(self.stats_mgr.data))      # 잠긴 스킨은 건너뜀
             self.apply_visual_options()
         # 게임 탭
         elif btn_id in ("attack=on", "attack=off", "attack_toggle"):
@@ -422,6 +464,9 @@ class SettingsMixin:
             pygame.draw.rect(self.screen, COL_ROW_HOVER, rect, border_radius=10)
         if sub:
             self._t(label, self.font_row, COL_TEXT, rect.x + 22, rect.y + 8)
+            max_sub = 470                                       # 오른쪽 컨트롤과 겹치지 않게 긴 보조 줄은 줄임표로 (글자 크기 '크게'에서도)
+            while len(sub) > 4 and self.font_help.size(sub)[0] > max_sub:
+                sub = sub[:-2].rstrip(" ,·") + "…"
             self._t(sub, self.font_help, sub_col or COL_SUB, rect.x + 22, rect.y + 32)
         else:
             self._t(label, self.font_row, COL_TEXT, rect.x + 22, rect.centery, "midleft")
@@ -556,43 +601,70 @@ class SettingsMixin:
         self._s_row("shake", y, 52, "화면 흔들림", "공격을 받거나 K.O.가 났을 때")
         self._s_cycler("shake_prev", "shake_next", SHAKE_LABELS.get(shake, "보통"), RIGHT, y + 26)
         y += 52
+
+    def _render_tab_help(self):
+        y = TOP
+        done_ids = self.stats_mgr.achievements_done()
+        cur_title = self.settings.get("title", "")
+        title_name = next((a[1] for a in __import__("stats_manager").ACHIEVEMENTS if a[0] == cur_title and cur_title in done_ids), "없음")
+        self._s_row("title", y, 56, "칭호", f"달성한 업적 {len(done_ids)}개 중에서 선택 (메인 메뉴 프로필에 표시)")
+        self._s_cycler("title_prev", "title_next", title_name, RIGHT, y + 28, enabled=bool(done_ids), color=C_GOLD)
+        y += 56
+        self._s_row("rules", y, 56, "규칙 요약 보기", "공격표 · 배지 · 역습 보너스 · 조준 모드 (게임 어디서든 F1)")
+        self._s_btn("open_rules", pygame.Rect(RIGHT - 200, y + 10, 200, 36), "규칙 카드 열기", True)
+        y += 56
+        done = time.time() < getattr(self, "tips_replay_notice_until", 0.0)
+        self._s_row("tips_replay", y, 56, "도움말 팁 다시 보기", "첫 판 설명과 상황별 팁을 다음 경기부터 다시 표시")
+        self._s_btn("tips_replay", pygame.Rect(RIGHT - 200, y + 10, 200, 36), "다시 보기 켜짐 ✓" if done else "다시 보기", True)
+        y += 56
         log_on = bool(self.settings.get("match_log", False))
-        self._s_row("matchlog", y, 52, "경기 기록 저장", "테스트용: 경기마다 JSON 기록을 남김")
-        self._s_seg([("matchlog=off", "끔"), ("matchlog=on", "켜기")], "matchlog=on" if log_on else "matchlog=off", RIGHT, y + 26)
+        self._s_row("matchlog", y, 56, "경기 기록 저장", "테스트용: 경기마다 JSON 기록을 남김")
+        self._s_seg([("matchlog=off", "끔"), ("matchlog=on", "켜기")], "matchlog=on" if log_on else "matchlog=off", RIGHT, y + 28)
+        y += 56 + 16
+        self._t("F1: 규칙 요약  ·  T: 게임 중 설정  ·  M: 소리 켜고 끄기  ·  F11: 전체 화면", self.font_help, COL_SUB, IX + 22, y)
 
     def _render_tab_general(self):
         y = TOP
         fs = self.is_fullscreen
         size = pygame.display.get_surface().get_size() if pygame.display.get_surface() else (0, 0)
-        self._s_row("fs", y, 56, "화면 모드", f"현재 {size[0]}×{size[1]}  ·  F11 키로도 전환")
-        self._s_seg([("fs=window", "창 모드"), ("fs=full", "전체 화면")], "fs=full" if fs else "fs=window", RIGHT, y + 28)
-        y += 56
+        self._s_row("fs", y, 52, "화면 모드", f"현재 {size[0]}×{size[1]}  ·  F11 키로도 전환")
+        self._s_seg([("fs=window", "창 모드"), ("fs=full", "전체 화면")], "fs=full" if fs else "fs=window", RIGHT, y + 26)
+        y += 52
         res = self.settings.get("resolution", "auto")
         res_label = "자동 (모니터에 맞춤)" if res == "auto" else res.replace("x", " × ") + {
             "1280x720": "  (HD)", "1920x1080": "  (FHD)", "2560x1440": "  (QHD)", "3840x2160": "  (4K)"}.get(res, "")
-        self._s_row("res", y, 56, "창 해상도", "전체 화면에서는 사용하지 않습니다" if fs else None)
-        self._s_cycler("res_prev", "res_next", res_label, RIGHT, y + 28, enabled=not fs)
-        y += 56
-        self._s_row("mini", y, 56, "미니 보드", "상대 보드에 표시할 정보의 양")
+        self._s_row("res", y, 52, "창 해상도", "전체 화면에서는 사용하지 않습니다" if fs else None)
+        self._s_cycler("res_prev", "res_next", res_label, RIGHT, y + 26, enabled=not fs)
+        y += 52
+        self._s_row("mini", y, 52, "미니 보드", "상대 보드에 표시할 정보의 양")
         self._s_seg([("mini_detail=detailed", "자세히"), ("mini_detail=focus", "집중"), ("mini_detail=simple", "간략")],
-                    "mini_detail=" + (self.settings.get("mini_detail") if self.settings.get("mini_detail") in ("detailed", "focus", "simple") else "focus"), RIGHT, y + 28)
-        y += 56
+                    "mini_detail=" + (self.settings.get("mini_detail") if self.settings.get("mini_detail") in ("detailed", "focus", "simple") else "focus"), RIGHT, y + 26)
+        y += 52
         skin = self.settings.get("block_skin", "classic")
-        self._s_row("block_skin", y, 56, "블록 스킨", BLOCK_SKIN_DESCS.get(skin, ""))
-        self._s_cycler("skin_prev", "skin_next", BLOCK_SKIN_LABELS.get(skin, "클래식"), RIGHT, y + 28, color=C_GOLD)
+        _sm = __import__("stats_manager")
+        if skin not in _sm.unlocked_skin_ids(self.stats_mgr.data):
+            skin = "classic"                                                 # 저장된 스킨이 (전적 초기화 등으로) 잠겼다면 기본으로 표시
+        locked = _sm.locked_skin_hints(self.stats_mgr.data)
+        HELP["block_skin"] = HELP_SKIN_BASE + ("  잠긴 스킨: " + ", ".join(f"{BLOCK_SKIN_LABELS[s].split(' (')[0]}({d})" for s, d in locked) if locked else "")
+        self._s_row("block_skin", y, 52, "블록 스킨", BLOCK_SKIN_DESCS.get(skin, ""))
+        self._s_cycler("skin_prev", "skin_next", BLOCK_SKIN_LABELS.get(skin, "클래식"), RIGHT, y + 26, color=C_GOLD)
         px = RIGHT - 328 - 16 - 7 * 22                            # 현재 스킨으로 그린 7종 블록 미리보기 (설명과 선택기 사이)
         for i, piece in enumerate("IOTSZJL"):
-            self.screen.blit(self.renderer._cell_surface(piece, 20), (px + i * 22, y + 18))
-        y += 56 + 10
+            self.screen.blit(self.renderer._cell_surface(piece, 20), (px + i * 22, y + 16))
+        y += 52
         self._s_section("접근성", y)
-        y += 30
-        self._s_row("color_mode", y, 56, "블록 색상", "색약 보정: 밝기 차이가 큰 팔레트")
+        y += 24
+        self._s_row("color_mode", y, 52, "블록 색상", "색약 보정: 밝기 차이가 큰 팔레트")
         self._s_seg([("color_mode=normal", "기본"), ("color_mode=colorblind", "색약 보정")],
-                    "color_mode=colorblind" if self.settings.get("color_mode") == "colorblind" else "color_mode=normal", RIGHT, y + 28)
-        y += 56
-        self._s_row("text_size", y, 56, "게임 글자 크기", "게임 화면의 작은 글씨")
+                    "color_mode=colorblind" if self.settings.get("color_mode") == "colorblind" else "color_mode=normal", RIGHT, y + 26)
+        y += 52
+        self._s_row("text_size", y, 52, "글자 크기", "게임·메뉴·설정의 작은 글씨")
         self._s_seg([("text_size=normal", "보통"), ("text_size=large", "크게")],
-                    "text_size=large" if self.settings.get("text_size") == "large" else "text_size=normal", RIGHT, y + 28)
+                    "text_size=large" if self.settings.get("text_size") == "large" else "text_size=normal", RIGHT, y + 26)
+        y += 52
+        kh = self.settings.get("key_hints", "always")
+        self._s_row("key_hints", y, 52, "조작 안내 바", "게임 화면 아래 키 안내")
+        self._s_cycler("key_hints_prev", "key_hints_next", {"always": "항상 표시", "novice": "처음 10판만", "off": "끔"}.get(kh, "항상 표시"), RIGHT, y + 26)
 
     def _render_tab_audio(self):
         y = TOP
@@ -612,6 +684,10 @@ class SettingsMixin:
         y += 64
         self._s_row("sfx_test", y, 56, "효과음 들어보기")
         self._s_btn("sfx_test", pygame.Rect(RIGHT - 200, y + 10, 200, 36), "▶  대표 소리 재생", sfx_on)
+        y += 56
+        wv = self.settings.get("warn_volume", 100)
+        self._s_row("warn", y, 56, "경고음 크기", "피격 경보 · 심장 박동")
+        self._s_cycler("warn_prev", "warn_next", {100: "보통", 50: "작게", 0: "끔"}.get(wv, "보통"), RIGHT, y + 28, enabled=sfx_on)
         y += 56 + 12
         self._t("M 키로 언제든 소리를 켜고 끌 수 있습니다.", self.font_help, COL_SUB, IX + 22, y + 8)
 
@@ -632,8 +708,9 @@ class SettingsMixin:
                 used.setdefault(k, []).append(act_id)
         conflicts = {a for acts in used.values() if len(acts) > 1 for a in acts}
 
-        card_w, card_h, gap = 282, 64, 9
-        self._row_rects["cards"] = pygame.Rect(IX, y, IW, 3 * card_h + 2 * gap)
+        card_w, card_h, gap = 282, 54, 7
+        n_rows = (len(ACTION_NAMES) + 2) // 3
+        self._row_rects["cards"] = pygame.Rect(IX, y, IW, n_rows * card_h + (n_rows - 1) * gap)
         focus_card = self._focus_key if self._kb_nav and self._focus_key.startswith("bind_") else None
         for i, (act_id, act_name) in enumerate(ACTION_NAMES):
             col, row = i % 3, i // 3
@@ -647,39 +724,41 @@ class SettingsMixin:
             edge = C_GOLD if rebinding else (C_DANGER if is_conflict else (C_ACCENT if (hover or focused) else (52, 66, 104)))
             pygame.draw.rect(self.screen, bg, rect, border_radius=12)
             pygame.draw.rect(self.screen, edge, rect, 2 if (hover or rebinding or focused) else 1, border_radius=12)
-            self._t(act_name.split(" (")[0], self.font_val, COL_TEXT, rect.x + 16, rect.y + 10)
+            self._t(act_name.split(" (")[0], self.font_val, COL_TEXT, rect.x + 16, rect.y + 6)
             if rebinding:
-                self._t("새 키를 누르세요…", self.font_val, C_GOLD, rect.x + 16, rect.y + 36)
+                self._t("새 키를 누르세요…", self.font_val, C_GOLD, rect.x + 16, rect.y + 28)
                 self._t("ESC 취소", self.font_tiny, COL_SUB, rect.right - 12, rect.y + 12, "topright")
             else:
                 kx = rect.x + 16
+                if not self.settings.get_action_keys(act_id):
+                    self._t("지정 안 됨 (클릭해서 지정)", self.font_tiny, COL_OFF, rect.x + 16, rect.y + 39, "midleft")
                 for kc in self.settings.get_action_keys(act_id)[:3]:
                     ks = self.renderer._text(short_key_name(kc), self.font_val, (225, 232, 248))
-                    kr = pygame.Rect(kx, rect.y + 34, max(32, ks.get_width() + 18), 24)
+                    kr = pygame.Rect(kx, rect.y + 28, max(32, ks.get_width() + 18), 22)
                     pygame.draw.rect(self.screen, (44, 54, 86), kr, border_radius=7)
                     pygame.draw.rect(self.screen, (92, 108, 150), kr, 1, border_radius=7)
                     self.screen.blit(ks, (kr.centerx - ks.get_width() // 2, kr.centery - ks.get_height() // 2))
                     kx = kr.right + 6
                 if is_conflict:
                     self._t("중복", self.font_tiny, C_DANGER, rect.right - 12, rect.y + 12, "topright")
-        y += 3 * card_h + 2 * gap + 6
+        y += n_rows * card_h + (n_rows - 1) * gap + 6
         # 키를 옮겼다는 알림 (몇 초간)
         notice = getattr(self, "rebind_notice", None)
         if notice and time.time() < notice[1]:
             self._t(notice[0], self.font_help, C_GOLD, IX + IW // 2, y + 8, "midtop")
         elif conflicts:
             self._t("같은 키가 여러 동작에 배정되어 있습니다. 빨간 카드를 다시 지정하세요.", self.font_help, C_DANGER, IX + IW // 2, y + 8, "midtop")
-        y += 30
+        y += 22
         self._s_section("반응 속도", y)
-        y += 28
-        hrow = self._s_row("handling", y, 48, "")
+        y += 26
+        hrow = self._s_row("handling", y, 44, "")
         group_w = IW // 3
         for gi, (key, label) in enumerate([("das", "DAS 지연"), ("arr", "ARR 반복"), ("sdf", "소프트드롭")]):
             gx = IX + gi * group_w + 12
-            self._t(label, self.font_val, COL_SUB, gx + 10, y + 24, "midleft")
-            dec = pygame.Rect(gx + 100, y + 8, 32, 32)
-            val = pygame.Rect(dec.right + 4, y + 8, 76, 32)
-            inc = pygame.Rect(val.right + 4, y + 8, 32, 32)
+            self._t(label, self.font_val, COL_SUB, gx + 10, y + 22, "midleft")
+            dec = pygame.Rect(gx + 100, y + 6, 32, 32)
+            val = pygame.Rect(dec.right + 4, y + 6, 76, 32)
+            inc = pygame.Rect(val.right + 4, y + 6, 32, 32)
             self.settings_buttons["hf_" + key] = val
             self._s_btn(key + "_dec", dec, "-")
             self._s_btn(key + "_inc", inc, "+")
@@ -719,7 +798,7 @@ class SettingsMixin:
         self._glass((PX, PY, PW, PH), accent=(60, 120, 190), radius=18)
 
         # 탭 바: 선택된 탭은 옅은 채움 + 아래쪽 색 밑줄
-        tab_w, tab_gap = (IW - 3 * 8) // 4, 8
+        tab_w, tab_gap = (IW - (len(TABS) - 1) * 8) // len(TABS), 8
         for i, (tid, bid, label, col) in enumerate(TABS):
             rect = pygame.Rect(IX + i * (tab_w + tab_gap), 132, tab_w, 44)
             self.settings_buttons[bid] = rect
@@ -732,7 +811,7 @@ class SettingsMixin:
         pygame.draw.line(self.screen, (50, 75, 115), (IX, 186), (IX + IW, 186), 1)
 
         {"match": self._render_tab_match, "general": self._render_tab_general,
-         "audio": self._render_tab_audio, "keys": self._render_tab_keys}[self.settings_tab]()
+         "audio": self._render_tab_audio, "keys": self._render_tab_keys, "help": self._render_tab_help}[self.settings_tab]()
 
         # 하단: 도움말 바 (마우스를 올린 항목, 없으면 키보드로 선택한 항목의 설명) + 키 안내
         self._render_help_bar(mx, my)

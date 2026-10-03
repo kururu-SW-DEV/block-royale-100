@@ -7,6 +7,15 @@ from app_common import (
     C_ACCENT, C_DANGER, C_DIM, C_GOLD, C_GREEN, C_ORANGE, C_TEXT, NAME_COLORS,
     SCREEN_WIDTH, pygame, time
 )
+from settings_manager import BOT_DIFFICULTY_LABELS
+
+
+def _diff_short(diff):
+    return BOT_DIFFICULTY_LABELS.get(diff, "혼합").split(" (")[0]
+
+
+def _mode_label(mode):
+    return "서바이벌" if mode == "survival" else "배틀로얄"
 
 
 class LobbyMixin:
@@ -16,22 +25,34 @@ class LobbyMixin:
             if event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER):
                 self._host_start_game_action()
             elif event.key == pygame.K_ESCAPE:
-                self.net_mgr.stop()
-                self.state = "MENU"
+                self._host_leave_lobby()
+            elif event.key == pygame.K_d:
+                self._lobby_cycle_difficulty(1)
+            elif event.key == pygame.K_g:
+                self._lobby_toggle_mode()
+            elif event.key == pygame.K_c and (event.mod & pygame.KMOD_CTRL):
+                self._copy_room_address()
             elif event.key in [pygame.K_LEFT, pygame.K_DOWN]:
                 self.adjust_player_count(-1)
             elif event.key in [pygame.K_RIGHT, pygame.K_UP]:
                 self.adjust_player_count(1)
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mx, my = event.pos
+            chip = getattr(self, "addr_chip_rect", None)
+            if chip is not None and chip.collidepoint(mx, my):
+                self._copy_room_address()
+                return
             for btn_id, rect in self.lobby_buttons.items():
                 if rect.collidepoint(mx, my):
                     self.sound_mgr.play('move')
                     if btn_id == "start_game":
                         self._host_start_game_action()
                     elif btn_id == "back_menu":
-                        self.net_mgr.stop()
-                        self.state = "MENU"
+                        self._host_leave_lobby()
+                    elif btn_id in ("diff_prev", "diff_next"):
+                        self._lobby_cycle_difficulty(-1 if btn_id == "diff_prev" else 1)
+                    elif btn_id in ("mode_prev", "mode_next"):
+                        self._lobby_toggle_mode()
                     elif btn_id == "dec_10":
                         self.adjust_player_count(-10)
                     elif btn_id == "dec_1":
@@ -41,6 +62,37 @@ class LobbyMixin:
                     elif btn_id == "inc_10":
                         self.adjust_player_count(10)
                     break
+
+    def _host_leave_lobby(self):
+        """방장 대기실 나가기: 참가자가 있으면 방이 닫힌다는 확인을 먼저 받음"""
+        n = len(self.net_mgr.clients)
+        if n > 0:
+            self._open_modal("방을 닫을까요?", [f"방장이 나가면 방이 닫히고 접속한 {n}명이 대기실에서 나가게 됩니다.", "정말 나가시겠습니까?"],
+                             [("stay", "방 유지", "blue", "ESC"), ("close_room", "방 닫기", "red", "Y")])
+        else:
+            self.net_mgr.stop()
+            self.state = "MENU"
+
+    def _lobby_cycle_difficulty(self, step):
+        self.settings.cycle_bot_difficulty(step)
+        self.bot_difficulty = self.settings.get("bot_difficulty")
+        self.sound_mgr.play('move')
+
+    def _lobby_toggle_mode(self):
+        new = "battle" if self.settings.get("game_mode") == "survival" else "survival"
+        self.settings.set("game_mode", new)
+        self.sound_mgr.play('move')
+
+    def _copy_room_address(self):
+        """접속 주소(IP:포트)를 클립보드에 복사 (실패해도 게임은 계속)"""
+        text = f"{self.local_ip}:{self.host_port}"
+        try:
+            pygame.scrap.init()
+            pygame.scrap.put_text(text)
+            self._copy_notice_until = time.time() + 2.0
+            self.sound_mgr.play('rotate')
+        except Exception:
+            self._copy_notice_until = 0.0
 
     def _handle_join_menu_event(self, event):
         """접속 화면(IP 입력/방 목록) 입력 처리 (키보드/마우스)"""
@@ -100,9 +152,12 @@ class LobbyMixin:
 
     def _update_host_lobby(self, dt):
         self.menu_bg.update(dt)
-        if self.net_mgr.mode == "HOST" and self.net_mgr.room_settings.get("target") != self.target_player_count:
-            self.net_mgr.room_settings["target"] = self.target_player_count
-            self.net_mgr.host_broadcast_roster()
+        rs = self.net_mgr.room_settings
+        if self.net_mgr.mode == "HOST":
+            diff, mode = self.settings.get("bot_difficulty", "mixed"), self.settings.get("game_mode", "battle")
+            if rs.get("target") != self.target_player_count or rs.get("diff") != diff or rs.get("mode") != mode:
+                rs["target"], rs["diff"], rs["mode"] = self.target_player_count, diff, mode
+                self.net_mgr.host_broadcast_roster()           # 인원/난이도/모드가 바뀌면 참가자 대기실에도 바로 알림
 
     def _update_join_menu(self, dt):
         self.menu_bg.update(dt)
@@ -249,8 +304,11 @@ class LobbyMixin:
         pygame.draw.rect(self.screen, (22, 30, 52), chip, border_radius=16)
         pygame.draw.rect(self.screen, (60, 100, 160), chip, 1, border_radius=16)
         self.screen.blit(addr, (chip.x + 16, chip.centery - addr.get_height() // 2))
+        self.addr_chip_rect = chip                           # 클릭하면 복사
+        copied = time.time() < getattr(self, "_copy_notice_until", 0.0)
+        self._t("복사됨!" if copied else "클릭해서 복사", self.font_tiny, C_GREEN if copied else C_DIM, chip.right + 12, chip.centery, "midleft")
 
-        box_w, box_h = 720, 500
+        box_w, box_h = 720, 556
         box_x = 133
         box_y = 156
         self._glass((box_x, box_y, box_w, box_h), accent=(50, 150, 105), radius=18)
@@ -290,11 +348,23 @@ class LobbyMixin:
             self._t(f"외 {len(rows) - len(shown)}명 더 접속 중", self.font_small, C_DIM, box_x + 32, box_y + 116 + 5 * 36 + 2)
 
         bot_fill = max(0, self.target_player_count - human_count)
-        self._t(f"부족한 {bot_fill}명은 AI 봇으로 자동 충원됩니다", self.font_small, C_ORANGE, box_x + box_w // 2, box_y + 342, "midtop")
+        self._t(f"부족한 {bot_fill}명은 AI 봇으로 자동 충원됩니다", self.font_small, C_ORANGE, box_x + box_w // 2, box_y + 322, "midtop")
 
-        self._t("대전 인원", self.font_mid, C_TEXT, box_x + 32, box_y + 372)
-        self._stepper(self.lobby_buttons, "", box_y + 366, box_x + 180, f"{self.target_player_count} 명", C_GOLD,
+        self._t("대전 인원", self.font_mid, C_TEXT, box_x + 32, box_y + 354)
+        self._stepper(self.lobby_buttons, "", box_y + 348, box_x + 180, f"{self.target_player_count} 명", C_GOLD,
                       [("dec_10", "-10", 48), ("dec_1", "-1", 42)], [("inc_1", "+1", 42), ("inc_10", "+10", 48)])
+
+        # 경기 규칙: 방을 닫지 않고 여기서 바로 바꿈 (참가자 대기실에도 표시됨)
+        cur_diff = self.settings.get("bot_difficulty", "mixed")
+        cur_mode = "survival" if self.settings.get("game_mode") == "survival" else "battle"
+        self._t("봇 난이도", self.font_mid, C_TEXT, box_x + 32, box_y + 402)
+        self._stepper(self.lobby_buttons, "", box_y + 396, box_x + 180, _diff_short(cur_diff), C_ORANGE,
+                      [("diff_prev", "◀", 48)], [("diff_next", "▶", 48)])
+        self._t("D", self.font_tiny, C_DIM, box_x + box_w - 36, box_y + 413, "midright")
+        self._t("게임 모드", self.font_mid, C_TEXT, box_x + 32, box_y + 450)
+        self._stepper(self.lobby_buttons, "", box_y + 444, box_x + 180, _mode_label(cur_mode), C_GREEN,
+                      [("mode_prev", "◀", 48)], [("mode_next", "▶", 48)])
+        self._t("G", self.font_tiny, C_DIM, box_x + box_w - 36, box_y + 461, "midright")
 
         start = pygame.Rect(box_x + 28, box_y + box_h - 74, 440, 52)
         back = pygame.Rect(start.right + 14, start.y, box_w - 56 - 440 - 14, 52)
@@ -366,7 +436,7 @@ class LobbyMixin:
         mx, my = pygame.mouse.get_pos()
         self._menu_header("대기실  ·  참가자", None, accent=C_ACCENT)
 
-        box_w, box_h = 620, 470
+        box_w, box_h = 620, 500
         box_x = 183
         box_y = 150
         connected = self.net_mgr.connected
@@ -409,5 +479,10 @@ class LobbyMixin:
             self._t("호스트 응답을 기다리는 중", self.font_menu, C_ORANGE, pcx, box_y + 76, "midtop")
             self._t("주소와 포트가 맞는지, 방화벽이 UDP를 막지 않는지 확인하세요", self.font_small, C_DIM, pcx, box_y + 116, "midtop")
 
+        if connected:
+            rules = self.net_mgr.room_rules or {}
+            tg = self.net_mgr.roster_target or self.net_mgr.room_settings.get("max_players", 0)
+            parts = ([f"{tg}인"] if tg else []) + [_mode_label(rules.get("mode", "battle")), f"{_diff_short(rules.get('diff', 'mixed'))} 봇"]
+            self._t("경기 규칙   " + " · ".join(parts), self.font_mid, C_GOLD, box_x + 32, box_y + box_h - 120)
         self.client_leave_btn = pygame.Rect(pcx - 140, box_y + box_h - 74, 280, 50)
         self.renderer._button(self.client_leave_btn, "방 나가기", "red", self.client_leave_btn.collidepoint(mx, my), "ESC")
