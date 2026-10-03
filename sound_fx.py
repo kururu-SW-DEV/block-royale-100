@@ -101,6 +101,8 @@ class SoundManager:
         self._bgm_thread = None
         self.sfx_volume = 0.70
         self.warn_scale = 1.0         # 경고음(피격 경보/심장 박동/경고) 상대 음량 0~1
+        self._duck = 1.0              # 위기 때 BGM을 낮추는 배율 (1.0 = 그대로)
+        self._duck_target = 1.0
         self.bgm_enabled = True
         self.sfx_enabled = True
         self.is_bgm_playing = False
@@ -142,6 +144,27 @@ class SoundManager:
         stage = self._pending_bgm
         if stage is not None and stage in self.bgm_stages:
             self.play_bgm(stage)
+        if self._duck != self._duck_target:                       # 위기 덕킹: 한 프레임에 조금씩 목표 음량으로
+            step = 0.045 if self._duck_target < self._duck else 0.03
+            self._duck = max(self._duck_target, self._duck - step) if self._duck_target < self._duck else min(self._duck_target, self._duck + step)
+            self._apply_bgm_volume()
+
+    def _bgm_eff_volume(self):
+        return self.bgm_volume * self._duck if (self.enabled and self.bgm_enabled) else 0.0
+
+    def _apply_bgm_volume(self):
+        if self.active_channel:
+            try:
+                self.active_channel.set_volume(self._bgm_eff_volume())
+            except Exception:
+                pass
+
+    def set_duck(self, factor):
+        """BGM을 factor배(0.3~1.0)로 낮추거나 되돌림 (위기에 들어가면 낮추고 탈출/종료 때 1.0). 음량은 tick()에서 부드럽게 바뀜"""
+        self._duck_target = max(0.3, min(1.0, float(factor)))
+
+    def reset_duck(self):
+        self._duck = self._duck_target = 1.0
 
     def _pack_stereo(self, left_arr, right_arr):
         """좌우 채널 배열을 16비트 스테레오 pygame Sound로 패킹"""
@@ -318,6 +341,85 @@ class SoundManager:
                 tone = (np.sin(2 * np.pi * freq * t_sub) + 0.4 * np.sin(4 * np.pi * freq * t_sub)) * np.exp(-t_sub * 8.5)
                 b_wave[st:] += tone * 0.45
         self.sounds['badge_up'] = self._pack_sound(b_wave)
+        self._generate_juice_sounds(sr)
+
+
+    def _generate_juice_sounds(self, sr=44100):
+        """도파민 연출용 효과음 (v1.1.6): 카운트다운/GO, 방어, 위기 탈출, 트리플 저음, T-스핀 대형, B2B 층층음, 페이즈/결승/TOP N 스팅, K.O. 구슬 도착, 콤보 끊김, 레벨 업, 복수, 도장"""
+        def pack(arr):                                   # 최대 진폭을 0.9 이하로 (여러 소리를 더한 것이 클리핑돼 찢어지지 않게, 키우지는 않음)
+            peak = float(np.max(np.abs(arr))) if len(arr) else 0.0
+            return self._pack_sound(arr * min(1.0, 0.9 / peak) if peak > 1e-4 else arr)
+
+        def T(sec):
+            return np.arange(int(sr * sec)) / sr
+
+        def bell(freq, t, decay, amp=0.5, t0=0.0):
+            tt = np.clip(t - t0, 0.0, None)
+            return (np.sin(2 * np.pi * freq * tt) + 0.35 * np.sin(4 * np.pi * freq * tt) + 0.15 * np.sin(6 * np.pi * freq * tt)) * np.exp(-tt * decay) * (t >= t0) * amp
+
+        def boom(t, f0=70.0, decay=9.0, amp=0.7, t0=0.0):
+            tt = np.clip(t - t0, 0.0, None)
+            return np.sin(2 * np.pi * (f0 + 90.0 * np.exp(-tt * 28.0)) * tt) * np.exp(-tt * decay) * (t >= t0) * amp
+
+        # 카운트다운 3/2/1: 짧은 비프, GO: 밝은 화음
+        t = T(0.14)
+        self.sounds['count'] = pack(np.sin(2 * np.pi * 440.0 * t) * np.exp(-t * 22.0) * 0.55 + np.sin(2 * np.pi * 880.0 * t) * np.exp(-t * 30.0) * 0.18)
+        t = T(0.5)
+        go = sum(np.sin(2 * np.pi * f * t) * np.exp(-t * 7.0) for f in (659.25, 830.61, 987.77, 1318.51)) * 0.2
+        self.sounds['go'] = pack(go + boom(t, 90.0, 12.0, 0.35))
+
+        # 방어(막은 줄): 금속성 방패 소리
+        t = T(0.2)
+        ping = np.sin(2 * np.pi * 1400 * t) * np.exp(-t * 26.0) * 0.45 + np.sin(2 * np.pi * 2100 * t) * np.exp(-t * 34.0) * 0.28 + np.sin(2 * np.pi * 3150 * t) * np.exp(-t * 48.0) * 0.12
+        self.sounds['shield'] = pack(ping + (np.random.rand(len(t)) * 2 - 1) * np.exp(-t * 95.0) * 0.22)
+
+        # 위기 탈출: 조여 있던 것이 풀리는 상승 스윕 + 종소리
+        t = T(0.8)
+        sweep_f = 180.0 * np.exp(t * 2.3) * (t < 0.38) + 180.0 * np.exp(0.38 * 2.3) * (t >= 0.38)
+        sweep = np.sin(2 * np.pi * np.cumsum(sweep_f) / sr) * np.exp(-t * 3.0) * (t < 0.5) * 0.45
+        self.sounds['clutch'] = pack(sweep + bell(1046.5, t, 6.0, 0.5, 0.36) + bell(1568.0, t, 7.0, 0.3, 0.42) + boom(t, 60.0, 8.0, 0.5, 0.34))
+
+        # 트리플 저음 / T-스핀 더블·트리플 대형음
+        t = T(0.34)
+        self.sounds['thump_s'] = pack(boom(t, 52.0, 10.0, 0.8))
+        t = T(0.55)
+        f = 440.0 + np.clip(t / 0.14, 0.0, 1.0) * 580.0
+        spin = (np.sin(2 * np.pi * np.cumsum(f) / sr) + 0.35 * np.sin(4 * np.pi * np.cumsum(f) / sr)) * np.exp(-t * 7.0) * 0.4
+        self.sounds['tspin_big'] = pack(spin + boom(t, 58.0, 8.0, 0.7) + bell(1318.5, t, 8.0, 0.3, 0.12) + bell(1760.0, t, 9.0, 0.22, 0.2))
+
+        # B2B 층층음: 연속(1~5)일수록 높고 화려해지는 반짝임
+        for i in range(1, 6):
+            t = T(0.5)
+            base = 880.0 * (2.0 ** (self.COMBO_LADDER[min(i, len(self.COMBO_LADDER) - 1)] / 12.0))
+            shimmer = (np.sin(2 * np.pi * base * t) + 0.6 * np.sin(2 * np.pi * base * 1.5 * t + 3.0 * np.sin(2 * np.pi * 7.0 * t))) * np.exp(-t * 7.0) * 0.28
+            self.sounds[f"b2b_{i}"] = pack(shimmer + bell(base * 2.0, t, 11.0, 0.14, 0.08))
+
+        # 페이즈 전환 스팅 / 결승 스팅 / TOP N 상승음 / 복수
+        t = T(0.9)
+        notes = [(220.0, 0.0), (277.18, 0.18), (329.63, 0.36), (440.0, 0.54)]
+        brass = sum((np.sin(2 * np.pi * f * np.clip(t - t0, 0, None)) + 0.5 * np.sin(4 * np.pi * f * np.clip(t - t0, 0, None)) + 0.25 * np.sin(6 * np.pi * f * np.clip(t - t0, 0, None))) * np.exp(-np.clip(t - t0, 0, None) * 4.5) * (t >= t0) for f, t0 in notes) * 0.22
+        self.sounds['phase_up'] = pack(brass + boom(t, 55.0, 5.0, 0.55) + boom(t, 55.0, 5.0, 0.4, 0.36))
+        t = T(1.1)
+        pulse = boom(t, 48.0, 6.0, 0.8) + boom(t, 48.0, 6.0, 0.7, 0.28)
+        self.sounds['final'] = pack(pulse + bell(880.0, t, 3.2, 0.32, 0.56) + bell(1318.5, t, 3.6, 0.22, 0.62) + bell(1760.0, t, 4.2, 0.14, 0.7))
+        t = T(0.34)
+        self.sounds['top_up'] = pack(bell(783.99, t, 10.0, 0.4, 0.0) + bell(987.77, t, 10.0, 0.4, 0.07) + bell(1174.66, t, 9.0, 0.45, 0.14) + bell(1567.98, t, 12.0, 0.2, 0.18))
+        t = T(0.9)
+        rev_f = 120.0 * np.exp(t * 3.0) * (t < 0.4) + 120.0 * np.exp(1.2) * (t >= 0.4)
+        self.sounds['revenge'] = pack(np.sin(2 * np.pi * np.cumsum(rev_f) / sr) * np.exp(-t * 3.0) * (t < 0.5) * 0.4 + boom(t, 62.0, 6.0, 0.85, 0.0) + bell(1174.66, t, 4.5, 0.4, 0.4) + bell(1567.98, t, 5.0, 0.3, 0.46))
+
+        # K.O. 구슬 도착(처치 수가 늘수록 높은 음) / 콤보 끊김 / 레벨 업 / 결과 도장
+        for i in range(1, 9):
+            t = T(0.32)
+            f = 523.25 * (2.0 ** (self.COMBO_LADDER[min(i, len(self.COMBO_LADDER) - 1)] / 12.0))
+            self.sounds[f"ko_orb_{i}"] = pack(bell(f, t, 9.0, 0.42) + bell(f * 2.0, t, 13.0, 0.16))
+        t = T(0.34)
+        self.sounds['combo_break'] = pack(bell(329.63, t, 11.0, 0.3) + bell(261.63, t, 9.0, 0.3, 0.1))
+        t = T(1.3)
+        lv = sum(bell(f, t, 4.0, 0.3, t0) for f, t0 in ((523.25, 0.0), (659.25, 0.1), (783.99, 0.2), (1046.5, 0.3), (1318.5, 0.42), (1568.0, 0.55)))
+        self.sounds['levelup'] = pack(lv + boom(t, 70.0, 7.0, 0.4, 0.3))
+        t = T(0.18)
+        self.sounds['stamp'] = pack(boom(t, 80.0, 18.0, 0.7) + (np.random.rand(len(t)) * 2 - 1) * np.exp(-t * 80.0) * 0.25)
 
     def _generate_victory_anthem(self, sr=44100):
         """
@@ -1079,9 +1181,7 @@ class SoundManager:
     def set_bgm_volume(self, volume):
         """배경음악 음량 설정 (0.0 ~ 1.0)"""
         self.bgm_volume = max(0.0, min(1.0, float(volume)))
-        eff_vol = self.bgm_volume if (self.enabled and self.bgm_enabled) else 0.0
-        if self.active_channel:
-            self.active_channel.set_volume(eff_vol)
+        self._apply_bgm_volume()
 
     def set_sfx_volume(self, volume):
         """효과음 음량 설정 (0.0 ~ 1.0)"""
@@ -1096,9 +1196,7 @@ class SoundManager:
     def set_bgm_enabled(self, enabled):
         """배경음악 ON / OFF 설정"""
         self.bgm_enabled = bool(enabled)
-        eff_vol = self.bgm_volume if (self.enabled and self.bgm_enabled) else 0.0
-        if self.active_channel:
-            self.active_channel.set_volume(eff_vol)
+        self._apply_bgm_volume()
         if self.bgm_enabled and self.enabled and not self.is_bgm_playing:
             self.play_bgm(self.current_bgm_stage or 'menu')
 
@@ -1139,6 +1237,8 @@ class SoundManager:
         self._results_due = None
         if not self.bgm_ch_a or not self.bgm_ch_b:
             return
+        if self.current_bgm_stage != stage:
+            self.reset_duck()                          # 곡이 바뀌면(경기 시작/단계 전환/결과) 덕킹 해제: 위기 중이면 다음 프레임에 다시 걸림
 
         th = self._bgm_thread
         if stage not in self.bgm_stages and th is not None and th.is_alive():
@@ -1157,8 +1257,7 @@ class SoundManager:
         old_channel = self.active_channel
         new_channel = self.bgm_ch_b if old_channel == self.bgm_ch_a else self.bgm_ch_a
         
-        eff_vol = self.bgm_volume if (self.enabled and self.bgm_enabled) else 0.0
-        new_channel.set_volume(eff_vol)
+        new_channel.set_volume(self._bgm_eff_volume())
 
         if not self.is_bgm_playing:
             # 최초 재생 시에는 즉시 시작
@@ -1212,6 +1311,7 @@ class SoundManager:
             self.bgm_ch_b.stop()
         self.is_bgm_playing = False
         self.current_bgm_stage = None
+        self.reset_duck()
 
     def pause_bgm(self):
         """배경음악 일시정지"""
@@ -1232,9 +1332,7 @@ class SoundManager:
     def toggle_sound(self):
         """마스터 사운드 토글 (SFX + BGM)"""
         self.enabled = not self.enabled
-        eff_bgm_vol = self.bgm_volume if (self.enabled and self.bgm_enabled) else 0.0
-        if self.active_channel:
-            self.active_channel.set_volume(eff_bgm_vol)
+        self._apply_bgm_volume()
         if self.enabled and self.bgm_enabled and not self.is_bgm_playing:
             self.play_bgm(self.current_bgm_stage or 'menu')
         self.set_sfx_volume(self.sfx_volume)
@@ -1409,6 +1507,10 @@ class SoundManager:
             sound_name = f"{sound_name}_c{min(max(0, combo), len(self.COMBO_LADDER) - 1)}"
         elif sound_name == 'combo':
             sound_name = f"combo_{min(max(1, combo or 1), len(self.COMBO_LADDER) - 1)}"
+        elif sound_name == 'b2b':
+            sound_name = f"b2b_{min(max(1, combo or 1), 5)}"
+        elif sound_name == 'ko_orb':
+            sound_name = f"ko_orb_{min(max(1, combo or 1), 8)}"
         if not (self.enabled and self.sfx_enabled) or self.sfx_volume <= 0.001:
             return
         vol = self.sfx_volume * (self.warn_scale if sound_name in self.WARN_SOUNDS else 1.0)

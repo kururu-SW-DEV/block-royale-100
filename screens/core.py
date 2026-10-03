@@ -211,7 +211,7 @@ class CoreMixin:
         except Exception:
             return "127.0.0.1"
 
-    def start_game(self, mode="SOLO", total_players=100, initial_players=None, practice=False, daily=None, weekly=None, brief=True):
+    def start_game(self, mode="SOLO", total_players=100, initial_players=None, practice=False, daily=None, weekly=None, brief=True, quick=False):
         """practice=True: 연습 모드(혼자, 전적 없음). daily="YYYYMMDD": 오늘의 도전(같은 날은 같은 블록 순서/상대 구성, 100인 혼합 난이도 배틀로얄)"""
         self._end_text(commit=False)
         self.renderer.reset_standings()
@@ -285,11 +285,17 @@ class CoreMixin:
         if show_brief:                                                   # 오늘의 도전/주간 변형: 규칙과 목표를 먼저 보여 주고, 아무 키나 누르면 카운트다운 시작
             self.match.brief_open = True
         elif mode == "SOLO" and not practice and getattr(self, "use_bot_pool", False):                                                  # 혼자 하는 경기: 3-2-1 동안 경기를 멈추고 화면을 먼저 보여 줌 (네트워크는 동기화 때문에 제외, 테스트/헤드리스 실행은 건너뜀)
-            lead = self.match.COUNTDOWN_SECS
+            lead = 2.0 if quick else self.match.COUNTDOWN_SECS      # 결과 화면에서 바로 '재도전'한 경우는 카운트다운을 2초로 줄여 '한 판 더'까지의 마찰을 줄임
             self.match.countdown_until = time.time() + lead
         if not practice and not self.settings.get("coach_done"):                             # 처음 하는 경기: HUD 핵심 3곳을 15초 동안 설명 (한 번만, 카운트다운 동안에도 보임)
             self.match.coach_until = time.time() + lead + 12.0
             self.match.coach_pending = True                  # coach_done은 코치를 볼 시간이 지난 뒤에(_check_tips) 저장: 바로 나가면 다음에 다시 보임
+        self._cd_n = None                                    # 카운트다운 효과음 진행 (3-2-1-GO)
+        if not practice and self.match.attacks_enabled:      # 경기 중에 알려 줄 수 있는 아직 못 얻은 업적 / 평생 첫 K.O. 여부 (저장과 정식 판정은 경기가 끝날 때)
+            from stats_manager import ACHIEVEMENTS
+            _done = set(self.stats_mgr.achievements_done())
+            self.match.live_ach = {aid: title for aid, title, _d, _ok in ACHIEVEMENTS if aid in self.match.LIVE_ACH and aid not in _done}
+            self.match.first_ko_ever = int(self.stats_mgr.data.get("total_kos", 0)) == 0 and "first_ko" not in _done
         self.apply_gameplay_options()
         if getattr(self, "use_bot_pool", False) and mode != "CLIENT":
             bot_pool.start()                       # 봇 계산을 여러 CPU 코어에 나눠 맡김 (준비될 때까지는 직접 계산)
@@ -307,11 +313,11 @@ class CoreMixin:
             daily = getattr(self.match, "daily", None) if self.match is not None else None
             weekly = getattr(self.match, "weekly", None) if self.match is not None else None
             if daily:
-                self.start_game(mode="SOLO", daily=daily, brief=False)             # 오늘의 도전은 재도전도 같은 도전(같은 블록 순서/상대), 브리핑은 건너뜀
+                self.start_game(mode="SOLO", daily=daily, brief=False, quick=True)             # 오늘의 도전은 재도전도 같은 도전(같은 블록 순서/상대), 브리핑은 건너뜀
             elif weekly:
-                self.start_game(mode="SOLO", weekly=(weekly, self.match.mutator["id"]), brief=False)      # 주간 변형 규칙도 같은 규칙으로 재도전
+                self.start_game(mode="SOLO", weekly=(weekly, self.match.mutator["id"]), brief=False, quick=True)      # 주간 변형 규칙도 같은 규칙으로 재도전
             else:
-                self.start_game(mode="SOLO", total_players=self.target_player_count)
+                self.start_game(mode="SOLO", total_players=self.target_player_count, quick=True)
         elif self.match is not None and self.match.match_finished:
             self._return_to_lobby()
 

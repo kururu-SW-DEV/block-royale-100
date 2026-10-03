@@ -3,6 +3,7 @@ Block Royale 100 - 게임 화면: 입력 처리, 프레임 갱신, 렌더링, �
 BlockRoyaleApp(main.py)이 상속하는 믹스인: 메서드 본문은 원래 main.py에 있던 그대로이며 self로 앱 상태를 공유함
 """
 
+import math
 import os
 from stats_manager import next_goal_text
 from app_common import (
@@ -353,9 +354,34 @@ class GameMixin:
                         self.sound_mgr.play('attack')        # 실제로 조준이 바뀐 경우에만 소리
                     break
 
+    def _build_reward(self, final_rank, highlights, skins_before):
+        """경기 종료 정산 결과(경험치/레벨/명장면/새 스킨)를 match.reward에 담고, 결과 화면 연출 소리를 예약 (우승은 승리 팡파레가 길어서 소리 예약은 생략)"""
+        from stats_manager import unlocked_skin_ids
+        from settings_manager import BLOCK_SKIN_LABELS
+        sm = self.stats_mgr
+        unlocks = [BLOCK_SKIN_LABELS.get(x, x).split(" (")[0] for x in unlocked_skin_ids(sm.data) if x not in skins_before]
+        lx = dict(sm.last_xp or {})
+        from stats_manager import locked_skin_hints
+        hints = locked_skin_hints(sm.data)
+        nxt = f"{BLOCK_SKIN_LABELS.get(hints[0][0], hints[0][0]).split(' (')[0]} ({hints[0][1]})" if (hints and sm.data.get("total_games", 0) <= 12) else None     # 처음 몇 판: 다음 해금 목표를 알려 줌
+        self.match.reward = {"xp": lx, "highlights": list(highlights), "unlocks": unlocks, "next_unlock": nxt}
+        if final_rank == 1:
+            return
+        t0 = time.time()
+        due = [(t0 + 1.45 + 0.25 * i, 'badge_up') for i in range(min(3, len(self.match.new_achievements) + len(unlocks)))]
+        due += [(t0 + 1.9 + 0.22 * i, 'stamp') for i in range(min(4, len(highlights)))]
+        if lx and lx.get("lv_after", 1) > lx.get("lv_before", 1):
+            due.append((t0 + 2.75, 'levelup'))
+        self._sound_due = sorted(due)
+
     def _save_challenges(self):
         """매치가 새로 달성한 도전 과제를 저장하고, 그 덕에 새로 달성한 업적/타임어택 기록도 반영"""
         m = self.match
+        lu = getattr(self.stats_mgr, "last_level_up", None)
+        if lu:                                                # 연습/도전 별로 레벨이 오름: 큰 배너 + 레벨 업 소리
+            self.stats_mgr.last_level_up = None
+            m.add_floating_text(f"★ LEVEL UP!  Lv.{lu[1]} ★", (255, 225, 90), duration=3.2, size=40, category="action", tier=3)
+            self.sound_mgr.play('levelup')
         if m.challenge is None:
             return
         if m.challenge_saved:
@@ -524,8 +550,21 @@ class GameMixin:
             return
         if getattr(self.match, "brief_open", False):
             return                                           # 도전 브리핑 카드가 열려 있는 동안은 경기를 시작하지 않음
-        if self.match.countdown_left() > 0:
+        if self._sound_due:                                  # 결과 화면 연출 소리(업적 카드/도장/레벨 업)를 예약한 시각에 재생
+            _now = time.time()
+            for _t, _name in [x for x in self._sound_due if x[0] <= _now]:
+                self.sound_mgr.play(_name)
+            self._sound_due = [x for x in self._sound_due if x[0] > _now]
+        cd_left = self.match.countdown_left()
+        if cd_left > 0:
+            n = int(math.ceil(cd_left))                      # 시작 카운트다운 효과음: 3, 2, 1에 비프, 끝나는 순간 GO
+            if n != getattr(self, "_cd_n", None):
+                self._cd_n = n
+                self.sound_mgr.play('count')
             return                                           # 시작 카운트다운: 블록/봇/시간 모두 정지 (화면만 그림)
+        if getattr(self, "_cd_n", None) is not None:
+            self._cd_n = None
+            self.sound_mgr.play('go')
 
         # 1. DAS / ARR 연속 좌우 이동 및 초고속 소프트드롭
         if self.match.local_is_alive and not self.match.local_engine.game_over:
@@ -623,6 +662,10 @@ class GameMixin:
             else:
                 final_rank = self.match.alive_count + 1
                 
+            from stats_manager import unlocked_skin_ids
+            _skins_before = set(unlocked_skin_ids(self.stats_mgr.data))
+            _prev_max_ko = int(self.stats_mgr.data.get("max_ko", 0))      # 이번 판 반영 전의 K.O. 개인 최고 (근접 실패 문구용)
+            _hl = self.match.highlights() if (self.match.attacks_enabled and not self.match.practice) else []
             self.match.new_records = self.stats_mgr.record_match(
                 rank=final_rank,
                 total_players=self.match.total_players,
@@ -635,19 +678,22 @@ class GameMixin:
                 daily=self.match.daily,
                 weekly=self.match.weekly,
                 killer=self.match.local_killer_id if (self.match.attacks_enabled and not self.match.practice and self.net_mgr.mode == "NONE") else None,
-                revenge=bool(self.match.rival_defeated)
+                revenge=bool(self.match.rival_defeated),
+                highlights=_hl
             )
             _mode = "battle" if self.match.attacks_enabled else "survival"
             if getattr(self.match, "log_enabled", False):
                 self._save_match_log(final_rank)
             self.match.new_achievements = list(getattr(self.stats_mgr, "last_new_achievements", []))
             self.match.ladder_clear = self.stats_mgr.last_ladder_clear
+            self._build_reward(final_rank, _hl, _skins_before)
             self.match.next_goal = ((f"오늘의 도전 최고 #{self.stats_mgr.daily_best(self.match.daily)}위" if self.match.daily and not self.match.ladder_clear else None)
                                     or (f"이번 주 변형({self.match.mutator['name']}) 최고 #{self.stats_mgr.weekly_best(self.match.weekly)}위" if self.match.weekly and self.match.mutator and not self.match.ladder_clear else None)
                                     or ("라이벌에게 복수 성공!" if self.match.rival_defeated else None)) or next_goal_text(final_rank, self.match.local_ko_count, self.match.total_players,
                                                   self.stats_mgr.best_in_size(_mode, self.match.total_players),
                                                   difficulty=self.match.bot_difficulty if _mode == "battle" else None,
-                                                  cleared=self.stats_mgr.ladder_cleared(_mode), ladder_clear=self.match.ladder_clear)
+                                                  cleared=self.stats_mgr.ladder_cleared(_mode), ladder_clear=self.match.ladder_clear,
+                                                  max_ko=_prev_max_ko if _mode == "battle" else 0)
             
         # 주기적 네트워크 패킷 동기화 (15Hz)
         now = time.time()

@@ -24,6 +24,46 @@ SIZE_BUCKET_IDS = tuple(b[0] for b in SIZE_BUCKETS)
 SIZE_BUCKET_LABELS = {b[0]: b[3] for b in SIZE_BUCKETS}
 
 
+# ---- 경험치와 레벨 (v1.1.6): 져도 매 판 조금씩 오르는 숫자. 레벨은 해금 스킨(불씨 Lv.5, 프리즘 Lv.10)으로 이어짐
+HIGHLIGHT_IDS = ("perfect", "comeback", "chain_ko", "combo10", "b2b5", "wall", "bounty", "revenge")      # 명장면 id (battle_royale.HIGHLIGHT_LABELS와 같아야 함)
+STAR_XP = 20                                     # 도전 과제 별 하나당 경험치
+
+
+def xp_for_next(level):
+    """level에서 level+1로 오르는 데 필요한 경험치"""
+    return int(100 * max(1, int(level)) ** 1.3)
+
+
+def level_of(xp):
+    """경험치 -> (레벨, 이번 레벨에서 쌓은 경험치, 이번 레벨을 채우는 데 필요한 경험치). 레벨 1에서 시작"""
+    xp = max(0, int(xp))
+    level = 1
+    while xp >= xp_for_next(level):
+        xp -= xp_for_next(level)
+        level += 1
+    return level, xp, xp_for_next(level)
+
+
+def calc_match_xp(rank, total_players, kos, survival_sec, highlights=(), mode="battle"):
+    """한 판의 경험치와 내역 [(항목, 경험치)]. 참가 20 + 순위(꼴찌 0 ~ 우승 60) + K.O. 8 + 생존(20초당 1, 최대 30) + 우승 40 + 명장면 15. 서바이벌은 절반"""
+    parts = [("참가", 20)]
+    if total_players >= 2:
+        parts.append(("순위", int(round((total_players - rank) / float(total_players - 1) * 60))))
+    if kos > 0:
+        parts.append(("K.O.", int(kos) * 8))
+    live = min(30, int(survival_sec) // 20)
+    if live > 0:
+        parts.append(("생존", live))
+    if rank == 1 and total_players >= 2:
+        parts.append(("우승", 40))
+    if highlights:
+        parts.append(("명장면", 15 * len(highlights)))
+    if mode == "survival":
+        parts = [(k, int(v * 0.5)) for k, v in parts]
+    parts = [(k, v) for k, v in parts if v > 0]
+    return sum(v for _k, v in parts), parts
+
+
 def size_bucket(total_players):
     for bid, lo, hi, _label in SIZE_BUCKETS:
         if lo <= int(total_players) <= hi:
@@ -126,7 +166,9 @@ DEFAULT_STATS = {
     "best_by_size": {},               # 규모별 최고 순위 {"small": 3, "mid": 8, "large": 28} (플레이한 규모만)
     "daily_meta": {},                 # 오늘의 도전 날짜별 {"rank": 최고 순위, "secs": 그때 버틴 시간, "tries": 시도 횟수} (고스트 비교용, 최근 30일)
     "weekly": {},                     # 주간 변형 규칙 주별 최고 순위 {"2026W40": 7} (최근 20주)
-    "rivals": {}                      # 라이벌 봇: {"losses": {봇 id: 나를 탈락시킨 횟수}, "revenges": 라이벌을 처치한 횟수}
+    "rivals": {},                     # 라이벌 봇: {"losses": {봇 id: 나를 탈락시킨 횟수}, "revenges": 라이벌을 처치한 횟수}
+    "xp": 0,                          # 누적 경험치 (배틀로얄 버킷(최상위)에만 쌓음. 서바이벌/연습/도전 별도 여기로 합산)
+    "highlights": {}                  # 명장면 횟수 {HIGHLIGHT_IDS 중 하나: 횟수}
 }
 
 def _backup_corrupt(path):
@@ -138,7 +180,7 @@ def _backup_corrupt(path):
         pass
 
 
-def next_goal_text(rank, kos, total_players, best_in_size, difficulty=None, cleared=(), ladder_clear=None):
+def next_goal_text(rank, kos, total_players, best_in_size, difficulty=None, cleared=(), ladder_clear=None, max_ko=0):
     """결과 화면의 '다음 목표: ...' 뒤에 붙는 문구. 우선순위: 방금 난이도 클리어 -> 배지 다음 단계가 2 K.O. 이내 -> 난이도 클리어까지 -> 순위 목표.
     best_in_size: 방금 경기를 포함한 같은 규모의 최고 순위 (없으면 0)"""
     if ladder_clear:
@@ -150,6 +192,8 @@ def next_goal_text(rank, kos, total_players, best_in_size, difficulty=None, clea
         return f"배지 Lv.{lv_next}까지 {need_ko} K.O."
     if difficulty in LADDER and difficulty not in cleared and total_players >= LADDER_MIN_PLAYERS and rank > LADDER_RANK:
         return f"{LADDER_NAMES[difficulty]} 클리어까지 {rank - LADDER_RANK}계단 ({LADDER_RANK}위 안)"
+    if max_ko > kos and max_ko - kos <= 2 and total_players > 2:          # 근접 실패: K.O. 개인 최고 기록이 코앞
+        return f"K.O. 최고 기록({max_ko}명)까지 {max_ko - kos}명"
     best = best_in_size if best_in_size > 0 else rank
     if rank > best:
         return f"최고 순위 #{best}까지 {rank - best}계단"
@@ -217,6 +261,8 @@ class StatsManager:
         self.data["survival"] = copy.deepcopy(DEFAULT_STATS)   # 서바이벌(공격 없음) 전적: 같은 구조를 따로 보관
         self.last_ladder_clear = None
         self.last_new_achievements = []
+        self.last_xp = None                               # 방금 끝난 경기의 경험치 정산 {"gain","parts","before","after","lv_before","lv_after"}
+        self.last_level_up = None                         # (이전 레벨, 새 레벨): 도전 과제 별로 레벨이 오른 직후 앱이 알림을 띄우고 비움
         self.load()
 
     def _bucket(self, mode):
@@ -253,6 +299,10 @@ class StatsManager:
                     target[k] = {"losses": {kk: int(vv) for kk, vv in (losses.items() if isinstance(losses, dict) else [])
                                             if isinstance(kk, str) and kk.startswith("BOT_") and isinstance(vv, (int, float)) and not isinstance(vv, bool) and vv >= 1},
                                  "revenges": int(rev) if isinstance(rev, (int, float)) and not isinstance(rev, bool) and rev >= 0 else 0}
+            elif k == "highlights":                        # 명장면: 알려진 id + 양의 정수만
+                if isinstance(v, dict):
+                    target[k] = {kk: int(vv) for kk, vv in v.items()
+                                 if kk in HIGHLIGHT_IDS and isinstance(vv, (int, float)) and not isinstance(vv, bool) and vv >= 1}
             elif k == "achievements":                      # 업적: 알려진 id만
                 if isinstance(v, list):
                     target[k] = [x for x in ACHIEVEMENT_IDS if x in v]
@@ -368,6 +418,22 @@ class StatsManager:
             del c["weekly"][old]
         return rec
 
+    def level(self):
+        """(레벨, 이번 레벨에서 쌓은 경험치, 필요 경험치)"""
+        return level_of(self.data.get("xp", 0))
+
+    def add_xp(self, n):
+        """경험치 추가 (레벨이 오르면 last_level_up에 기록). 새 경험치 합계를 돌려줌"""
+        n = int(n)
+        if n <= 0:
+            return self.data.get("xp", 0)
+        before = level_of(self.data.get("xp", 0))[0]
+        self.data["xp"] = int(self.data.get("xp", 0)) + n
+        after = level_of(self.data["xp"])[0]
+        if after > before:
+            self.last_level_up = (before, after)
+        return self.data["xp"]
+
     def stars_total(self):
         s = self.ch()["stars"]
         return int(s["daily"]) + int(s["weekly"]) + int(s["practice"])
@@ -410,6 +476,7 @@ class StatsManager:
                 if rule and rule not in c["weekly_rules"]:
                     c["weekly_rules"].append(rule)
         if new:
+            self.add_xp(STAR_XP * len(new))
             self.grant_challenge_achievements()
             self.save()
         return new
@@ -493,7 +560,7 @@ class StatsManager:
         return self._bucket(mode).get("daily", {}).get(date_key, 0)
 
     def record_match(self, rank, total_players, kos, lines, max_combo, survival_sec, mode="battle", difficulty="mixed", daily=None,
-                     weekly=None, killer=None, revenge=False):
+                     weekly=None, killer=None, revenge=False, highlights=()):
         """경기 완료 시 전적 기록 및 통계 갱신 (mode: "battle" 배틀로얄 / "survival" 서바이벌)"""
         d = self._bucket(mode)
         prev_games = d.get("total_games", 0)
@@ -566,6 +633,17 @@ class StatsManager:
         d["max_combo"] = max(d.get("max_combo", 0), max_combo)
         d["total_lines"] = d.get("total_lines", 0) + lines
         d["total_play_time_sec"] = d.get("total_play_time_sec", 0) + int(survival_sec)
+
+        hl = [h for h in highlights if h in HIGHLIGHT_IDS]                 # 명장면 집계 + 경험치 정산 (서바이벌도 경험치는 쌓이지만 절반)
+        if hl and mode == "battle":
+            hc = self.data.setdefault("highlights", {})
+            for h in hl:
+                hc[h] = hc.get(h, 0) + 1
+        xp_before = int(self.data.get("xp", 0))
+        gain, parts = calc_match_xp(rank, total_players, kos, survival_sec, hl if mode == "battle" else (), mode)
+        self.data["xp"] = xp_before + gain
+        lv_b, lv_a = level_of(xp_before)[0], level_of(self.data["xp"])[0]
+        self.last_xp = {"gain": gain, "parts": parts, "before": xp_before, "after": self.data["xp"], "lv_before": lv_b, "lv_after": lv_a}
 
         if mode == "battle":                               # 업적은 누적 값을 모두 갱신한 뒤에 판정
             ctx = {"rank": rank, "total": total_players, "kos": kos, "lines": lines, "combo": max_combo, "secs": survival_sec,
@@ -667,6 +745,8 @@ SKIN_UNLOCKS = {
     "pixel": ("업적 3개 달성", lambda d: len(d.get("achievements", [])) >= 3),
     "glass": ("로열 빅토리(우승) 1회", lambda d: d.get("victories", 0) >= 1),
     "starlight": ("도전 과제 별(★) 누적 90개", lambda d: _stars_of(d) >= 90),
+    "ember": ("레벨 5 달성", lambda d: level_of(d.get("xp", 0))[0] >= 5),
+    "prism": ("레벨 10 달성", lambda d: level_of(d.get("xp", 0))[0] >= 10),
 }
 
 

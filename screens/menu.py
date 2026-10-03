@@ -302,9 +302,15 @@ class MenuMixin:
         if t > 0.5:
             self._menu_focus_ring(rect, C_ACCENT, bg, 22)
         col = NAME_COLORS[self.name_color][1]
-        pygame.draw.circle(self.screen, col, (rect.x + 26, rect.centery), 8)
-        name = self._menu_fit(self.player_name, self.font_mid, 118)
-        nr = self._t(name, self.font_mid, col, rect.x + 44, rect.centery, "midleft")
+        lv = self.stats_mgr.level()[0]                           # 레벨 배지: 이름 색 테두리 안에 "Lv.N"
+        lv_txt = f"Lv.{lv}"
+        lv_w = max(34, self.font_tiny.size(lv_txt)[0] + 12)
+        lv_r = pygame.Rect(rect.x + 10, rect.centery - 10, lv_w, 20)
+        pygame.draw.rect(self.screen, (24, 30, 52), lv_r, border_radius=10)
+        pygame.draw.rect(self.screen, col, lv_r, 1, border_radius=10)
+        self._t(lv_txt, self.font_tiny, col, lv_r.centerx, lv_r.centery, "center")
+        name = self._menu_fit(self.player_name, self.font_mid, 110)
+        nr = self._t(name, self.font_mid, col, lv_r.right + 8, rect.centery, "midleft")
         title_id = self.settings.get("title", "")
         title_txt = next((a[1] for a in __import__("stats_manager").ACHIEVEMENTS if a[0] == title_id and title_id in self.stats_mgr.achievements_done()), "")
         if title_txt:                                           # 칭호(달성한 업적 이름): 이름 오른쪽에 작게

@@ -135,6 +135,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         self.records_scroll = 0          # 전적 기록실 목록 스크롤 (행 단위)
         self.records_mode = "battle"     # 전적 기록실에서 보는 모드: battle(배틀로얄) / survival(서바이벌)
         self.records_ach_page = 0        # 기록실 업적 탭에서 보고 있는 페이지 (stats_manager.ACH_CATEGORIES 순서)
+        self._sound_due = []             # 결과 화면 연출용 예약 효과음 [(재생 시각, 이름)]
         self.records_size = None         # 전적 기록실 필터: 인원 규모 (None=전체 / "small" / "mid" / "large")
         self.records_diff = None         # 전적 기록실 필터: 봇 난이도 (None=전체 / "mixed" / "easy" / ...)
         self.records_max_scroll = 0

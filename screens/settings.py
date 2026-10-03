@@ -598,7 +598,7 @@ class SettingsMixin:
         self.color_rects = self._draw_color_swatches(RIGHT - (size * len(NAME_COLORS) + gap * (len(NAME_COLORS) - 1)), y + 13, size=size, gap=gap)
         y += 52
         shake = self.settings.get("screen_shake", "normal")
-        self._s_row("shake", y, 52, "화면 흔들림", "공격을 받거나 K.O.가 났을 때")
+        self._s_row("shake", y, 52, "화면 흔들림", "쿼드/피격/K.O. 흔들림, 큰 순간의 번쩍임 (끔: 둘 다 없음)")
         self._s_cycler("shake_prev", "shake_next", SHAKE_LABELS.get(shake, "보통"), RIGHT, y + 26)
         y += 52
 

@@ -388,7 +388,7 @@ def test_stats_ghost_rival_weekly_unlocks():
     # 해금 스킨
     fresh = SM.StatsManager(os.path.join(d, "f.json"))
     assert SM.unlocked_skin_ids(fresh.data) == ["classic", "neon", "flat", "jelly"]
-    assert {s for s, _ in SM.locked_skin_hints(fresh.data)} == {"pixel", "glass", "starlight"}
+    assert {s for s, _ in SM.locked_skin_hints(fresh.data)} == {"pixel", "glass", "starlight", "ember", "prism"}
     fresh.record_match(1, 100, 1, 5, 1, 90)                      # 우승 -> glass
     assert "glass" in SM.unlocked_skin_ids(fresh.data)
     from settings_manager import SettingsManager

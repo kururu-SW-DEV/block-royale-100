@@ -176,15 +176,17 @@ class RecordsMixin:
             self._t("필터 적용 중 · 최근 100경기 중 조건에 맞는 경기만 집계합니다", self.font_tiny, C_ORANGE, box_x + 25, box_y + 4)
         card_w = (box_w - 75) // 4
         card_h = 95
+        hl_n = sum(self.stats_mgr.data.get("highlights", {}).values()) if self.records_mode == "battle" else 0      # 명장면 누적 횟수 / 레벨 (경기 종료 정산에서 쌓임)
+        lv_now = self.stats_mgr.level()[0]
         card_y = box_y + 20
         
         cards_data = [
             ("로열 빅토리 (우승)" if self.records_mode == "battle" else "서바이벌 우승", f"{sm['victories']}승 / {sm['total_games']}전", f"승률 {sm['win_rate']:.1f}%", (255, 215, 60), (45, 38, 18)),
             ("최고 순위 (RANK)", sm['best_rank_str'], f"TOP 5: {sm['top_5']}회  |  TOP 10: {sm['top_10']}회", (100, 220, 255), (18, 40, 60)),
-            (("처치 (K.O.) 기록", f"총 {sm['total_kos']}명 KO", f"단일 경기 최다: {sm['max_ko']}명", (255, 110, 130), (50, 20, 28))
+            (("처치 (K.O.) 기록", f"총 {sm['total_kos']}명 KO", f"단일 경기 최다: {sm['max_ko']}명" + (f" · 명장면 {hl_n}회" if hl_n else ""), (255, 110, 130), (50, 20, 28))
              if self.records_mode == "battle" else
              ("누적 플레이 시간", f"{sm['play_time_sec'] // 3600}시간 {sm['play_time_sec'] // 60 % 60}분", "공격 없이 버틴 시간", (255, 110, 130), (50, 20, 28))),
-            ("블록 기술 기록", f"최대 {sm['max_combo']} 콤보", f"누적 {sm['total_lines']}줄 제거", (120, 255, 160), (20, 48, 30))
+            ("블록 기술 기록", f"최대 {sm['max_combo']} 콤보", f"누적 {sm['total_lines']}줄 제거" + (f" · Lv.{lv_now}" if self.records_mode == "battle" and not sm.get("filtered") else ""), (120, 255, 160), (20, 48, 30))
         ]
         
         for i, (c_title, c_val, c_sub, c_col, c_bg) in enumerate(cards_data):
