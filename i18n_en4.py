@@ -30,7 +30,7 @@ EXACT = {
     "재생 / 일시정지": "Play / pause", "5초 이동 (Shift 20초)": "Seek 5s (Shift 20s)", "속도 ×2 / ÷2": "Speed ×2 / ÷2", "처음부터": "From start",
     "아직 기록이 없습니다. 배틀로얄을 끝까지 해 보세요!": "No records yet. Play a Battle Royale to the end!",
     "이니셜": "Initials", "규모": "Size", "날짜": "Date", "◀ 이전": "◀ Prev", "다음 ▶": "Next ▶",
-    "추이": "Trend", "점수표": "High Scores", "업적": "Achievements", "전체": "All",
+    "추이": "Trend", "점수표": "High Scores", "업적": "Trophies", "전체": "All",
     "로열 빅토리 (우승)": "Royale Victory (wins)", "서바이벌 우승": "Survival wins",
     "처치 (K.O.) 기록": "K.O. Record", "누적 플레이 시간": "Total Play Time", "공격 없이 버틴 시간": "Time survived without attacks",
     "조건에 맞는 경기가 없습니다": "No matches fit the filter", "위의 규모/난이도 필터를 바꿔 보세요 (1~4 / F)": "Change the size/difficulty filter above (1-4 / F)",
