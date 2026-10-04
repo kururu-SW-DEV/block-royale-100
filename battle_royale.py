@@ -84,6 +84,11 @@ class BattleRoyaleMatch:
         self.clutch_times = []                         # 내 위기 탈출 경기 시각
         self.bounty_id = None                          # 현상금 봇 (처치하면 보너스)
         self.bounty_claimed = False
+        self.bounty_kills = 0                          # 이번 판에 처치한 골든 타깃 수 (경험치 +30씩, 공격력 보너스는 없음)
+        self._bounty_rng = random.Random()
+        self.bests = {}                                # 시작 때의 개인 기록 {"max_ko", "best_rank", "best_score"} (경기 중 근접 실패/돌파 알림용)
+        self._live_rec = set()                         # 이미 알린 기록 알림 키
+        self._layer_seen = -1                          # 콤보 음악 층 단계
         self.ghost = ghost                             # 오늘의 도전 지난 최고 기록 {"rank","secs","tries"} 또는 None (경기 중 비교 표시용)
         if seed is not None:
             random.seed(seed)                          # 봇 구성/난이도 선택이 같은 날 같게
@@ -409,6 +414,7 @@ class BattleRoyaleMatch:
             cands = [pid for pid, p in self.players.items() if p["is_ai"] and pid != self.rival_id]
             if cands:
                 rng = random.Random(int(self.daily) * 31 + 5) if (self.daily and str(self.daily).isdigit()) else random.Random()
+                self._bounty_rng = rng
                 self.bounty_id = rng.choice(sorted(cands))
 
     def set_target_mode(self, mode):
@@ -868,9 +874,12 @@ class BattleRoyaleMatch:
                 self._ko_events.append({"due": time.time() + 0.7, "n": self.local_ko_count, "lvl_up": new_lvl > old_lvl, "lvl": new_lvl, "pct": new_pct})
                 if gold:
                     self.bounty_claimed = True
+                    self.bounty_kills += 1
                     self.add_floating_text(f"★ 현상금 사냥 성공! {victim_name} ★", (255, 200, 60), duration=3.0, size=30, category="action", tier=2)
                     if self.sound_mgr:
                         self.sound_mgr.play('top_up')
+                        self.sound_mgr.play('vo_bounty')
+                self._check_kill_records()
                 if self.first_ko_ever and self.local_ko_count == 1:
                     self.trigger_impact(0.7)
                     self.add_floating_text("★ 첫 K.O.! 축하해요 ★", (255, 225, 90), duration=3.4, size=40, category="action", tier=3)
@@ -1169,6 +1178,13 @@ class BattleRoyaleMatch:
                 self.sound_mgr.play('b2b', combo=chain)       # B2B가 이어질수록 높고 화려해지는 반짝임
             if combo >= 1:
                 self.sound_mgr.play('combo', combo=combo)    # 콤보 차임 (콤보 단계에 맞는 음)
+            if is_tspin and cleared >= 2:                    # 로봇 아나운서 (설정이 켜져 있을 때만, 큰 순간에만)
+                self.sound_mgr.play('vo_tspin')
+            elif cleared >= 4:
+                self.sound_mgr.play('vo_quad')
+            elif combo in (5, 8, 12):
+                self.sound_mgr.play('vo_combo')
+        self._check_score_record()
         self.max_b2b_chain = max(self.max_b2b_chain, chain if is_b2b else 0)
         canceled = int(info.get('canceled', 0) or 0)
         if canceled > 0:                                         # 줄을 지워 막은 공격: 토스트 + 받을 공격 칸 반응(렌더러) + 방패음
@@ -1187,6 +1203,7 @@ class BattleRoyaleMatch:
             self.add_commentary(f"★ {me}  PERFECT CLEAR! ★", (255, 225, 90), prio=1)
             if self.sound_mgr:
                 self.sound_mgr.play('perfect')
+                self.sound_mgr.play('vo_perfect')
         if is_tspin:
             self.add_commentary(f"{me}  {f'B2B x{chain} ' if is_b2b and chain >= 1 else ''}T-스핀!", (255, 150, 255), mine=True)
         elif cleared >= 4:
@@ -1253,6 +1270,7 @@ class BattleRoyaleMatch:
             self.add_floating_text(f"★ FINAL DUEL ★  vs {opp}" if opp else "★ FINAL DUEL ★", (255, 215, 90), duration=3.2, size=40, category="action", tier=3)
             if self.sound_mgr:
                 self.sound_mgr.play('final')
+                self.sound_mgr.play('vo_final')
             return
         p2_thr = int(self.total_players * 0.5)
         p3_thr = max(2, int(round(self.total_players * 0.1)))
@@ -1261,6 +1279,68 @@ class BattleRoyaleMatch:
             self.add_floating_text(f"★ TOP {n} 진입! ★", (255, 225, 110), duration=2.4, size=30, category="action", tier=2)
             if self.sound_mgr:
                 self.sound_mgr.play('top_up')
+                if n == 10:
+                    self.sound_mgr.play('vo_top10')
+        self._check_rank_records(n)
+
+    def _new_golden_target(self):
+        """2·3단계가 시작될 때 살아 있는 봇 한 명을 새 골든 타깃으로 지정 (현재 타깃을 못 잡았어도 교체). 처치하면 경험치만 +30, 공격력 보너스 없음"""
+        if self.bounty_id is None or not self.attacks_enabled or self.practice:
+            return                                                  # 현상금 봇이 없는 경기(네트워크/연습/서바이벌)는 골든 타깃도 없음
+        cands = sorted(pid for pid, p in self.players.items() if p["is_ai"] and p["is_alive"] and pid != self.rival_id and pid != self.bounty_id)
+        if not cands:
+            return
+        self.bounty_id = self._bounty_rng.choice(cands)
+        self.bounty_claimed = False
+        self.add_floating_text("★ 새 골든 타깃 지정! 금빛 $ 카드를 노리세요 ★", (255, 210, 90), duration=2.6, size=22, category="action", tier=1)
+        if self.sound_mgr:
+            self.sound_mgr.play('vo_golden')
+
+    def _live_record_toast(self, key, text, tier=2):
+        if key in self._live_rec:
+            return
+        self._live_rec.add(key)
+        self.add_floating_text(text, (255, 225, 110), duration=2.6, size=26, category="action", tier=tier)
+        if self.sound_mgr:
+            self.sound_mgr.play('top_up')
+
+    def _check_kill_records(self):
+        """K.O.를 낼 때마다: 개인 최고 K.O. 기록까지 1명 / 기록 돌파"""
+        mk = (self.bests or {}).get("max_ko", 0)
+        if mk < 2 or self.practice or not self.attacks_enabled:
+            return
+        if self.local_ko_count == mk - 1:
+            self._live_record_toast("ko_near", f"K.O. 개인 최고({mk}명)까지 1명!", tier=1)
+        elif self.local_ko_count == mk + 1:
+            self._live_record_toast("ko_new", f"★ K.O. 개인 최고 기록 돌파! ({self.local_ko_count}명)", tier=2)
+
+    def _check_rank_records(self, alive_n):
+        """생존자 수가 줄 때마다: 개인 최고 순위 타이 / 돌파 (내가 살아 있을 때만 호출됨)"""
+        br = (self.bests or {}).get("best_rank", 0)
+        if br <= 2 or self.practice or not self.attacks_enabled:
+            return
+        if alive_n == br:
+            self._live_record_toast("rank_tie", f"최고 순위 #{br} 타이! 한 명만 더!", tier=1)
+        elif alive_n == br - 1:
+            self._live_record_toast("rank_new", f"★ 개인 최고 순위 갱신! (기존 #{br})", tier=2)
+
+    def _check_score_record(self):
+        bs = (self.bests or {}).get("best_score", 0)
+        if bs > 0 and self.local_engine.score > bs and not self.practice and self.attacks_enabled:
+            self._live_record_toast("score_new", "★ 개인 최고 점수 돌파!", tier=2)
+
+    def _update_combo_layer(self):
+        """콤보 5 이상 / B2B 3 이상이면 BGM 위에 하이햇 층 (콤보 8 이상이면 더 크게), 콤보가 끊기면 꺼짐"""
+        if not self.sound_mgr:
+            return
+        e = self.local_engine
+        if self.match_finished or not self.local_is_alive or self.practice:
+            lvl = 0
+        else:
+            lvl = 2 if e.combo >= 8 else (1 if (e.combo >= 5 or (e.b2b and e.b2b_chain >= 3)) else 0)
+        if lvl != self._layer_seen:
+            self._layer_seen = lvl
+            self.sound_mgr.set_combo_layer(lvl)
 
     # 경기 중에 알려 줄 수 있는 업적 조건 (저장과 정식 판정은 경기가 끝날 때 stats_manager가 함. 여기서는 달성 순간의 기쁨만 먼저 보여 줌)
     LIVE_ACH = {
@@ -1378,6 +1458,7 @@ class BattleRoyaleMatch:
         if self.screen_shake <= 0:
             self.shake_dir = None
         self._process_ko_events()                                # (경기가 끝난 뒤에도 마지막 K.O.의 구슬 도착 연출은 마저 처리)
+        self._update_combo_layer()
         if self.match_finished:
             return
             
@@ -1524,6 +1605,7 @@ class BattleRoyaleMatch:
                 self.sound_mgr.play('phase_up')
             self.add_commentary("PHASE 2 돌입  ·  생존자 절반", (255, 215, 0), prio=1)
             self.add_floating_text(f"★ [PHASE 2] 생존자 {p2_thr}인 돌파! ★", (255, 215, 0), duration=3.0, size=32, category="action", tier=2)
+            self._new_golden_target()
         if self.total_players >= 8 and self.alive_count <= p3_thr and self.phase < 3:
             self.phase = 3
             self.trigger_screen_shake(16.0)
@@ -1532,6 +1614,7 @@ class BattleRoyaleMatch:
                 self.sound_mgr.play('phase_up')
             self.add_commentary(f"FINAL {p3_thr}  ·  최후의 결전", (255, 90, 90), prio=1)
             self.add_floating_text(f"★ [FINAL {p3_thr}] 최후의 결전! ★", (255, 75, 75), duration=3.5, size=34, category="action", tier=3)
+            self._new_golden_target()
 
         # 5. 네트워크 수신 공격 처리
         if self.net_mgr and self.net_mgr.incoming_attacks:

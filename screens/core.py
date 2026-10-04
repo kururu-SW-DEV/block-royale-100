@@ -299,6 +299,8 @@ class CoreMixin:
             _done = set(self.stats_mgr.achievements_done())
             self.match.live_ach = {aid: title for aid, title, _d, _ok in ACHIEVEMENTS if aid in self.match.LIVE_ACH and aid not in _done}
             self.match.first_ko_ever = int(self.stats_mgr.data.get("total_kos", 0)) == 0 and "first_ko" not in _done
+            self.match.bests = {"max_ko": int(self.stats_mgr.data.get("max_ko", 0)), "best_score": int(self.stats_mgr.data.get("best_score", 0)),
+                                "best_rank": int(self.stats_mgr.best_in_size("battle", self.match.total_players) or 0)}      # 경기 중 근접 실패/돌파 알림용
         self.apply_gameplay_options()
         if getattr(self, "use_bot_pool", False) and mode != "CLIENT":
             bot_pool.start()                       # 봇 계산을 여러 CPU 코어에 나눠 맡김 (준비될 때까지는 직접 계산)

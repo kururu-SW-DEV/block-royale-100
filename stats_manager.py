@@ -64,6 +64,41 @@ def calc_match_xp(rank, total_players, kos, survival_sec, highlights=(), mode="b
     return sum(v for _k, v in parts), parts
 
 
+GRADES = ("D", "C", "B", "A", "S", "S+")
+
+
+def calc_grade(rank, total_players, kos=0, sent=0, defended=0, highlights=0):
+    """한 판의 랭크 글자 (D/C/B/A/S/S+). 기본은 순위 백분위(상위 5% S · 15% A · 40% B), 공격·K.O.·방어가 좋으면 한 단계 위로, 우승 + 명장면은 S+"""
+    total_players = max(1, int(total_players))
+    top = rank / float(total_players)
+    if rank == 1 and total_players >= 2:
+        idx = 4
+    elif top <= 0.05:
+        idx = 4
+    elif top <= 0.15:
+        idx = 3
+    elif top <= 0.40:
+        idx = 2
+    elif top <= 0.70:
+        idx = 1
+    else:
+        idx = 0
+    perf = (min(1.0, sent / 40.0) + min(1.0, kos / 6.0) + min(1.0, defended / 20.0)) / 3.0
+    if perf >= 0.6 and idx < 4:
+        idx += 1
+    if rank == 1 and total_players >= 10 and highlights >= 1:
+        idx = 5
+    return GRADES[idx]
+
+
+def insert_hiscore(table, entry, keep=10):
+    """점수표(내림차순)에 항목을 넣고 순위(1부터)를 돌려줌. 10위 밖이면 None"""
+    table.append(entry)
+    table.sort(key=lambda e: -e["score"])
+    del table[keep:]
+    return (table.index(entry) + 1) if entry in table else None
+
+
 def size_bucket(total_players):
     for bid, lo, hi, _label in SIZE_BUCKETS:
         if lo <= int(total_players) <= hi:
@@ -168,7 +203,11 @@ DEFAULT_STATS = {
     "weekly": {},                     # 주간 변형 규칙 주별 최고 순위 {"2026W40": 7} (최근 20주)
     "rivals": {},                     # 라이벌 봇: {"losses": {봇 id: 나를 탈락시킨 횟수}, "revenges": 라이벌을 처치한 횟수}
     "xp": 0,                          # 누적 경험치 (배틀로얄 버킷(최상위)에만 쌓음. 서바이벌/연습/도전 별도 여기로 합산)
-    "highlights": {}                  # 명장면 횟수 {HIGHLIGHT_IDS 중 하나: 횟수}
+    "highlights": {},                 # 명장면 횟수 {HIGHLIGHT_IDS 중 하나: 횟수}
+    "hiscores": {},                   # 규모별 점수표 {"small": [{"score","rank","total","kos","ini","date"}...]} (각 10개까지, 점수 내림차순)
+    "best_score": 0,                  # 한 판 최고 점수
+    "last_play_day": "",              # 마지막으로 경기한 날 (YYYYMMDD): 오늘 첫 판 보너스용
+    "top10_streak": 0                 # 30인 이상 대전에서 연속으로 10위 안에 든 판 수
 }
 
 def _backup_corrupt(path):
@@ -261,6 +300,8 @@ class StatsManager:
         self.data["survival"] = copy.deepcopy(DEFAULT_STATS)   # 서바이벌(공격 없음) 전적: 같은 구조를 따로 보관
         self.last_ladder_clear = None
         self.last_new_achievements = []
+        self.last_grade = None                            # 방금 끝난 경기의 랭크 글자 (D~S+)
+        self.last_score = None                            # 방금 끝난 경기의 점수/점수표 순위
         self.last_xp = None                               # 방금 끝난 경기의 경험치 정산 {"gain","parts","before","after","lv_before","lv_after"}
         self.last_level_up = None                         # (이전 레벨, 새 레벨): 도전 과제 별로 레벨이 오른 직후 앱이 알림을 띄우고 비움
         self.load()
@@ -299,6 +340,21 @@ class StatsManager:
                     target[k] = {"losses": {kk: int(vv) for kk, vv in (losses.items() if isinstance(losses, dict) else [])
                                             if isinstance(kk, str) and kk.startswith("BOT_") and isinstance(vv, (int, float)) and not isinstance(vv, bool) and vv >= 1},
                                  "revenges": int(rev) if isinstance(rev, (int, float)) and not isinstance(rev, bool) and rev >= 0 else 0}
+            elif k == "hiscores":                          # 점수표: 알려진 규모 + 형식이 맞는 항목만 (규모당 10개)
+                if isinstance(v, dict):
+                    clean = {}
+                    for kk, lst in v.items():
+                        if kk in SIZE_BUCKET_IDS and isinstance(lst, list):
+                            rows = []
+                            for e in lst:
+                                if (isinstance(e, dict) and all(isinstance(e.get(f), int) and not isinstance(e.get(f), bool) and e.get(f) >= 0 for f in ("score", "rank", "total", "kos"))
+                                        and isinstance(e.get("ini"), str) and isinstance(e.get("date"), str)):
+                                    rows.append({"score": e["score"], "rank": e["rank"], "total": e["total"], "kos": e["kos"], "ini": e["ini"][:3], "date": e["date"][:16]})
+                            clean[kk] = sorted(rows, key=lambda r: -r["score"])[:10]
+                    target[k] = clean
+            elif k == "last_play_day":
+                if isinstance(v, str) and (v == "" or (len(v) == 8 and v.isdigit())):
+                    target[k] = v
             elif k == "highlights":                        # 명장면: 알려진 id + 양의 정수만
                 if isinstance(v, dict):
                     target[k] = {kk: int(vv) for kk, vv in v.items()
@@ -560,7 +616,7 @@ class StatsManager:
         return self._bucket(mode).get("daily", {}).get(date_key, 0)
 
     def record_match(self, rank, total_players, kos, lines, max_combo, survival_sec, mode="battle", difficulty="mixed", daily=None,
-                     weekly=None, killer=None, revenge=False, highlights=()):
+                     weekly=None, killer=None, revenge=False, highlights=(), score=0, initials="", sent=0, defended=0, bounties=0):
         """경기 완료 시 전적 기록 및 통계 갱신 (mode: "battle" 배틀로얄 / "survival" 서바이벌)"""
         d = self._bucket(mode)
         prev_games = d.get("total_games", 0)
@@ -641,6 +697,28 @@ class StatsManager:
                 hc[h] = hc.get(h, 0) + 1
         xp_before = int(self.data.get("xp", 0))
         gain, parts = calc_match_xp(rank, total_players, kos, survival_sec, hl if mode == "battle" else (), mode)
+        if mode == "battle" and bounties > 0:                                  # 골든 타깃: 경험치만 (공격력 보너스 없음)
+            parts.append(("골든 타깃", 30 * int(bounties)))
+        today = datetime.datetime.now().strftime("%Y%m%d")
+        if self.data.get("last_play_day") != today:                         # 오늘 첫 판: 그 판의 경험치가 두 배 (보너스 항목으로 표시)
+            parts.append(("오늘 첫 판", gain))
+            self.data["last_play_day"] = today
+        if mode == "battle" and total_players >= 30:                       # 30인 이상 대전에서 연속 TOP 10 (연승 보너스는 2연속부터, 최대 +50)
+            self.data["top10_streak"] = self.data.get("top10_streak", 0) + 1 if rank <= 10 else 0
+            if self.data["top10_streak"] >= 2:
+                parts.append((f"TOP 10 {self.data['top10_streak']}연속", 10 * min(5, self.data["top10_streak"])))
+        gain = sum(v for _k, v in parts)
+        self.last_grade = calc_grade(rank, total_players, kos, sent, defended, len(hl)) if mode == "battle" else None
+        self.last_score = None                                               # {"score", "place"(점수표 순위 또는 None), "best"(개인 최고 갱신)}
+        if mode == "battle" and score > 0:
+            table = self.data.setdefault("hiscores", {}).setdefault(bucket, [])
+            entry = {"score": int(score), "rank": int(rank), "total": int(total_players), "kos": int(kos),
+                     "ini": (initials or "AAA")[:3].upper(), "date": datetime.datetime.now().strftime("%m-%d %H:%M")}
+            place = insert_hiscore(table, entry)
+            is_best = int(score) > self.data.get("best_score", 0)
+            if is_best:
+                self.data["best_score"] = int(score)
+            self.last_score = {"score": int(score), "place": place, "best": is_best and prev_games > 0, "bucket": bucket}
         self.data["xp"] = xp_before + gain
         lv_b, lv_a = level_of(xp_before)[0], level_of(self.data["xp"])[0]
         self.last_xp = {"gain": gain, "parts": parts, "before": xp_before, "after": self.data["xp"], "lv_before": lv_b, "lv_after": lv_a}

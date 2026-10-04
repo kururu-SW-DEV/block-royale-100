@@ -36,7 +36,77 @@ DESCRIPTIONS = {
 }
 
 
+ATTRACT_IDLE_SECS = 25.0         # 메인 화면에서 이만큼 입력이 없으면 어트랙트 화면(봇 데모 + 점수표)이 나옴
+
+
 class MenuMixin:
+    def _attract_on(self):
+        """메인 화면에서 한참 입력이 없을 때만 켜짐 (알림 창/규칙 창이 떠 있으면 켜지 않음)"""
+        return (self.state == "MENU" and self.modal is None and not self.rules_open
+                and time.time() - getattr(self, "_idle_t", time.time()) > ATTRACT_IDLE_SECS)
+
+    def _attract_reset(self):
+        self._idle_t = time.time()
+        self._attract = None
+
+    def _render_attract(self, dt):
+        """어트랙트 화면: 어둡게 덮고 양옆에서 봇 두 대가 실제로 플레이하는 데모, 가운데에 점수표 TOP 5와 PRESS ANY KEY. 아무 키나 누르면 메인으로 돌아옴"""
+        from ai_bot import AIBot
+        t_now = time.time()
+        demo = getattr(self, "_attract", None)
+        if demo is None:
+            demo = self._attract = {"t0": t_now, "bots": [AIBot("DEMO_A", "demo", "normal"), AIBot("DEMO_B", "demo", "hard")], "dead_t": [0.0, 0.0]}
+        for i, bot in enumerate(demo["bots"]):
+            if bot.engine.game_over:                                   # 끝나면 잠깐 뒤 새 판
+                if not demo["dead_t"][i]:
+                    demo["dead_t"][i] = t_now
+                elif t_now - demo["dead_t"][i] > 1.5:
+                    demo["bots"][i] = AIBot(bot.bot_id, "demo", bot.difficulty)
+                    demo["dead_t"][i] = 0.0
+                continue
+            bot.update(min(dt, 0.05))
+        CANVAS_overlay = self.screen.overlay if hasattr(self.screen, "overlay") else None
+        if CANVAS_overlay:
+            CANVAS_overlay((4, 6, 14, 255))
+        cs = 20
+        for i, bot in enumerate(demo["bots"]):
+            bx = 150 if i == 0 else SCREEN_WIDTH - 150 - cs * 10
+            by = 150
+            pygame.draw.rect(self.screen, (10, 12, 22), (bx - 4, by - 4, cs * 10 + 8, cs * 20 + 8), border_radius=8)
+            pygame.draw.rect(self.screen, (60, 74, 112), (bx - 4, by - 4, cs * 10 + 8, cs * 20 + 8), 2, border_radius=8)
+            eng = bot.engine
+            for y in range(20):
+                for x in range(10):
+                    piece = eng.grid[y][x]
+                    if piece:
+                        self.renderer._draw_cell(bx + x * cs, by + y * cs, cs, piece)
+            if eng.current_piece and not eng.game_over:
+                for px, py in eng._get_blocks(eng.current_piece, eng.current_rot, eng.current_x, eng.current_y):
+                    if 0 <= py < 20:
+                        self.renderer._draw_cell(bx + px * cs, by + py * cs, cs, eng.current_piece)
+            self._t(f"SCORE {eng.score:,}", self.font_small, C_GOLD, bx + cs * 5, by + cs * 20 + 14, "center")
+        # 가운데: 제목 + 점수표 TOP 5
+        cx = SCREEN_WIDTH // 2
+        self._t("BLOCK ROYALE 100", self.renderer.font_title, C_GOLD, cx, 110, "center")
+        hs = self.stats_mgr.data.get("hiscores", {})
+        rows = sorted([e for lst in hs.values() for e in lst], key=lambda e: -e["score"])[:5]
+        self._t("HIGH SCORES", self.font_mid, C_TEXT, cx, 190, "center")
+        for i in range(5):
+            y = 232 + i * 40
+            col = (255, 215, 90) if i == 0 else C_TEXT
+            if i < len(rows):
+                e = rows[i]
+                self._t(f"{i + 1}", self.font_mid, col, cx - 200, y, "center")
+                self._t(e["ini"], self.font_mid, col, cx - 120, y, "center")
+                self._t(f"{e['score']:,}", self.font_mid, col, cx + 60, y, "midright")
+                self._t(f"{e['rank']}위/{e['total']}", self.font_small, COL_SUB, cx + 190, y, "center")
+            else:
+                self._t(f"{i + 1}   - - -", self.font_mid, (80, 90, 120), cx - 40, y, "center")
+        pulse = 0.5 + 0.5 * abs(((t_now - demo["t0"]) % 1.6) / 0.8 - 1.0)             # 1.6초 주기로 천천히 깜빡임 (초당 1회 미만)
+        self._t("PRESS ANY KEY", self.renderer.font_title, _mix((90, 110, 150), (255, 255, 255), pulse), cx, 470, "center")
+        self._t("메인 화면으로 돌아가려면 아무 키나 누르세요", self.font_small, COL_SUB, cx, 515, "center")
+
+
     MENU_FOCUS_ORDER = ["quick_play", "host_room", "join_room", "match_summary",
                         "practice", "daily", "weekly", "records", "settings", "toggle_sound", "toggle_fs", "quit_game"]
 

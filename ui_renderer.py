@@ -271,6 +271,12 @@ class UIRenderer:
         self._hold_t0 = -9.0
         self._res_for = None             # 결과 창 진입
         self._res_t0 = 0.0
+        self.score_pops = []             # 점수 팝업 [{n, tail, t0}]
+        self._score_seen = 0
+        self._score_disp = 0.0           # 굴러 올라가는 점수 표시값
+        self.speed_lines_t0 = -9.0       # 집중선
+        self.zoom_t0 = -9.0              # 줌 펀치
+        self._zoom_power = 0.0
         self._tr = None                  # 화면 전환 {snap, t0, reduced}
         self._tr_state = None
         self.result_return_btn = None
@@ -526,6 +532,9 @@ class UIRenderer:
             self.particles.add_sparks(cx, cy, (255, 230, 120), count=40, speed_mult=1.4)
             self.particles.add_shockwave(cx, cy + 80, (110, 235, 255), max_radius=100)
             ci = getattr(engine, "last_clear_info", None) or {}
+            if (ci.get("cleared", 0) >= 4 or (ci.get("is_tspin") and ci.get("cleared", 0) >= 2) or ci.get("is_pc")) and getattr(match, "shake_scale", 1.0) > 0:
+                self.speed_lines_t0 = self.zoom_t0 = time.time()                      # 큰 기술: 집중선 0.25초 + 보드 줌 펀치 0.12초 (흔들림 '약하게'는 절반)
+                self._zoom_power = min(1.0, getattr(match, "shake_scale", 1.0))
             if ci.get("cleared", 0) >= 4 or ci.get("is_tspin"):                      # 큰 기술만 발광 파티클과 배경 링 (개수 제한)
                 self.particles.add_sparks(cx, cy, (255, 235, 150), count=12, speed_mult=1.7, glow=True)
                 self._add_bg_pulse(cx, cy, (255, 215, 110) if ci.get("cleared", 0) >= 4 else (200, 130, 255))
@@ -577,6 +586,7 @@ class UIRenderer:
         self._render_attack_effects(match, ox, oy)
         self._render_main_board(match, ox, oy)
         self.particles.draw(self.screen, ox, oy)
+        self._apply_zoom_punch(ox, oy)
         self._render_reactions(match, ox, oy)
         self._render_board_juice(match, ox, oy)
         self._render_top_banner(match, ox, oy)
@@ -1697,7 +1707,7 @@ class UIRenderer:
 
     def _render_stats_box(self, match, ox=0, oy=0):
         battle = not getattr(match, 'is_spectating', False) and match.attacks_enabled
-        n_rows = 5 if battle else 4                              # 배틀: 시간 · APM · LPM · 보낸 줄 · 막은 줄
+        n_rows = 6 if battle else 4                              # 배틀: 시간 · APM · LPM · 보낸 줄 · 막은 줄 · 점수
         rect = pygame.Rect(self._left_x(ox), self.main_board_y + 114 + oy, 108, 8 + n_rows * 34 + 4)
         self._stats_h = rect.h                                   # 아래 상태 칸(콤보/B2B)이 이 높이만큼 내려가 겹치지 않게
         spectating = getattr(match, 'is_spectating', False) and match.spectate_target_id in match.players
@@ -1713,6 +1723,7 @@ class UIRenderer:
         else:
             apm, lpm, time_str = match.get_combat_stats()
             score = match.local_engine.score
+        score = int(round(self._score_disp)) if (not spectating and abs(self._score_disp - score) < 10 ** 7) else score      # 점수는 굴러 올라가며 표시
         score_str = f"{score:,}" if score < 100000 else f"{score // 1000}k"
         rows = [("시간", time_str, C_TEXT), ("APM", f"{apm:.1f}", C_GOLD),
                 ("LPM", f"{lpm:.1f}", C_GREEN), ("점수", score_str, C_ACCENT)]
@@ -1721,7 +1732,7 @@ class UIRenderer:
             # 배틀: 시간 · APM · LPM · 보낸 줄 · 막은 줄 (점수 대신 규칙을 숫자로 보여 줌: 줄을 지우면 받을 공격이 깎임)
             rows = [("시간", time_str, C_TEXT), ("APM", f"{apm:.1f}", C_GOLD), ("LPM", f"{lpm:.1f}", C_GREEN),
                     ("보낸 줄", str(int(match.total_attacks_sent)), C_GREEN),
-                    ("막은 줄", str(int(match.local_engine.garbage_canceled_total)), C_ACCENT)]
+                    ("막은 줄", str(int(match.local_engine.garbage_canceled_total)), C_ACCENT), ("점수", score_str, C_GOLD)]
         esc = 1.0
         if battle and not match.practice:
             esc = match.attack_multiplier()                      # 5분 뒤부터 매분 올라가는 공격력 배율 (예전에는 화면에 전혀 안 보였음)
@@ -1769,6 +1780,14 @@ class UIRenderer:
             self._fade_text(f"끝 ×{self._combo_break_n}", self.font_small, (170, 180, 205), rect.right - 12, rect.y + 10, 255 * fa, "topright")
         else:
             self._draw_text("-", self.font_big_num, C_DIM, rect.right - 12, rect.y + 6, "topright")
+        gauge = pygame.Rect(rect.x + 12, rect.y + 41, rect.w - 24, 5)         # 콤보 게이지: 12콤보에서 가득, 단계 글자(HOT/RUSH/FEVER)로도 구분
+        pygame.draw.rect(self.screen, (28, 33, 54), gauge, border_radius=3)
+        if combo > 0:
+            gw = max(4, int(gauge.w * min(1.0, combo / 12.0)))
+            pygame.draw.rect(self.screen, ccol, (gauge.x, gauge.y, gw, gauge.h), border_radius=3)
+            tier_txt = "FEVER" if combo >= 12 else ("RUSH" if combo >= 8 else ("HOT" if combo >= 4 else ""))
+            if tier_txt:
+                self._draw_text(tier_txt, self.font_tiny, ccol, rect.x + 12, rect.y + 26)
         chip = pygame.Rect(rect.x + 12, rect.y + 52, rect.w - 24, 30)
         if engine.b2b:
             pygame.draw.rect(self.screen, (98, 74, 20), chip, border_radius=8)
@@ -2491,8 +2510,19 @@ class UIRenderer:
             self._hd_seen, self._gp_seen = engine.hard_drop_events, engine.garbage_pushed_total
             self._topout, self._vic_t0, self._vic_row = None, None, BOARD_HEIGHT
             self._ko_seen = getattr(match, 'local_ko_count', 0)
+            self._score_seen, self._score_disp, self.score_pops = engine.score, float(engine.score), []
+            self._speed_lines_overlay(0, 0, 0)                      # 집중선 서피스를 미리 만들어 둠 (큰 기술 순간의 끊김 방지)
             engine.cleared_row_cells, engine.push_holes = [], []
         mid = (BOARD_WIDTH - 1) / 2.0
+
+        gain = engine.score - self._score_seen
+        self._score_seen = engine.score
+        self._score_disp += (engine.score - self._score_disp) * min(1.0, pdt * 9.0)
+        if gain >= 100 and not spectating:                              # 줄을 지워 얻은 점수: 보드 위로 "+N"이 떠오름 (B2B/콤보 꼬리)
+            ci = getattr(engine, "last_clear_info", None) or {}
+            tail = ("B2B " if ci.get("is_b2b") else "") + (f"{ci['combo'] + 1}콤보" if ci.get("combo", -1) >= 1 else "")
+            self.score_pops.append({"n": int(gain), "tail": tail.strip(), "t0": now, "big": gain >= 800})
+            del self.score_pops[:-4]
 
         cells = engine.cleared_row_cells
         if cells:
@@ -2608,9 +2638,44 @@ class UIRenderer:
                 keep.append(cf)
         self.confetti = keep
 
+    def _render_speed_lines(self, ox, oy):
+        """큰 기술 때 보드 중심에서 퍼지는 집중선 (0.25초, 캐시한 한 장을 알파로만 조절, 보드 가운데는 비워 둠)"""
+        age = time.time() - self.speed_lines_t0
+        if not (0.0 <= age < 0.25):
+            return
+        self._speed_lines_overlay(ox, oy, int(190 * (1.0 - age / 0.25) * self._zoom_power))
+
+    def _speed_lines_overlay(self, ox, oy, alpha):
+        w, h = self.width, self.height
+        cx, cy = self.main_board_x + self.main_board_w // 2, self.main_board_y + self.main_board_h // 2
+
+        def _build(ds):
+            rng = random.Random(7)
+            for _ in range(46):
+                ang = rng.uniform(0, math.tau)
+                r0, r1 = rng.uniform(250, 340), rng.uniform(520, 900)
+                _orig_line(ds, (255, 255, 255, rng.randint(70, 130)), (cx + math.cos(ang) * r0, cy + math.sin(ang) * r0), (cx + math.cos(ang) * r1, cy + math.sin(ang) * r1), rng.choice((1, 2, 2, 3)))
+        self._blit_overlay(("speed_lines", w, h, cx, cy), (w, h), _build, (ox, oy), alpha=alpha)
+
+    def _apply_zoom_punch(self, ox, oy):
+        """큰 기술 때 보드 영역이 1.03배로 커졌다 돌아옴 (복사해 확대한 한 장을 덧그림: 이벤트 순간 7프레임 정도만)"""
+        age = time.time() - self.zoom_t0
+        if not (0.0 <= age < 0.12):
+            return
+        k = (1.0 - age / 0.12) * 0.03 * self._zoom_power
+        rect = CANVAS.rect_f(self.main_board_x - 10 + ox, self.main_board_y - 10 + oy, self.main_board_w + 20, self.main_board_h + 20)
+        try:
+            sub = CANVAS.display.subsurface(rect).copy()
+            nw, nh = int(rect.w * (1 + k)), int(rect.h * (1 + k))
+            sub = pygame.transform.scale(sub, (nw, nh))                      # 7프레임 남짓이라 빠른 확대 (smoothscale은 첫 프레임 끊김의 원인)
+            CANVAS.display.blit(sub, (rect.x - (nw - rect.w) // 2, rect.y - (nh - rect.h) // 2))
+        except (ValueError, pygame.error):
+            pass
+
     def _render_reactions(self, match, ox, oy):
         """조각 · 하드 드롭 궤적 · 색종이 · 우승 왕관"""
         now = time.time()
+        self._render_speed_lines(ox, oy)
         cs = self.cell_size
         alive = []
         for tr in self.drop_trails:
@@ -2631,6 +2696,23 @@ class UIRenderer:
         for cf in self.confetti:
             w = max(1, int(cf["w"] * abs(math.cos(now * 6.0 + cf["ph"]))))
             pygame.draw.rect(self.screen, cf["col"], (int(cf["x"]), int(cf["y"]), w, cf["h"]))
+        alive_sp = []
+        for sp in self.score_pops:
+            age = now - sp["t0"]
+            if age < 1.0:
+                alive_sp.append(sp)
+                rise = int(46 * _ease_out(age / 0.9)) if self._motion > 0 else 0
+                a = 255 * min(1.0, (1.0 - age) * 2.2)
+                cxp = self.main_board_x + self.main_board_w // 2 + ox
+                cyp = self.main_board_y + 250 + oy - rise
+                big = sp["big"]
+                font = self.font_banner[3] if big else self.font_banner[2]
+                col = (255, 225, 110) if big else (150, 235, 255)
+                self._fade_text(f"+{sp['n']:,}", font, (20, 14, 6), cxp + 2, cyp + 2, a * 0.8, "center")
+                self._fade_text(f"+{sp['n']:,}", font, col, cxp, cyp, a, "center")
+                if sp["tail"]:
+                    self._fade_text(sp["tail"], self.font_small, (255, 200, 120), cxp, cyp + 40, a, "center")
+        self.score_pops = alive_sp
         if self._vic_t0 is not None and getattr(match, 'match_finished', False):
             t = now - self._vic_t0 - 0.9
             if t > 0:
@@ -3009,6 +3091,7 @@ class UIRenderer:
         me = next((r for r in rows if r["is_local"]), None)
         title = "로열 빅토리!" if won else "경기 종료"
         self._fade_text(title, self.font_title, C_GOLD if won else C_TEXT, bx + box_w // 2, by + 20, a_head, "midtop")
+        self._draw_grade_stamp(match, bx + 80, by + 74, t - 0.8)
         if winner:
             sub = f"우승  {winner['name']}" + ("  (나)" if won else "")
             self._fade_text(sub, self.font_hud, C_GOLD, bx + box_w // 2, by + 66, a_head, "midtop")
@@ -3122,14 +3205,39 @@ class UIRenderer:
         r = getattr(match, "reward", None)
         return r if isinstance(r, dict) else None
 
+    GRADE_COLORS = {"S+": (255, 225, 110), "S": (255, 205, 90), "A": (120, 235, 170), "B": (110, 190, 255), "C": (190, 200, 225), "D": (150, 150, 170)}
+
+    def _draw_grade_stamp(self, match, cx, cy, age, size=1.0):
+        """경기 랭크 글자(D~S+)가 1.8배에서 쾅 찍히며 링이 퍼짐. 글자로 등급을 읽을 수 있어 색에 의존하지 않음"""
+        rw = self._reward_of(match)
+        grade = rw.get("grade") if rw else None
+        if not grade or age < 0:
+            return
+        k = _ease_out(age / 0.22)
+        col = self.GRADE_COLORS.get(grade, C_TEXT)
+        surf = self.font_banner[3].render(grade, True, col)
+        f = (1.0 + 0.9 * (1.0 - k)) * size
+        surf = self._scaled_hi(surf, f * 1.3)
+        surf.set_alpha(int(255 * min(1.0, k * 1.4)))
+        r = pygame.Rect(0, 0, int(78 * size), int(78 * size))
+        r.center = (int(cx), int(cy))
+        CANVAS.alpha_rect(r, (14, 18, 32, int(220 * k)), radius=14)
+        CANVAS.alpha_rect(r, (*col, int(255 * k)), width=3, radius=14)
+        self.screen.blit(surf, surf.get_rect(center=r.center))
+        if age < 0.5:
+            draw_glow(self.screen, cx, cy, int(70 * size), col, 1.0 - age / 0.5)
+        self._draw_text("RANK", self.font_tiny, C_DIM, cx, r.top - 6, "midbottom")
+
     def _result_reward_height(self, match):
         """결과 창(탈락 화면)에 보상 줄(경험치 바 / 업적·해금 카드 / 명장면 도장)이 차지하는 높이 (없으면 0)"""
         rw = self._reward_of(match)
         if not rw:
             return 0
         h = 0
-        if rw["xp"].get("gain", 0) > 0:
+        if rw.get("score"):
             h += 26
+        if rw["xp"].get("gain", 0) > 0:
+            h += 26 + (24 if rw["xp"].get("parts") else 0)
         if getattr(match, "new_achievements", None) or rw["unlocks"]:
             h += 34
         if rw["highlights"]:
@@ -3143,8 +3251,38 @@ class UIRenderer:
             return
         cx = bx + box_w // 2
         xp = rw["xp"]
+        sc = rw.get("score")
+        if sc:                                                         # 점수 줄: 점수가 굴러 올라가고, 점수표에 오르면 NEW RECORD / 순위
+            ks = _ease_out((t - rec_t) / 0.8)
+            txt = f"SCORE  {int(sc['score'] * ks):,}"
+            tw = self.font_hud.size(txt)[0]
+            note, ncol = None, C_DIM
+            if sc.get("best"):
+                note, ncol = "★ 개인 최고 점수!", C_GOLD
+            elif sc.get("place"):
+                note, ncol = f"점수표 #{sc['place']}", C_ACCENT
+            self._draw_text(txt, self.font_hud, C_TEXT, cx - (tw + (self.font_small.size(note)[0] + 16 if note else 0)) // 2, y + 12, "midleft")
+            if note and ks >= 1.0:
+                pulse = 0.5 + 0.5 * math.sin(time.time() * 7.0) if sc.get("best") else 0.0
+                self._draw_text(note, self.font_small, _mix(ncol, (255, 255, 255), 0.4 * pulse), cx - (tw + self.font_small.size(note)[0] + 16) // 2 + tw + 16, y + 12, "midleft")
+            y += 26
+        if xp.get("gain", 0) > 0 and xp.get("parts"):                  # 경험치 내역 칩이 하나씩 "착착" 쌓임 (미리 정해진 값, 연출만 공개 방식)
+            chips = [(f"{n} +{v}", (255, 215, 90) if (n.startswith("오늘 첫") or "연속" in n) else C_ACCENT) for n, v in xp["parts"]]
+            widths = [self.font_tiny.size(c[0])[0] + 16 for c in chips]
+            tot = sum(widths) + 6 * (len(chips) - 1)
+            scale = min(1.0, (box_w - 40) / float(max(1, tot)))
+            x0 = cx - int(tot * scale) // 2
+            for i, ((ctext, ccol), w_) in enumerate(zip(chips, widths)):
+                kk = _ease_out((t - rec_t - 0.1 - 0.13 * i) / 0.18)
+                if kk > 0:
+                    r = pygame.Rect(x0, y + 3 + int((1 - kk) * 8), int(w_ * scale), 20)
+                    CANVAS.alpha_rect(r, (22, 28, 48, int(235 * kk)), radius=10)
+                    CANVAS.alpha_rect(r, (*ccol, int(200 * kk)), width=1, radius=10)
+                    self._fade_text(ctext, self.font_tiny, ccol, r.centerx, r.centery, 255 * kk, "center")
+                x0 += int((w_ + 6) * scale)
+            y += 24
         if xp.get("gain", 0) > 0:
-            k = _ease_out((t - rec_t - 0.25) / 0.9)
+            k = _ease_out((t - rec_t - 0.25 - 0.13 * len(xp.get("parts", ())) * 0.6) / 0.9)
             pos = xp["before"] + xp["gain"] * k
             lv, into, need = level_of(pos)
             label = f"Lv.{lv}"
@@ -3199,6 +3337,15 @@ class UIRenderer:
         """순위표 머리에 붙일 한두 줄 [(문구, 색)]: ★ 최고 기록/클리어/업적, 다음 목표, (탈락했다면) 패인 첫 줄. 없으면 빈 목록"""
         won = match.local_rank == 1
         lines = []
+        rw_ = self._reward_of(match)
+        if rw_ and (rw_.get("grade") or rw_.get("score")):                  # 랭크 글자 + 점수(점수표 순위) + 경험치 한 줄
+            bits = []
+            if rw_.get("grade"):
+                bits.append(f"랭크 {rw_['grade']}")
+            sc_ = rw_.get("score")
+            if sc_:
+                bits.append(f"점수 {sc_['score']:,}" + (" ★ 개인 최고!" if sc_.get("best") else (f" (점수표 #{sc_['place']})" if sc_.get("place") else "")))
+            lines.append(("  ·  ".join(bits), self.GRADE_COLORS.get(rw_.get("grade"), C_TEXT)))
         records = tuple(getattr(match, "new_records", ()) or ())
         ladder_clear = getattr(match, "ladder_clear", None)
         ach = tuple(getattr(match, "new_achievements", ()) or ())
@@ -3292,6 +3439,7 @@ class UIRenderer:
         if self._motion > 0:
             by += int(70 * (1.0 - _ease_out((r_age - 0.1) / 0.35)))                       # 패널이 아래에서 튀어 올라옴
         self._panel((bx, by, box_w, box_h), border=accent, bg=(15, 19, 34), radius=18, alpha=248, border_w=2)
+        self._draw_grade_stamp(match, bx + 26 + 34, by + 72, r_age - 0.9)
         stamp = _ease_out((r_age - 0.35) / 0.25)                                          # 제목은 1.4배에서 1.0배로 도장처럼 찍힘
         if stamp < 1.0 and r_age > 0.3:
             ttxt, tcol = ("로열 빅토리!", C_GOLD) if won else ("K.O.  경기 탈락", C_DANGER)

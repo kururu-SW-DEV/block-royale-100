@@ -83,7 +83,7 @@ class RecordsMixin:
                 self.records_scroll = max(0, min(self.records_max_scroll, self.records_scroll + step))
             return
         if event.type == pygame.KEYDOWN and event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_TAB, pygame.K_a, pygame.K_d):
-            order = ("battle", "survival", "trend", "achv")
+            order = ("battle", "survival", "trend", "score", "achv")
             step = -1 if event.key in (pygame.K_LEFT, pygame.K_a) else 1
             self._records_set_mode(order[(order.index(self.records_mode) + step) % len(order)] if self.records_mode in order else "battle")
             return
@@ -95,7 +95,7 @@ class RecordsMixin:
             mx, my = event.pos
             for btn_id, rect in self.records_buttons.items():
                 if rect.collidepoint(mx, my):
-                    if btn_id in ("mode_battle", "mode_survival", "mode_trend", "mode_achv"):
+                    if btn_id in ("mode_battle", "mode_survival", "mode_trend", "mode_score", "mode_achv"):
                         self._records_set_mode(btn_id[5:])
                     elif btn_id.startswith("size_"):
                         self._records_set_filter(size=None if btn_id == "size_all" else btn_id[5:])
@@ -131,21 +131,25 @@ class RecordsMixin:
 
         # 2. 모드 탭 (배틀로얄 / 서바이벌): 전적은 모드별로 따로 집계
         tab_y = box_y - 34
-        for i, (mid, label, col) in enumerate((("battle", "배틀로얄", C_GOLD), ("survival", "서바이벌", C_GREEN), ("trend", "추이", C_ACCENT), ("achv", "업적", C_ORANGE))):
-            r = pygame.Rect(box_x + i * 110, tab_y, 104, 30)
+        for i, (mid, label, col) in enumerate((("battle", "배틀로얄", C_GOLD), ("survival", "서바이벌", C_GREEN), ("trend", "추이", C_ACCENT), ("score", "점수표", (255, 150, 90)), ("achv", "업적", C_ORANGE))):
+            r = pygame.Rect(box_x + i * 98, tab_y, 92, 30)
             self.records_buttons["mode_" + mid] = r
             on = self.records_mode == mid
             hov = r.collidepoint(mx, my)
             pygame.draw.rect(self.screen, _mix((16, 20, 34), col, 0.30 if on else (0.14 if hov else 0.05)), r, border_radius=8)
             pygame.draw.rect(self.screen, col if on else (60, 72, 104), r, 2 if on else 1, border_radius=8)
             self._t(label, self.font_small, col if on else C_DIM, r.centerx, r.centery, "center")
-        self._t("1~4 규모 · F 난이도" if self.records_mode != "achv" else "← → 위 탭 이동  ·  1~5 · PgUp/PgDn 업적 페이지", self.font_tiny, C_DIM, box_x + box_w, tab_y + 15, "midright")
+        self._t("1~4 규모 · F 난이도" if self.records_mode not in ("achv", "score") else ("← → 위 탭 이동  ·  1~5 · PgUp/PgDn 업적 페이지" if self.records_mode == "achv" else "← → 위 탭 이동  ·  1~4 규모"), self.font_tiny, C_DIM, box_x + box_w, tab_y + 15, "midright")
+        if self.records_mode == "score":
+            self._render_scores(box_x, box_y, box_w, tab_y, mx, my)
+            self._records_bottom_buttons(mx, my, box_x, box_y, box_w)
+            return
         if self.records_mode == "achv":
             self._render_achievements(box_x, box_y, box_w)
             self._records_bottom_buttons(mx, my, box_x, box_y, box_w)
             return
         # 필터 칩: 인원 규모(1~4) / 난이도(F). 필터를 걸면 전체 누적이 아니라 최근 100경기 중 조건에 맞는 경기로 다시 집계
-        chip_x = box_x + 448
+        chip_x = box_x + 498
         size_chips = [("size_all", "전체", None)] + [("size_" + b[0], f"{b[3].split(' ')[0][0]} {b[1]}~{b[2]}", b[0]) for b in SIZE_BUCKETS]
         for cid, label, val in size_chips:
             w = 46 if val is None else 76
@@ -352,6 +356,52 @@ class RecordsMixin:
         parts.append(f"우승 {wins}회 / {n}판")
         self._t("   ·   ".join(parts), self.font_info, C_GREEN if (prev is None or last >= prev) else C_ORANGE, ix, gy + gh + 30)
         self._t("● 우승   파란 선: 5판 이동 평균", self.font_tiny, C_DIM, ix + iw, gy + gh + 34, "topright")
+
+    def _render_scores(self, box_x, box_y, box_w, tab_y, mx, my):
+        """점수표 탭: 아케이드식 TOP 10 (점수 내림차순, 이니셜 / 최종 순위 / 인원 / K.O. / 날짜). 규모 칩(1~4)으로 거르고, 전체는 모든 규모를 합쳐 보여 줌"""
+        chip_x = box_x + 498
+        size_chips = [("size_all", "전체", None)] + [("size_" + b[0], f"{b[3].split(' ')[0][0]} {b[1]}~{b[2]}", b[0]) for b in SIZE_BUCKETS]
+        for cid, label, val in size_chips:
+            w = 46 if val is None else 76
+            r = pygame.Rect(chip_x, tab_y, w, 30)
+            self.records_buttons[cid] = r
+            on = self.records_size == val
+            pygame.draw.rect(self.screen, _mix((16, 20, 34), C_ACCENT, 0.28 if on else (0.14 if r.collidepoint(mx, my) else 0.04)), r, border_radius=8)
+            pygame.draw.rect(self.screen, C_ACCENT if on else (60, 72, 104), r, 2 if on else 1, border_radius=8)
+            self._t(label, self.font_tiny, C_ACCENT if on else C_DIM, r.centerx, r.centery, "center")
+            chip_x += w + 6
+        hs = self.stats_mgr.data.get("hiscores", {})
+        rows = []
+        for b, lst in hs.items():
+            if self.records_size is None or b == self.records_size:
+                rows += [dict(e, bucket=b) for e in lst]
+        rows.sort(key=lambda e: -e["score"])
+        rows = rows[:10]
+        self._t("HIGH SCORES", self.font_title, (255, 205, 90), box_x + 28, box_y + 20)
+        best = self.stats_mgr.data.get("best_score", 0)
+        self._t(f"개인 최고 점수  {best:,}" if best else "아직 기록이 없습니다. 배틀로얄을 끝까지 해 보세요!", self.font_mid, C_TEXT, box_x + box_w - 28, box_y + 26, "topright")
+        head_y = box_y + 80
+        cols = [("순위", 60, "center"), ("이니셜", 150, "center"), ("점수", 360, "topright"), ("최종 순위", 520, "center"), ("규모", 650, "center"), ("K.O.", 760, "center"), ("날짜", 920, "center")]
+        for label, cx_, anc in cols:
+            self._t(label, self.font_tiny, C_DIM, box_x + cx_, head_y, anc if anc != "center" else "midtop")
+        pygame.draw.line(self.screen, (70, 84, 120), (box_x + 28, head_y + 22), (box_x + box_w - 28, head_y + 22), 1)
+        names = {"small": "소", "mid": "중", "large": "대"}
+        for i in range(10):
+            y = head_y + 34 + i * 36
+            e = rows[i] if i < len(rows) else None
+            rank_col = (255, 215, 90) if i == 0 else ((210, 220, 240) if i == 1 else ((235, 160, 110) if i == 2 else C_TEXT))
+            if i % 2 == 0:
+                pygame.draw.rect(self.screen, (20, 25, 44), (box_x + 24, y - 4, box_w - 48, 33), border_radius=8)
+            self._t(f"{i + 1}", self.font_mid, rank_col if e else (70, 78, 100), box_x + 60, y + 14, "center")
+            if e is None:
+                self._t("- - -", self.font_mid, (70, 78, 100), box_x + 150, y + 14, "center")
+                continue
+            self._t(e["ini"], self.font_mid, rank_col, box_x + 150, y + 14, "center")
+            self._t(f"{e['score']:,}", self.font_mid, rank_col, box_x + 360, y + 3, "topright")
+            self._t(f"{e['rank']}위 / {e['total']}명", self.font_small, C_TEXT, box_x + 520, y + 14, "center")
+            self._t(names.get(e["bucket"], "-"), self.font_small, C_DIM, box_x + 650, y + 14, "center")
+            self._t(str(e["kos"]), self.font_small, (255, 150, 150), box_x + 760, y + 14, "center")
+            self._t(e["date"], self.font_small, C_DIM, box_x + 920, y + 14, "center")
 
     def _render_achievements(self, box_x, box_y, box_w):
         """업적 탭: 카테고리(대전/누적/도전/연습·기술)별 한 페이지에 카드 최대 10개 (한 줄 5개 x 2줄). 달성은 밝게, 미달성은 흐리게 + 조건/진행도"""

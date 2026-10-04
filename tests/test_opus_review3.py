@@ -473,6 +473,8 @@ def test_trend_points_and_screen():
         app.stats_mgr.record_match(10 + i, 50, 1, 5, 1, 60)
     app._render_records()
     _key(app, pygame.K_RIGHT)
+    assert app.records_mode == "score", "추이 다음은 점수표 탭"
+    _key(app, pygame.K_RIGHT)
     assert app.records_mode == "achv"
     print("  OK trend")
 

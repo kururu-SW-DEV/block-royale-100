@@ -368,6 +368,11 @@ class GameMixin:
                         self.sound_mgr.play('attack')        # 실제로 조준이 바뀐 경우에만 소리
                     break
 
+    def _initials(self):
+        """점수표에 올릴 이니셜 3글자: 이름의 앞 3글자 (영문은 대문자)"""
+        name = (getattr(self, "player_name", "") or "AAA").strip() or "AAA"
+        return name[:3].upper()
+
     def _build_reward(self, final_rank, highlights, skins_before):
         """경기 종료 정산 결과(경험치/레벨/명장면/새 스킨)를 match.reward에 담고, 결과 화면 연출 소리를 예약 (우승은 승리 팡파레가 길어서 소리 예약은 생략)"""
         from stats_manager import unlocked_skin_ids
@@ -378,7 +383,8 @@ class GameMixin:
         from stats_manager import locked_skin_hints
         hints = locked_skin_hints(sm.data)
         nxt = f"{BLOCK_SKIN_LABELS.get(hints[0][0], hints[0][0]).split(' (')[0]} ({hints[0][1]})" if (hints and sm.data.get("total_games", 0) <= 12) else None     # 처음 몇 판: 다음 해금 목표를 알려 줌
-        self.match.reward = {"xp": lx, "highlights": list(highlights), "unlocks": unlocks, "next_unlock": nxt}
+        self.match.reward = {"xp": lx, "highlights": list(highlights), "unlocks": unlocks, "next_unlock": nxt,
+                             "grade": sm.last_grade, "score": dict(sm.last_score) if sm.last_score else None}
         if final_rank == 1:
             return
         t0 = time.time()
@@ -751,7 +757,12 @@ class GameMixin:
                 weekly=self.match.weekly,
                 killer=self.match.local_killer_id if (self.match.attacks_enabled and not self.match.practice and self.net_mgr.mode == "NONE") else None,
                 revenge=bool(self.match.rival_defeated),
-                highlights=_hl
+                highlights=_hl,
+                score=int(self.match.local_engine.score),
+                initials=self._initials(),
+                sent=int(self.match.total_attacks_sent),
+                defended=int(self.match.local_engine.garbage_canceled_total),
+                bounties=int(self.match.bounty_kills)
             )
             _mode = "battle" if self.match.attacks_enabled else "survival"
             if getattr(self.match, "log_enabled", False):

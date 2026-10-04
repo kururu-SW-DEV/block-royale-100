@@ -101,6 +101,10 @@ class SoundManager:
         self._bgm_thread = None
         self.sfx_volume = 0.70
         self.warn_scale = 1.0         # 경고음(피격 경보/심장 박동/경고) 상대 음량 0~1
+        self.announcer = False        # 로봇 아나운서 외침 (설정의 '아나운서 콜')
+        self._vo_last = 0.0
+        self._layer_level = 0         # 콤보 층 단계 (0 꺼짐 / 1 / 2)
+        self._layer_vol = 0.0
         self._duck = 1.0              # 위기 때 BGM을 낮추는 배율 (1.0 = 그대로)
         self._duck_target = 1.0
         self.bgm_enabled = True
@@ -144,10 +148,43 @@ class SoundManager:
         stage = self._pending_bgm
         if stage is not None and stage in self.bgm_stages:
             self.play_bgm(stage)
+        if self.enabled:
+            self._tick_layer()
         if self._duck != self._duck_target:                       # 위기 덕킹: 한 프레임에 조금씩 목표 음량으로
             step = 0.045 if self._duck_target < self._duck else 0.03
             self._duck = max(self._duck_target, self._duck - step) if self._duck_target < self._duck else min(self._duck_target, self._duck + step)
             self._apply_bgm_volume()
+
+    def set_announcer(self, on):
+        self.announcer = bool(on)
+
+    def set_combo_layer(self, level):
+        """콤보/B2B 층 단계(0~2): 올라가면 하이햇 층이 부드럽게 커지고, 콤보가 끊기면 꺼짐"""
+        self._layer_level = max(0, min(2, int(level)))
+
+    def _tick_layer(self):
+        target = (0.0, 0.10, 0.17)[self._layer_level] * (self.bgm_volume / 0.6) if (self.enabled and self.bgm_enabled) else 0.0
+        if abs(self._layer_vol - target) < 1e-4 and not (target > 0 and not self._layer_busy()):
+            return
+        step = 0.012 if target > self._layer_vol else 0.02
+        self._layer_vol = min(target, self._layer_vol + step) if target > self._layer_vol else max(target, self._layer_vol - step)
+        try:
+            ch = pygame.mixer.Channel(3)
+            snd = self.sounds.get('combo_layer')
+            if self._layer_vol > 0.001 and snd is not None:
+                if not ch.get_busy():
+                    ch.play(snd, loops=-1)
+                ch.set_volume(self._layer_vol)
+            elif ch.get_busy():
+                ch.stop()
+        except Exception:
+            pass
+
+    def _layer_busy(self):
+        try:
+            return pygame.mixer.Channel(3).get_busy()
+        except Exception:
+            return True
 
     def _bgm_eff_volume(self):
         return self.bgm_volume * self._duck if (self.enabled and self.bgm_enabled) else 0.0
@@ -342,6 +379,7 @@ class SoundManager:
                 b_wave[st:] += tone * 0.45
         self.sounds['badge_up'] = self._pack_sound(b_wave)
         self._generate_juice_sounds(sr)
+        self._generate_arcade_audio(sr)
 
 
     def _generate_juice_sounds(self, sr=44100):
@@ -420,6 +458,81 @@ class SoundManager:
         self.sounds['levelup'] = pack(lv + boom(t, 70.0, 7.0, 0.4, 0.3))
         t = T(0.18)
         self.sounds['stamp'] = pack(boom(t, 80.0, 18.0, 0.7) + (np.random.rand(len(t)) * 2 - 1) * np.exp(-t * 80.0) * 0.25)
+
+    # 로봇 목소리용 모음 포먼트 (F1, F2, F3 Hz)
+    _VOWELS = {"a": (800, 1250, 2500), "o": (500, 900, 2400), "e": (550, 1850, 2500), "i": (300, 2200, 3000), "u": (330, 900, 2300), "r": (450, 1300, 1700), "A": (700, 1700, 2500)}
+
+    def _synth_word(self, syllables, sr=44100, f0=125.0):
+        """아주 단순한 포먼트 합성 단어 (로봇 아나운서). syllables: 문자열은 자음, (모음, 길이)는 모음"""
+        pieces = []
+        rng = np.random.RandomState(7)
+        for item in syllables:
+            if isinstance(item, tuple):
+                v, dur = item
+                n = int(sr * dur)
+                t = np.arange(n) / sr
+                f = f0 * (1.0 + 0.12 * np.sin(np.pi * np.clip(t / dur, 0, 1)))                  # 억양: 모음마다 살짝 올랐다 내려옴
+                ph = np.cumsum(f) / sr
+                src = np.zeros(n)
+                f1, f2, f3 = self._VOWELS[v]
+                for k in range(1, 40):
+                    fk = k * f0 * 1.06
+                    if fk > 4500:
+                        break
+                    amp = (np.exp(-((fk - f1) / 110.0) ** 2) * 1.0 + np.exp(-((fk - f2) / 170.0) ** 2) * 0.7 + np.exp(-((fk - f3) / 250.0) ** 2) * 0.4 + 0.02) / (k ** 0.35)
+                    src += amp * np.sin(2 * np.pi * k * ph)
+                env = np.clip(np.minimum(t / 0.012, (dur - t) / 0.03), 0, 1)
+                pieces.append(src * env)
+            else:
+                c = item
+                dur = {"k": 0.05, "t": 0.04, "p": 0.04, "d": 0.045, "b": 0.045, "s": 0.12, "f": 0.1, "m": 0.08, "n": 0.07, "l": 0.07, "w": 0.06}.get(c, 0.05)
+                n = int(sr * dur)
+                t = np.arange(n) / sr
+                noise = rng.rand(n) * 2 - 1
+                if c in "stpkf":                                                                  # 파열/마찰음: 고역 노이즈 (차분으로 저역 제거)
+                    out = np.diff(noise, prepend=0.0) * np.exp(-t * (60.0 if c in "tpk" else 18.0)) * (1.6 if c in "tk" else 1.2)
+                elif c in "mnl":                                                                  # 비음/유음: 낮은 울림
+                    out = np.sin(2 * np.pi * f0 * 1.9 * t) * 0.9 * np.minimum(1.0, t / 0.01) * np.minimum(1.0, (dur - t) / 0.02)
+                else:                                                                             # b/d/w: 짧은 유성 폭발
+                    out = np.sin(2 * np.pi * f0 * 1.5 * t) * np.exp(-t * 35.0) * 1.2 + noise * np.exp(-t * 80.0) * 0.3
+                pieces.append(out)
+        wave = np.concatenate(pieces) if pieces else np.zeros(1)
+        wave = wave / (np.max(np.abs(wave)) + 1e-6) * 0.85
+        t = np.arange(len(wave)) / sr
+        wave = wave * (0.9 + 0.1 * np.sin(2 * np.pi * 60.0 * t))                                  # 가벼운 로봇 느낌: 얕은 링 변조와 약한 에코
+        echo = np.zeros(len(wave) + int(sr * 0.09))
+        echo[:len(wave)] += wave
+        echo[int(sr * 0.09):] += wave * 0.25
+        return echo
+
+    def _generate_arcade_audio(self, sr=44100):
+        """아케이드 소리 (v1.1.11): 콤보/B2B가 이어질 때 BGM 위에 얹는 하이햇 층(음높이 없음: 어떤 곡과도 부딪치지 않음)과 로봇 아나운서 외침"""
+        n = int(sr * 2.0)
+        rng = np.random.RandomState(11)
+        layer = np.zeros(n)
+        for i in range(16):                                                                      # 2초 = 16개의 8분음표 (120BPM 기준): 강약이 있는 하이햇 + 2·4박 클랩
+            t0 = int(i * n / 16)
+            ln = int(sr * (0.07 if i % 2 else 0.04))
+            nz = np.diff(rng.rand(ln) * 2 - 1, prepend=0.0) * np.exp(-np.arange(ln) / sr * (55.0 if i % 2 else 90.0))
+            layer[t0:t0 + ln] += nz * (0.55 if i % 2 else 0.9)
+            if i in (4, 12):
+                lc = int(sr * 0.11)
+                cl = (rng.rand(lc) * 2 - 1) * np.exp(-np.arange(lc) / sr * 38.0)
+                layer[t0:t0 + lc] += cl * 0.6
+        layer = layer / (np.max(np.abs(layer)) + 1e-6) * 0.7
+        self.sounds['combo_layer'] = self._pack_sound(layer)
+        words = {
+            "vo_quad": ["k", ("o", 0.1), ("a", 0.07), "d"],
+            "vo_tspin": ["t", ("i", 0.1), "s", "p", ("i", 0.09), "n"],
+            "vo_combo": ["k", ("a", 0.1), "m", "b", ("o", 0.12)],
+            "vo_perfect": ["p", ("r", 0.09), "f", ("e", 0.08), "k", "t"],
+            "vo_bounty": ["b", ("A", 0.1), "n", "t", ("i", 0.12)],
+            "vo_final": ["f", ("A", 0.12), "n", ("o", 0.07), "l"],
+            "vo_top10": ["t", ("a", 0.09), "p", "t", ("e", 0.08), "n"],
+            "vo_golden": ["d", ("o", 0.1), "l", "d", ("e", 0.08), "n"],
+        }
+        for name, syl in words.items():
+            self.sounds[name] = self._pack_sound(self._synth_word(syl, sr))
 
     def _generate_victory_anthem(self, sr=44100):
         """
@@ -1312,6 +1425,12 @@ class SoundManager:
         self.is_bgm_playing = False
         self.current_bgm_stage = None
         self.reset_duck()
+        self._layer_level = 0                                  # 콤보 층도 함께 정리
+        self._layer_vol = 0.0
+        try:
+            pygame.mixer.Channel(3).stop()
+        except Exception:
+            pass
 
     def pause_bgm(self):
         """배경음악 일시정지"""
@@ -1513,6 +1632,11 @@ class SoundManager:
             sound_name = f"ko_orb_{min(max(1, combo or 1), 8)}"
         if not (self.enabled and self.sfx_enabled) or self.sfx_volume <= 0.001:
             return
+        if sound_name.startswith("vo_"):                          # 로봇 아나운서: 설정이 켜져 있을 때만, 0.8초 쿨다운
+            now_ = time.time()
+            if not self.announcer or now_ - self._vo_last < 0.8:
+                return
+            self._vo_last = now_
         vol = self.sfx_volume * (self.warn_scale if sound_name in self.WARN_SOUNDS else 1.0)
         if vol <= 0.001:
             return

@@ -65,7 +65,7 @@ TAB_NAV = {
                 ("key_hints", "key_hints", "key_hints_prev", "key_hints_next")],
     "audio": [("bgm", "bgm_toggle", "bgm_dec", "bgm_inc"), ("stage_bgm", None, "stage_bgm_prev", "stage_bgm_next"),
               ("sfx", "sfx_toggle", "sfx_dec", "sfx_inc"), ("warn", "warn_next", "warn_prev", "warn_next"),
-              ("sfx_test", "sfx_test", None, None)],
+              ("announcer", "announcer_toggle", "announcer_toggle", "announcer_toggle"), ("sfx_test", "sfx_test", None, None)],
 }
 KEY_CARDS = len(ACTION_NAMES)                 # 조작 탭: 0~8 = 키 카드, 9~14 = DAS/ARR/SDF/DCD/DAS 취소/반응 프리셋, 15 = 키 프리셋
 HANDLING_ROWS = ("das", "arr", "sdf", "dcd", "dcancel", "hpre")
@@ -90,6 +90,7 @@ HELP = {
     "color_mode": "색약 보정은 블록 색을 밝기 차이가 큰 팔레트로 바꿉니다.",
     "text_size": "게임 화면과 메뉴·설정·로비의 작은 글씨를 키웁니다. 글자가 잘려 보이면 '보통'으로 돌리세요.",
     "key_hints": "게임 화면 아래의 조작 키 안내 바입니다. '처음 10판'은 익숙해지면 저절로 사라지고, '끔'은 화면이 더 넓어 보입니다. (T 설정/ESC는 그대로 사용 가능)",
+    "announcer": "쿼드·T-스핀·콤보·퍼펙트 클리어·TOP 10·결승·골든 타깃 같은 큰 순간에 짧은 로봇 목소리가 외칩니다. 합성한 소리라 발음은 어설프며, 기본은 꺼짐입니다. 효과음이 꺼져 있으면 나오지 않습니다.",
     "warn": "피격 경보음과 위기 때 나는 심장 박동 소리만 따로 줄이거나 끕니다. 효과음 음량에는 영향이 없습니다.",
     "block_skin": "게임 화면 블록의 모양을 바꿉니다. 색은 위의 '블록 색상' 설정을 따르며, 로고와 미니 보드는 그대로입니다.",
     "bgm": "배경음악 켜기/끄기와 음량. 생존자가 줄수록(100인 → 50인 → 20인) 곡이 더 긴박해집니다.",
@@ -107,7 +108,7 @@ TAB_DEFAULT_KEYS = {
     "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake"],
     "help": ["match_log"],
     "general": ["resolution", "mini_detail", "color_mode", "text_size", "block_skin", "key_hints"],
-    "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume", "warn_volume"],
+    "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume", "warn_volume", "announcer"],
     "keys": ["das_ms", "arr_ms", "sdf_ms", "dcd_ms", "das_cancel"],
 }
 
@@ -331,6 +332,13 @@ class SettingsMixin:
             new = opts[(i + (-1 if btn_id == "key_hints_prev" else 1)) % len(opts)]
             self.sound_mgr.play('rotate')
             self.settings.set("key_hints", new)
+        elif btn_id == "announcer_toggle":
+            new = not self.settings.get("announcer", False)
+            self.settings.set("announcer", new)
+            self.sound_mgr.set_announcer(new)
+            self.sound_mgr.play('rotate')
+            if new:
+                self.sound_mgr.play('vo_quad')
         elif btn_id in ("warn_prev", "warn_next"):
             opts = (100, 50, 0)
             cur = self.settings.get("warn_volume", 100)
@@ -696,7 +704,10 @@ class SettingsMixin:
         wv = self.settings.get("warn_volume", 100)
         self._s_row("warn", y, 56, "경고음 크기", "피격 경보 · 심장 박동")
         self._s_cycler("warn_prev", "warn_next", {100: "보통", 50: "작게", 0: "끔"}.get(wv, "보통"), RIGHT, y + 28, enabled=sfx_on)
-        y += 56 + 12
+        y += 56
+        self._s_row("announcer", y, 52, "아나운서 콜", "큰 순간에 로봇 목소리 외침 (합성음)")
+        self._s_switch("announcer_toggle", bool(self.settings.get("announcer", False)), RIGHT - 70, y + 26)
+        y += 52 + 8
         self._t("M 키로 언제든 소리를 켜고 끌 수 있습니다.", self.font_help, COL_SUB, IX + 22, y + 8)
 
     def _render_tab_keys(self):

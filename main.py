@@ -8,6 +8,7 @@ multiprocessing.freeze_support()      # exe에서 봇 계산 작업 프로세스
 
 import os
 import sys
+import time
 
 # Windows 배율(125%, 150% 등) 설정에서도 창이 흐릿하게 늘어나지 않도록 DPI 인식 설정 (pygame 초기화 전에 호출)
 if sys.platform == "win32":
@@ -70,6 +71,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         self.sound_mgr.set_bgm_volume(self.settings.get("bgm_volume", 60) / 100.0)
         self.sound_mgr.set_sfx_volume(self.settings.get("sfx_volume", 70) / 100.0)
         self.sound_mgr.set_warn_scale(self.settings.get("warn_volume", 100) / 100.0)
+        self.sound_mgr.set_announcer(self.settings.get("announcer", False))
         
         self.net_mgr = NetworkManager()
         try:
@@ -93,6 +95,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         self.das_timer = 0.0
         self.arr_timer = 0.0
         self.soft_drop_timer = 0.0
+        self._idle_t = time.time()      # 마지막 입력 시각 (어트랙트 화면용)
+        self._attract = None
         self.das_fired = False          # DAS가 끝나 자동 반복이 시작됐는지 (첫 자동 이동은 DAS가 끝나는 순간에 바로 일어남)
         self.dcd_left = 0.0             # 새 블록이 나온 뒤 DAS 충전이 막히는 남은 시간
         self._dcd_lock_seen = 0
@@ -240,6 +244,13 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
             
             # 이벤트 처리
             for event in pygame.event.get():
+                if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEWHEEL):      # 어트랙트 화면: 깨우는 입력은 메뉴 동작으로 넘기지 않고 소비
+                    was_attract = self._attract_on()
+                    self._attract_reset()
+                    if was_attract:
+                        continue
+                elif event.type == pygame.MOUSEMOTION and getattr(event, "rel", (0, 0)) != (0, 0):
+                    self._idle_t = time.time()
                 # 마우스 좌표를 논리 좌표(1366x768)로 변환 / 창 크기 변경 시 배율 재계산
                 if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
                     event.pos = CANVAS.to_logical(event.pos)
@@ -277,6 +288,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
 
             if self.state != "MENU":
                 self._menu_active = False               # 다음에 메뉴로 돌아오면 등장 연출을 다시 재생
+                self._idle_t = time.time()              # 어트랙트 대기 시간은 메인 화면에 있을 때만 셈
 
             self._transition_check()                    # 화면이 바뀌었으면 직전 프레임을 붙잡아 와이프 시작 (아직 직전 프레임이 화면에 남아 있음)
 
@@ -315,6 +327,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                 self._render_rules()
             if self.state == "GAME" and self.match is not None and getattr(self.match, "brief_open", False):
                 self._render_brief()
+            if self._attract_on():
+                self._render_attract(dt)
             self.renderer.draw_transition()
             pygame.display.flip()
             

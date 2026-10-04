@@ -145,6 +145,7 @@ DEFAULT_SETTINGS = {
     "color_mode": "normal",      # 블록 색상: "normal"(기본) / "colorblind"(색약 보정)
     "text_size": "normal",       # 글자 크기: "normal"(보통) / "large"(크게) - 게임 화면과 메뉴/설정/로비의 작은 글씨에 적용
     "key_hints": "always",       # 게임 화면 아래 조작 안내 바: "always"(항상) / "novice"(처음 10판만) / "off"(끔)
+    "announcer": False,          # 로봇 아나운서 외침 (쿼드/T-스핀/콤보/퍼펙트/TOP 10/현상금 등 큰 순간에만, 기본 끔)
     "warn_volume": 100,          # 경고음(피격 경보/심장 박동) 상대 음량 0~100 (효과음 음량에 곱해짐)
     "tips_seen": [],             # 이미 보여 준 첫 경험 팁 id 목록 (설정에서 다시 보기로 비움)
     "title": "",                 # 칭호: 달성한 업적 id 중 하나(메인 메뉴 프로필에 표시), 비어 있으면 없음
