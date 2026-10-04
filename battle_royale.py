@@ -717,6 +717,11 @@ class BattleRoyaleMatch:
             allowed = [q for q, _ in live if loads.get(q, 0) <= low]
         return random.choice(allowed)
 
+    def _clear_origin_row(self):
+        """내가 방금 지운 줄들의 평균 행 번호 (없으면 None): 공격 빔의 출발 높이"""
+        rows = (getattr(self.local_engine, "last_clear_info", None) or {}).get("cleared_rows") or []
+        return (sum(rows) / len(rows)) if rows else None
+
     def apply_attack(self, from_id, to_id, lines, from_network=False, multi=1, order=0):
         """공격 라인 전달 및 궤적 이펙트 생성 (from_network: 네트워크로 수신한 공격은 재전송하지 않음)"""
         if lines <= 0 or not self.attacks_enabled:
@@ -749,7 +754,8 @@ class BattleRoyaleMatch:
                 "start_time": now + order * 0.07,                          # 다중 포격: 빔이 순서대로 부채꼴로 발사되는 연출
                 "multi": multi,
                 "duration": 0.58,
-                "impacted": False
+                "impacted": False,
+                "origin_row": self._clear_origin_row() if from_id == self.local_player_id else None      # 빔이 지운 줄 높이에서 출발
             })
 
         if lines >= (4 if self.total_players > 10 else 3) and from_id in self.players and to_id in self.players:

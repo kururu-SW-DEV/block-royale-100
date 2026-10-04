@@ -78,6 +78,11 @@ class BlockEngine:
         self.perfect_clears = 0         # 퍼펙트 클리어 달성 횟수 (UI/중계 트리거용)
         self.garbage_pushed_total = 0   # 지금까지 보드에 올라온 쓰레기 줄 수 (효과음 트리거용)
         self.last_lock_cells = []       # 마지막으로 고정된 피스의 칸 좌표 (UI 이펙트용)
+        self.cleared_row_cells = []     # 방금 지운 줄의 (행, 칸 값 목록) (UI 파쇄 연출용, 렌더러가 소비)
+        self.settle_offsets = []        # 줄 제거 뒤 새 행마다 내려온 칸 수 (UI 내려앉기 연출용)
+        self.push_holes = []            # 방금 올라온 쓰레기 줄의 구멍 열 (UI 상승 연출용, 렌더러가 소비)
+        self.hard_drop_events = 0       # 하드 드롭 횟수 (UI 궤적 트리거)
+        self.last_hard_drop = None      # {"cells": 떨어지기 전 칸, "dist": 낙하 거리}
         self.last_locked_piece = None   # 마지막으로 고정된 피스 종류 (효과음 음높이용)
 
         # 쓰레기 라인(Garbage) 시스템
@@ -299,10 +304,13 @@ class BlockEngine:
         if self.game_over:
             return 0
         drop_dist = 0
+        start_cells = [(x, y) for x, y in self._get_blocks(self.current_piece, self.current_rot, self.current_x, self.current_y)]
         while not self._check_collision(self.current_x, self.current_y + 1, self.current_rot):
             self.current_y += 1
             drop_dist += 1
         self.score += drop_dist * 2
+        self.hard_drop_events += 1
+        self.last_hard_drop = {"cells": start_cells, "dist": drop_dist}
         return self.lock_down()
 
     def _is_touching_ground(self):
@@ -431,6 +439,12 @@ class BlockEngine:
         self.cleared_row_indices = cleared_rows
 
         if cleared > 0:
+            self.cleared_row_cells = [(y, list(self.grid[y])) for y in cleared_rows]
+            keep = [y for y in range(len(self.grid)) if y not in cleared_rows]
+            offs = [0] * len(self.grid)
+            for i, oy in enumerate(keep):
+                offs[cleared + i] = (cleared + i) - oy
+            self.settle_offsets = offs
             for _ in range(cleared):
                 new_grid.insert(0, [None for _ in range(self.width)])
             self.grid = new_grid
@@ -445,6 +459,8 @@ class BlockEngine:
         for i in range(count):
             if i > 0 and self.garbage_rng.random() < GARBAGE_MESSINESS:      # 한 묶음 안에서도 가끔 구멍이 옮겨져 한 번에 복구되지 않음
                 hole_x = (hole_x + self.garbage_rng.randint(1, self.width - 1)) % self.width
+            self.push_holes.append(hole_x)
+            del self.push_holes[:-12]
             # 맨 위 줄이 비어있지 않으면 밀려 올라가면서 게임오버
             if any(self.grid[0]):
                 self.game_over = True

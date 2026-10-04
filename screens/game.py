@@ -648,7 +648,7 @@ class GameMixin:
                 self.sound_mgr.play_defeat()
         if self.match.match_finished and self.match.local_rank == 1 and not self.victory_played:
             self.victory_played = True
-            self.result_lock_until = time.time() + 1.2
+            self.result_lock_until = time.time() + 1.2 + (0 if self.match.practice else self.renderer.VICTORY_CEREMONY)      # 세리머니가 끝난 뒤에 순위표 입력을 받음
             self.sound_mgr.play_victory()
             
         # 경기 종료/탈락 시 전적 통계 자동 갱신 (1회)

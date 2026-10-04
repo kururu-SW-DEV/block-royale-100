@@ -66,6 +66,37 @@ TARGET_MODE_LABELS = {
 
 
 _orig_rect = CANVAS._orig["rect"]          # 좌표 변환을 거치지 않는 원래 pygame.draw.rect
+_orig_circle = CANVAS._orig["circle"]
+
+
+_GLOW_CACHE = {}
+
+
+def _glow_sprite(radius, color, level):
+    """검은 바탕의 방사형 그라데이션 (BLEND_RGB_ADD로 더하면 빛나 보임). 크기·색·밝기 단계별로 한 번만 만듦"""
+    key = (radius, tuple(color[:3]), level)
+    spr = _GLOW_CACHE.get(key)
+    if spr is None:
+        spr = pygame.Surface((radius * 2, radius * 2))
+        k = (level + 1) / 5.0
+        for i in range(radius, 0, -1):
+            f = (1.0 - i / radius) ** 1.6 * k
+            _orig_circle(spr, (int(color[0] * f), int(color[1] * f), int(color[2] * f)), (radius, radius), i)
+        if len(_GLOW_CACHE) > 160:
+            _GLOW_CACHE.clear()
+        _GLOW_CACHE[key] = spr
+    return spr
+
+
+def draw_glow(surface, x, y, radius, color, fade=1.0):
+    """(x, y) 논리 좌표에 빛 구슬을 더해 그림 (큰 순간 전용: 개수는 호출 쪽에서 제한)"""
+    level = max(0, min(4, int(fade * 4.99)))
+    if isinstance(surface, Canvas):
+        r = max(2, CANVAS.length(radius))
+        surface.display.blit(_glow_sprite(r, color, level), (CANVAS.X(x) - r, CANVAS.Y(y) - r), special_flags=pygame.BLEND_RGB_ADD)
+    else:
+        r = max(2, int(radius))
+        surface.blit(_glow_sprite(r, color, level), (int(x) - r, int(y) - r), special_flags=pygame.BLEND_RGB_ADD)
 
 
 class ParticleManager:
@@ -74,7 +105,7 @@ class ParticleManager:
         self.particles = []
         self.rings = []
 
-    def add_sparks(self, x, y, color, count=30, speed_mult=1.0):
+    def add_sparks(self, x, y, color, count=30, speed_mult=1.0, glow=False):
         for _ in range(count):
             angle = random.uniform(0, math.pi * 2)
             speed = random.uniform(80, 340) * speed_mult
@@ -86,6 +117,7 @@ class ParticleManager:
                 "size": random.choice([2, 3, 4]),
                 "life": 0.0,
                 "max_life": random.uniform(0.3, 0.6),
+                "glow": glow,
             })
         # 과도한 파티클 누적 방지
         if len(self.particles) > 320:
@@ -138,6 +170,9 @@ class ParticleManager:
 
         for p in self.particles:
             fade = 1.0 - p["life"] / p["max_life"]
+            if p.get("glow"):
+                draw_glow(surface, p["x"] + ox, p["y"] + oy, p["size"] * 4 + 2, p["color"], fade)
+                continue
             sz = max(1, int(p["size"] * (0.5 + 0.5 * fade)))
             pygame.draw.rect(surface, p["color"], (int(p["x"] + ox), int(p["y"] + oy), sz, sz))
 
@@ -201,6 +236,23 @@ class UIRenderer:
         self._cancel_t0 = -9.0
         self._pc_seen = 0                # 퍼펙트 금빛 쓸어올림
         self._pc_t0 = -9.0
+        # v1.1.7 블록 반응 연출 (내 보드 전용)
+        self._react_eng = None
+        self.shards = []                 # 지운 줄/무너지는 칸의 조각
+        self._settle = None              # 줄 제거 뒤 위 블록 내려앉기 {t0, offs}
+        self._rise = None                # 쓰레기 줄 상승 {t0, n}
+        self.hole_flashes = []           # 쓰레기 줄 구멍 깜빡임
+        self.drop_trails = []            # 하드 드롭 궤적
+        self._hd_seen = 0
+        self._gp_seen = 0
+        self._bounce_t0 = -9.0
+        self._bounce_amp = 0.0
+        self._bg_pulses = []             # 배경 링 {t0, x, y, col}
+        self._ko_seen = 0
+        self._topout = None              # 내 탑아웃 붕괴 {t0, row}
+        self._vic_t0 = None              # 우승 세리머니 시작 시각
+        self._vic_row = BOARD_HEIGHT
+        self.confetti = []
         self.result_return_btn = None
         self.result_restart_btn = None
         self.result_spectate_btn = None
@@ -450,6 +502,10 @@ class UIRenderer:
             cy = self.main_board_y + self.main_board_h // 2
             self.particles.add_sparks(cx, cy, (255, 230, 120), count=40, speed_mult=1.4)
             self.particles.add_shockwave(cx, cy + 80, (110, 235, 255), max_radius=100)
+            ci = getattr(engine, "last_clear_info", None) or {}
+            if ci.get("cleared", 0) >= 4 or ci.get("is_tspin"):                      # 큰 기술만 발광 파티클과 배경 링 (개수 제한)
+                self.particles.add_sparks(cx, cy, (255, 235, 150), count=12, speed_mult=1.7, glow=True)
+                self._add_bg_pulse(cx, cy, (255, 215, 110) if ci.get("cleared", 0) >= 4 else (200, 130, 255))
 
         if getattr(match, 'pc_count', 0) != self._pc_seen:             # 퍼펙트 클리어: 금빛 파티클과 쓸어올림 시작
             self._pc_seen = match.pc_count
@@ -462,6 +518,8 @@ class UIRenderer:
             ir = self._hud_rects.get("incoming")
             if ir is not None:
                 self.particles.add_sparks(ir.centerx, ir.centery, (110, 235, 255), count=14, speed_mult=1.1)
+
+        self._detect_board_reactions(match, engine, spectating, pdt)
 
         # 피스 고정 시 착지 플래시 + 스파크 (하드 드롭/락 공통)
         lock_key = (id(engine), engine.lock_events)
@@ -490,11 +548,13 @@ class UIRenderer:
         CANVAS.display.fill((0, 0, 0))
         self.next_visible = (getattr(match, "mutator", None) or {}).get("next_visible", 5)      # 주간 변형 '안개 속': NEXT가 1개만 보임
         self._update_stage_theme(match)
+        self._render_bg_pulses(match, ox, oy)
 
         self._render_mini_boards(match, ox, oy)
         self._render_attack_effects(match, ox, oy)
         self._render_main_board(match, ox, oy)
         self.particles.draw(self.screen, ox, oy)
+        self._render_reactions(match, ox, oy)
         self._render_board_juice(match, ox, oy)
         self._render_top_banner(match, ox, oy)
         if not getattr(match, 'is_paused', False):
@@ -520,7 +580,9 @@ class UIRenderer:
 
         if spectating and not match.match_finished:
             self._render_spectate_notice(match)
-        if match.match_finished:
+        if match.match_finished and self._vic_t0 is not None and time.time() - self._vic_t0 < self.VICTORY_CEREMONY:
+            pass                                           # 우승 세리머니(보드가 금빛으로 터지고 왕관·색종이) 동안은 순위표를 미룸
+        elif match.match_finished:
             self._render_standings_overlay(match)          # 누가 이기든(나 포함) 경기가 끝나면 전체 플레이어 성적표
         elif spectating:
             self._render_spectator_hud(match, ox, oy)
@@ -1363,7 +1425,11 @@ class UIRenderer:
 
         cs = self.cell_size
         bx = self.main_board_x + ox
-        by = self.main_board_y + oy
+        bounce = 0.0
+        ba = time.time() - self._bounce_t0
+        if 0.0 <= ba < 0.12:
+            bounce = self._bounce_amp * (1.0 - ba / 0.12) ** 2         # 하드 드롭: 보드만 살짝 눌렸다 돌아옴 (패널은 그대로)
+        by = self.main_board_y + oy + bounce
         bw, bh = self.main_board_w, self.main_board_h
         board_rect = pygame.Rect(bx, by, bw, bh)
 
@@ -1396,16 +1462,49 @@ class UIRenderer:
         if incoming > 0:
             self._draw_garbage_bar(engine, incoming, bar_x, by, bh, cs)
 
-        # 3. 고정된 블록
-        for y in range(BOARD_HEIGHT):
+        # 3. 고정된 블록 (줄 제거 뒤 내려앉기 / 쓰레기 줄 상승 / 탑아웃 붕괴 / 우승 세리머니 반영)
+        now = time.time()
+        settle, rise, topout = self._settle, self._rise, self._topout
+        s_rem = r_rem = 0.0
+        if settle is not None:
+            if now - settle["t0"] < self.SETTLE_SECS and not spectating:
+                s_rem = 1.0 - _ease_out((now - settle["t0"]) / self.SETTLE_SECS)
+            else:
+                self._settle = settle = None
+        if rise is not None:
+            if now - rise["t0"] < self.RISE_SECS and not spectating:
+                r_rem = rise["n"] * (1.0 - _ease_out((now - rise["t0"]) / self.RISE_SECS))
+            else:
+                self._rise = rise = None
+        gray_to = int((now - topout["t0"]) / 0.04) if (topout is not None and not spectating) else -1
+        vic_row = self._vic_row if (self._vic_t0 is not None and not spectating) else BOARD_HEIGHT
+        if r_rem > 0:
+            CANVAS.display.set_clip(CANVAS.rect(board_rect))           # 아래에서 올라오는 줄이 보드 밖으로 비치지 않게
+        for y in range(min(BOARD_HEIGHT, vic_row)):
             row = engine.grid[y]
+            dy = r_rem - (settle["offs"][y] * s_rem if settle is not None else 0.0)
+            gray = y <= gray_to
+            yy = by + (y + dy) * cs
             for x in range(BOARD_WIDTH):
                 piece = row[x]
                 if piece:
-                    self._draw_cell(bx + x * cs, by + y * cs, cs, piece)
+                    self._draw_cell(bx + x * cs, yy, cs, 'G' if gray else piece)
+        if r_rem > 0:
+            CANVAS.display.set_clip(None)
+
+        # 3-0. 쓰레기 줄 구멍 깜빡임 (색에 기대지 않게 흰 테두리 포함)
+        alive_h = []
+        for hf in self.hole_flashes:
+            age = now - hf["t0"]
+            if age < 0.45:
+                alive_h.append(hf)
+                a = 1.0 - age / 0.45
+                hr = pygame.Rect(bx + hf["x"] * cs, by + (hf["row"] + r_rem) * cs, cs, cs)
+                CANVAS.alpha_rect(hr, (255, 70, 80, int(110 * a)), radius=3)
+                CANVAS.alpha_rect(hr, (255, 255, 255, int(220 * a)), width=2, radius=3)
+        self.hole_flashes = alive_h
 
         # 3-1. 착지 플래시
-        now = time.time()
         alive_lock = []
         for lf in self.lock_flashes:
             age = now - lf["birth"]
@@ -1438,6 +1537,7 @@ class UIRenderer:
         is_danger = (incoming >= 4) or (not engine.game_over and highest <= 5)
         if is_danger and not spectating:
             pulse = int(50 + 40 * math.sin(time.time() * 8.0))
+            self._render_danger_breath(engine, highest, bx, by, bw, bh, cs, pulse)
             # 테두리와 천장 광채를 각각 최대 밝기(255)로 한 번씩만 만들고, 맥박은 투명도로 조절 (겹치는 부분은 화면 위에서 합성됨)
             def _build_edge(ds):
                 pygame.draw.rect(ds, (255, 40, 50, 255), (0, 0, bw, bh), 5, border_radius=6)
@@ -1450,16 +1550,18 @@ class UIRenderer:
             self._blit_overlay(("danger_glow", bw, cs), (bw, cs * 3), _build_top_glow, (bx, by), alpha=a)
 
         # 5. 고스트 + 현재 피스
-        if not engine.game_over and engine.current_piece:
+        if not engine.game_over and engine.current_piece and vic_row >= BOARD_HEIGHT:
             ghost_y = engine.get_ghost_y()
             gsurf = self._ghost_surface(engine.current_piece, cs)
             if ghost_y != engine.current_y:
                 for gx, gy in engine._get_blocks(engine.current_piece, engine.current_rot, engine.current_x, ghost_y):
                     if 0 <= gy < BOARD_HEIGHT:
                         self.screen.blit(gsurf, (bx + gx * cs, by + gy * cs))
-            for px, py in engine._get_blocks(engine.current_piece, engine.current_rot, engine.current_x, engine.current_y):
-                if 0 <= py < BOARD_HEIGHT:
-                    self._draw_cell(bx + px * cs, by + py * cs, cs, engine.current_piece)
+            cur_cells = [(px, py) for px, py in engine._get_blocks(engine.current_piece, engine.current_rot, engine.current_x, engine.current_y) if 0 <= py < BOARD_HEIGHT]
+            for px, py in cur_cells:
+                self._draw_cell(bx + px * cs, by + py * cs, cs, engine.current_piece)
+            if not spectating and cur_cells and engine.current_piece == 'T' and engine._is_touching_ground() and engine._detect_tspin():
+                self._render_tspin_hint(cur_cells, bx, by, cs)            # 지금 고정하면 T-스핀: 윤곽이 반짝이고 "T-SPIN" 글자가 뜸
 
         pygame.draw.rect(self.screen, border_col, board_rect, 2, border_radius=6)
 
@@ -2258,6 +2360,230 @@ class UIRenderer:
                                                        id(self.font_tiny if bw < 90 else self.font_small)),
                                       board_rect.right + 2, board_rect.y - 3, strip_w + 6, bh + 6, draw_strip)
 
+    # ---------------------------------------------------------------- 블록 반응 연출 (v1.1.7)
+    SETTLE_SECS = 0.14          # 줄 제거 뒤 위 블록이 내려앉는 시간
+    RISE_SECS = 0.14            # 쓰레기 줄이 밀고 올라오는 시간
+    VICTORY_CEREMONY = 2.4      # 우승 세리머니 길이 (이 뒤에 순위표)
+
+    def _add_bg_pulse(self, x, y, col):
+        self._bg_pulses.append({"t0": time.time(), "x": x, "y": y, "col": col})
+        del self._bg_pulses[:-2]
+
+    def _detect_board_reactions(self, match, engine, spectating, pdt):
+        """엔진이 남긴 사건(줄 제거 · 쓰레기 줄 · 하드 드롭 · 탑아웃)을 보고 파쇄/내려앉기/상승/궤적/붕괴/세리머니를 시작하고 조각을 갱신"""
+        now = time.time()
+        m = getattr(match, 'shake_scale', 1.0)          # 흔들림 설정: 끔(0)이면 위치가 움직이는 연출은 하지 않음
+        cs = self.cell_size
+        bx, by = self.main_board_x, self.main_board_y
+        if self._react_eng is not engine:
+            self._react_eng = engine
+            self.shards, self._settle, self._rise = [], None, None
+            self.hole_flashes, self.drop_trails, self.confetti = [], [], []
+            self._hd_seen, self._gp_seen = engine.hard_drop_events, engine.garbage_pushed_total
+            self._topout, self._vic_t0, self._vic_row = None, None, BOARD_HEIGHT
+            self._ko_seen = getattr(match, 'local_ko_count', 0)
+            engine.cleared_row_cells, engine.push_holes = [], []
+        mid = (BOARD_WIDTH - 1) / 2.0
+
+        cells = engine.cleared_row_cells
+        if cells:
+            engine.cleared_row_cells = []
+            if not spectating:
+                budget = max(0, 260 - len(self.shards))
+                for y, row in cells:
+                    for x, piece in enumerate(row):
+                        if not piece:
+                            continue
+                        col = PIECE_COLORS.get(piece, (150, 150, 170))
+                        for _ in range(2):
+                            if budget <= 0:
+                                break
+                            budget -= 1
+                            self.shards.append({"x": bx + x * cs + cs / 2 + random.uniform(-cs / 3, cs / 3), "y": by + y * cs + cs / 2 + random.uniform(-cs / 3, cs / 3),
+                                                "vx": (x - mid) * 34 + random.uniform(-70, 70), "vy": random.uniform(-260, -40), "col": col,
+                                                "sz": random.choice((3, 4, 5)), "life": 0.0, "max": random.uniform(0.45, 0.8)})
+                if m > 0 and engine.settle_offsets:
+                    self._settle = {"t0": now, "offs": list(engine.settle_offsets)}
+
+        gp = engine.garbage_pushed_total
+        if gp != self._gp_seen:
+            n = max(0, min(8, gp - self._gp_seen))
+            self._gp_seen = gp
+            holes = engine.push_holes[-n:] if n else []
+            engine.push_holes = []
+            if not spectating and holes:
+                if m > 0:
+                    self._rise = {"t0": now, "n": len(holes)}
+                for i, hx in enumerate(holes):
+                    self.hole_flashes.append({"x": hx, "row": BOARD_HEIGHT - len(holes) + i, "t0": now})
+                del self.hole_flashes[:-12]
+
+        if engine.hard_drop_events != self._hd_seen:
+            self._hd_seen = engine.hard_drop_events
+            hd = engine.last_hard_drop
+            if hd and not spectating and hd["dist"] >= 2 and engine.last_lock_cells:
+                start_top, land_top = {}, {}
+                for x, y in hd["cells"]:
+                    start_top[x] = min(start_top.get(x, 99), y)
+                for x, y in engine.last_lock_cells:
+                    land_top[x] = min(land_top.get(x, 99), y)
+                col = PIECE_COLORS.get(engine.last_locked_piece, (200, 220, 255))
+                for x, y0 in start_top.items():
+                    y1 = land_top.get(x)
+                    if y1 is not None and y1 > y0:
+                        self.drop_trails.append({"x": x, "y0": max(0, y0), "y1": y1, "t0": now, "col": col})
+                del self.drop_trails[:-8]
+                if m > 0:
+                    self._bounce_t0, self._bounce_amp = now, min(3.0, 1.0 + hd["dist"] * 0.1) * m
+
+        ko = getattr(match, 'local_ko_count', 0)
+        if ko != self._ko_seen:
+            if ko > self._ko_seen:
+                self._add_bg_pulse(bx + self.main_board_w // 2, by + self.main_board_h // 2, (255, 120, 110))
+            self._ko_seen = ko
+
+        if engine.game_over and not spectating:                       # 내 탑아웃: 스택이 위에서부터 회색으로 물들며 먼지처럼 부서짐
+            if self._topout is None:
+                self._topout = {"t0": now, "row": -1}
+            tp = self._topout
+            front = min(BOARD_HEIGHT - 1, int((now - tp["t0"]) / 0.04))
+            budget = max(0, 260 - len(self.shards))
+            while tp["row"] < front:
+                tp["row"] += 1
+                y = tp["row"]
+                for x in range(BOARD_WIDTH):
+                    if engine.grid[y][x] and budget > 0:
+                        budget -= 1
+                        self.shards.append({"x": bx + x * cs + cs / 2, "y": by + y * cs + cs / 2, "vx": random.uniform(-40, 40), "vy": random.uniform(-60, 20),
+                                            "col": (110, 116, 135), "sz": random.choice((3, 4)), "life": 0.0, "max": random.uniform(0.5, 0.9)})
+        else:
+            self._topout = None
+
+        if match.match_finished and getattr(match, 'local_rank', 0) == 1 and not spectating and not match.practice:      # 우승 세리머니: 아래에서 위로 한 줄씩 금빛으로 터짐
+            if self._vic_t0 is None:
+                self._vic_t0, self._vic_row = now, BOARD_HEIGHT
+            front = BOARD_HEIGHT - 1 - int((now - self._vic_t0) / 0.045)
+            budget = max(0, 260 - len(self.shards))
+            while self._vic_row - 1 > front and self._vic_row > 0:
+                self._vic_row -= 1
+                y = self._vic_row
+                for x in range(BOARD_WIDTH):
+                    piece = engine.grid[y][x]
+                    if piece and budget > 0:
+                        budget -= 1
+                        self.shards.append({"x": bx + x * cs + cs / 2, "y": by + y * cs + cs / 2, "vx": (x - mid) * 40 + random.uniform(-60, 60), "vy": random.uniform(-300, -60),
+                                            "col": _mix(PIECE_COLORS.get(piece, (200, 200, 220)), (255, 215, 90), 0.55), "sz": random.choice((3, 4, 5)), "life": 0.0, "max": random.uniform(0.5, 0.9)})
+                self.particles.add_sparks(bx + self.main_board_w // 2, by + y * cs + cs // 2, (255, 215, 90), count=6, speed_mult=1.5, glow=(y % 3 == 0))
+            if now - self._vic_t0 > 0.9 and now - self._vic_t0 < 3.4 and len(self.confetti) < 110:
+                for _ in range(3):
+                    self.confetti.append({"x": random.uniform(80, self.width - 80), "y": -10.0, "vy": random.uniform(110, 220), "vx": random.uniform(-40, 40),
+                                          "w": random.choice((5, 6, 8)), "h": random.choice((3, 4)), "ph": random.uniform(0, 6.28),
+                                          "col": random.choice(((255, 215, 90), (255, 130, 160), (110, 235, 255), (170, 255, 150), (210, 150, 255)))})
+        elif not match.match_finished:
+            self._vic_t0, self._vic_row = None, BOARD_HEIGHT
+
+        alive = []
+        for sh in self.shards:
+            sh["life"] += pdt
+            if sh["life"] < sh["max"]:
+                sh["x"] += sh["vx"] * pdt
+                sh["y"] += sh["vy"] * pdt
+                sh["vy"] += 900 * pdt
+                alive.append(sh)
+        self.shards = alive
+        keep = []
+        for cf in self.confetti:
+            cf["y"] += cf["vy"] * pdt
+            cf["x"] += (cf["vx"] + 30 * math.sin(now * 3.0 + cf["ph"])) * pdt
+            if cf["y"] < self.height + 12:
+                keep.append(cf)
+        self.confetti = keep
+
+    def _render_reactions(self, match, ox, oy):
+        """조각 · 하드 드롭 궤적 · 색종이 · 우승 왕관"""
+        now = time.time()
+        cs = self.cell_size
+        alive = []
+        for tr in self.drop_trails:
+            age = now - tr["t0"]
+            if age < 0.14:
+                alive.append(tr)
+                a = 1.0 - age / 0.14
+                x = self.main_board_x + tr["x"] * cs + ox
+                y0 = self.main_board_y + tr["y0"] * cs + oy
+                h = (tr["y1"] - tr["y0"]) * cs
+                CANVAS.alpha_rect((x + cs * 0.12, y0, cs * 0.76, h), (*tr["col"], int(70 * a)), radius=3)
+                CANVAS.alpha_rect((x + cs * 0.4, y0, cs * 0.2, h), (255, 255, 255, int(150 * a)), radius=2)
+        self.drop_trails = alive
+        for sh in self.shards:
+            fade = 1.0 - sh["life"] / sh["max"]
+            sz = max(1, int(sh["sz"] * (0.4 + 0.6 * fade)))
+            pygame.draw.rect(self.screen, sh["col"], (int(sh["x"] + ox), int(sh["y"] + oy), sz, sz))
+        for cf in self.confetti:
+            w = max(1, int(cf["w"] * abs(math.cos(now * 6.0 + cf["ph"]))))
+            pygame.draw.rect(self.screen, cf["col"], (int(cf["x"]), int(cf["y"]), w, cf["h"]))
+        if self._vic_t0 is not None and getattr(match, 'match_finished', False):
+            t = now - self._vic_t0 - 0.9
+            if t > 0:
+                self._draw_crown(self.main_board_x + self.main_board_w // 2 + ox, self.main_board_y + 290 + oy - 14 * math.sin(min(1.0, t / 0.6) * math.pi * 0.5), min(1.0, t / 0.45))
+
+    def _draw_crown(self, cx, cy, grow):
+        """우승 왕관 (금색 다각형 + 보석)"""
+        w, h = 150 * grow, 100 * grow
+        if w < 4:
+            return
+        pts = [(-0.5, 0.5), (-0.5, -0.1), (-0.25, 0.2), (0.0, -0.5), (0.25, 0.2), (0.5, -0.1), (0.5, 0.5)]
+        poly = [(CANVAS.X(cx + px * w), CANVAS.Y(cy + py * h)) for px, py in pts]
+        pygame.draw.polygon(CANVAS.display, (255, 205, 70), poly)
+        pygame.draw.polygon(CANVAS.display, (255, 245, 190), poly, max(1, CANVAS.length(3)))
+        band = pygame.Rect(cx - w * 0.5, cy + h * 0.32, w, h * 0.18)
+        pygame.draw.rect(self.screen, (230, 160, 40), band, border_radius=3)
+        for gx, gcol in ((-0.5, (255, 120, 150)), (0.0, (120, 230, 255)), (0.5, (170, 255, 150))):
+            pygame.draw.circle(self.screen, gcol, (int(cx + gx * w), int(cy + (-0.1 if gx else -0.5) * h)), max(2, int(8 * grow)))
+        draw_glow(self.screen, cx, cy, int(110 * grow), (255, 210, 90), 0.7)
+
+    def _render_bg_pulses(self, match, ox, oy):
+        """큰 기술/K.O. 때 보드 중심에서 배경으로 퍼지는 얇은 링 (카드 뒤에 그려짐)"""
+        if not self._bg_pulses or getattr(match, 'shake_scale', 1.0) <= 0:
+            self._bg_pulses = [] if getattr(match, 'shake_scale', 1.0) <= 0 else self._bg_pulses
+            return
+        now = time.time()
+        alive = []
+        for bp in self._bg_pulses:
+            age = now - bp["t0"]
+            if age < 0.7:
+                alive.append(bp)
+                k = age / 0.7
+                col = _mix((14, 18, 32), bp["col"], 0.55 * (1.0 - k))
+                pygame.draw.circle(self.screen, col, (int(bp["x"] + ox), int(bp["y"] + oy)), int(60 + 620 * _ease_out(k)), 3)
+        self._bg_pulses = alive
+
+    def _render_danger_breath(self, engine, highest, bx, by, bw, bh, cs, pulse):
+        """위기 때 쌓인 블록이 맥박에 맞춰 붉게 숨 쉬고 화면 가장자리에 붉은 비네트. 색약 모드는 주황 + 점선 테두리"""
+        cb = is_colorblind()
+        col = (255, 150, 40) if cb else (255, 50, 60)
+        rows = max(1, BOARD_HEIGHT - max(0, highest))
+        self._blit_overlay(("danger_stack", bw, rows, cb), (bw, rows * cs),
+                           lambda ds: ds.fill((*col, 150)), (bx, by + (BOARD_HEIGHT - rows) * cs), alpha=max(0, min(255, int(pulse * 1.7))))
+
+        def _build_vig(ds):
+            for i in range(0, 72, 4):
+                _orig_rect(ds, (*col, int(110 * (1.0 - i / 72.0) ** 1.5)), (i, i, self.width - 2 * i, self.height - 2 * i), 4)
+        self._blit_overlay(("danger_vig", cb, self.width, self.height), (self.width, self.height), _build_vig, (0, 0), alpha=max(0, min(255, int(pulse * 2.2))))
+        if cb:
+            for x0 in range(0, bw, 18):                                 # 점선 테두리: 색이 달라도 모양으로 위험을 알림
+                pygame.draw.line(self.screen, (255, 255, 255), (bx + x0, by + 1), (bx + min(bw, x0 + 9), by + 1), 3)
+
+    def _render_tspin_hint(self, cells, bx, by, cs):
+        """T-스핀 성립 표시: 보라 윤곽이 반짝이고 글자로도 알림 (색약 모드는 흰 윤곽)"""
+        a = int(150 + 100 * math.sin(time.time() * 14.0))
+        col = (255, 255, 255) if is_colorblind() else (200, 130, 255)
+        for px, py in cells:
+            CANVAS.alpha_rect((bx + px * cs, by + py * cs, cs, cs), (*col, max(0, min(255, a))), width=2, radius=4)
+        top = min(py for _, py in cells)
+        mid = sum(px for px, _ in cells) / len(cells)
+        self._draw_text("T-SPIN", self.font_tiny, col, bx + int((mid + 0.5) * cs), by + top * cs - 8, "midbottom")
+
     # ---------------------------------------------------------------- 공격 이펙트
     def _render_attack_effects(self, match, ox=0, oy=0):
         now = time.time()
@@ -2288,6 +2614,11 @@ class UIRenderer:
         for eff in match.attack_effects:
             fid, tid = eff["from_id"], eff["to_id"]
             p1 = main_center if fid == match.local_player_id else (self.mini_board_rects[fid].center if fid in self.mini_board_rects else None)
+            if fid == match.local_player_id and eff.get("origin_row") is not None and not getattr(match, "is_spectating", False):
+                p1 = (main_center[0], self.main_board_y + oy + (eff["origin_row"] + 0.5) * self.cell_size)      # 지운 줄이 그대로 탄환이 됨
+                oage = now - eff["start_time"]
+                if 0.0 <= oage < 0.3:
+                    draw_glow(self.screen, p1[0], p1[1], 26, (255, 235, 150) if eff.get("lines", 1) >= 4 else (120, 235, 255), 1.0 - oage / 0.3)
             p2 = main_center if tid == match.local_player_id else (self.mini_board_rects[tid].center if tid in self.mini_board_rects else None)
             if not p1 or not p2:
                 continue

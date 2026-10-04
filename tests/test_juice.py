@@ -409,6 +409,193 @@ def test_practice_and_survival_unaffected():
     print("  OK practice/survival")
 
 
+# ---------------------------------------------------------------- v1.1.7 블록 반응 연출
+def _react_setup(n=20):
+    app = _app()
+    app.start_game(mode="SOLO", total_players=n)
+    m = app.match
+    m.countdown_until = 0.0
+    for _ in range(5):
+        app._tick_game(1 / 60)
+    return app, m, m.local_engine, app.renderer
+
+
+def _vertical_i(e, col):
+    e.current_piece = "I"
+    for rot in range(4):
+        bl = e._get_blocks("I", rot, 0, 0)
+        xs = {x for x, _ in bl}
+        if len(xs) == 1:
+            e.current_rot, e.current_x, e.current_y = rot, col - list(xs)[0], 0
+            return
+    raise AssertionError("세로 I 없음")
+
+
+def _quad_setup(e):
+    from config import BOARD_HEIGHT
+    for y in range(BOARD_HEIGHT - 4, BOARD_HEIGHT):
+        e.grid[y] = ["L", "J", "S", "Z", "O", "T", "I", "L", "J", None]
+    e.grid[BOARD_HEIGHT - 6][2] = "T"
+    _vertical_i(e, 9)
+
+
+def test_engine_reaction_hooks():
+    from config import BOARD_HEIGHT
+    app, m, e, r = _react_setup()
+    _quad_setup(e)
+    n = e.hard_drop()
+    assert n == 4
+    assert len(e.cleared_row_cells) == 4 and e.cleared_row_cells[0][1][0] == "L"
+    assert e.last_hard_drop["dist"] > 0 and e.hard_drop_events == 1
+    offs = e.settle_offsets
+    assert len(offs) == BOARD_HEIGHT and offs[:4] == [0, 0, 0, 0]
+    assert offs[BOARD_HEIGHT - 2] == 4, "위에 있던 줄(맨 아래에서 6번째)은 4칸 내려와 아래에서 2번째 줄이 됨"
+    e._push_garbage(3)
+    assert len(e.push_holes) == 3 and all(0 <= h < 10 for h in e.push_holes)
+    print("  OK 엔진 훅")
+
+
+def test_shatter_settle_and_motion_setting():
+    app, m, e, r = _react_setup()
+    r.render(m)
+    _quad_setup(e)
+    m.on_lines_cleared(e.hard_drop())
+    r.render(m)
+    assert len(r.shards) > 20, "지운 줄이 조각으로 흩어짐"
+    assert r._settle is not None and r._settle["offs"], "위 블록 내려앉기"
+    assert e.cleared_row_cells == [], "한 번만 소비"
+    app2, m2, e2, r2 = _react_setup()
+    m2.shake_scale = 0.0
+    r2.render(m2)
+    _quad_setup(e2)
+    m2.on_lines_cleared(e2.hard_drop())
+    r2.render(m2)
+    assert r2.shards and r2._settle is None, "흔들림 '끔'이면 위치가 움직이는 내려앉기는 없음"
+    print("  OK 파쇄/내려앉기/끔")
+
+
+def test_garbage_rise_and_hole_flash():
+    from config import BOARD_HEIGHT
+    app, m, e, r = _react_setup()
+    r.render(m)
+    e._push_garbage(3)
+    r.render(m)
+    assert r._rise and r._rise["n"] == 3 and len(r.hole_flashes) == 3
+    assert r.hole_flashes[0]["row"] == BOARD_HEIGHT - 3
+    for _ in range(3):
+        r.render(m)
+    time.sleep(0.2)
+    r.render(m)
+    assert r._rise is None, "상승 연출은 짧게 끝남"
+    app2, m2, e2, r2 = _react_setup()
+    m2.shake_scale = 0.0
+    r2.render(m2)
+    e2._push_garbage(2)
+    r2.render(m2)
+    assert r2._rise is None and len(r2.hole_flashes) == 2, "끔: 즉시 표시, 구멍 깜빡임만"
+    print("  OK 쓰레기 줄 상승")
+
+
+def test_hard_drop_trail_and_bounce():
+    app, m, e, r = _react_setup()
+    r.render(m)
+    e.current_piece, e.current_y = "T", 1
+    e.hard_drop()
+    r.render(m)
+    assert r.drop_trails and r._bounce_amp > 0
+    app2, m2, e2, r2 = _react_setup()
+    m2.shake_scale = 0.0
+    r2.render(m2)
+    e2.current_piece, e2.current_y = "T", 1
+    e2.hard_drop()
+    r2.render(m2)
+    assert r2.drop_trails and r2._bounce_amp == 0, "끔: 반동 없음, 궤적은 유지"
+    print("  OK 하드 드롭")
+
+
+def test_attack_origin_row():
+    app, m, e, r = _react_setup()
+    r.render(m)
+    _quad_setup(e)
+    cl = e.hard_drop()
+    m.on_lines_cleared(cl)
+    tgt = next(pid for pid in m.players if pid != m.local_player_id)
+    m.apply_attack(m.local_player_id, tgt, 4)
+    eff = m.attack_effects[-1]
+    assert eff["origin_row"] is not None and 15 <= eff["origin_row"] <= 19
+    r.render(m)                                          # 출발점이 지운 줄 높이여도 그려짐
+    m.apply_attack(tgt, m.local_player_id, 2)
+    assert m.attack_effects[-1]["origin_row"] is None, "받는 공격은 기본 위치"
+    print("  OK 줄->탄환")
+
+
+def test_tspin_hint_and_danger_breath():
+    import ui_renderer as U
+    from config import BOARD_HEIGHT, BOARD_WIDTH
+    app, m, e, r = _react_setup()
+    r.render(m)
+    e.grid = [[None] * BOARD_WIDTH for _ in range(BOARD_HEIGHT)]
+    e.current_piece, e.current_rot, e.current_x = "T", 0, 3
+    while not e._is_touching_ground():
+        e.current_y += 1
+    seen = []
+    orig = r._draw_text
+    r._draw_text = lambda text, *a, **k: (seen.append(text), orig(text, *a, **k))[1]
+    e._detect_tspin = lambda: "full"
+    r.render(m)
+    assert "T-SPIN" in seen, "T-스핀 성립 시 글자로도 알림"
+    del e._detect_tspin
+    seen.clear()
+    r.render(m)
+    assert "T-SPIN" not in seen
+    for y in range(2, BOARD_HEIGHT):
+        e.grid[y] = ["G"] * 9 + [None]
+    for cb in (False, True):
+        U.is_colorblind = (lambda v=cb: v)
+        r.render(m)
+    import config
+    U.is_colorblind = config.is_colorblind
+    print("  OK T-스핀 힌트/위기 숨결(색약 포함)")
+
+
+def test_topout_and_victory_ceremony():
+    from config import BOARD_HEIGHT
+    app, m, e, r = _react_setup()
+    r.render(m)
+    for y in range(BOARD_HEIGHT):
+        e.grid[y] = ["L"] * 10
+    e.game_over = True
+    for _ in range(3):
+        time.sleep(0.05)
+        r.render(m)
+    assert r._topout is not None and r.shards, "탑아웃: 위에서부터 부서짐"
+    app, m, e, r = _react_setup()
+    r.render(m)
+    for y in range(10, BOARD_HEIGHT):
+        e.grid[y] = ["L"] * 9 + [None]
+    for pid in list(m.players):
+        if pid != m.local_player_id and m.players[pid]["is_alive"]:
+            m._eliminate_player(pid, m.local_player_id)
+    assert m.match_finished and m.local_rank == 1
+    r.render(m)
+    assert r._vic_t0 is not None and r._standings_t0 is None, "세리머니 동안은 순위표를 미룸"
+    r._vic_t0 -= r.VICTORY_CEREMONY + 0.1
+    r.render(m)
+    assert r._standings_t0 is not None, "세리머니가 끝나면 순위표"
+    print("  OK 탑아웃/우승 세리머니")
+
+
+def test_glow_particles():
+    import ui_renderer as U
+    app, m, e, r = _react_setup()
+    r.particles.add_sparks(600, 300, (255, 220, 120), count=10, glow=True)
+    r.render(m)
+    assert any(p.get("glow") for p in r.particles.particles)
+    spr = U._glow_sprite(12, (255, 200, 100), 4)
+    assert spr.get_width() == 24 and spr.get_at((12, 12))[0] > spr.get_at((1, 1))[0], "가운데가 더 밝음"
+    print("  OK 발광 파티클")
+
+
 if __name__ == "__main__":
     pygame.init()
     from settings_manager import SETTINGS_FILE
