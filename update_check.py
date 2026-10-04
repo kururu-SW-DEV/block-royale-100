@@ -38,6 +38,29 @@ def is_newer(latest, current=APP_VERSION):
     return bool(a) and a > b
 
 
+def _summarize(body, max_lines=2, max_chars=44):
+    """릴리스 노트 본문에서 '무엇이 바뀌었나' 요약: 목록 항목(- 로 시작) 앞쪽 몇 개를 마크다운 기호 없이 짧게. 없으면 빈 목록"""
+    out = []
+    if not isinstance(body, str):
+        return out
+    for line in body.splitlines():
+        t = line.strip()
+        if not t.startswith(("- ", "* ")):
+            continue
+        t = t[2:].replace("**", "").replace("`", "").strip()
+        if t:
+            out.append(t if len(t) <= max_chars else t[:max_chars - 1] + "…")
+        if len(out) >= max_lines:
+            break
+    return out
+
+
+def breaks_lan(latest, current=APP_VERSION):
+    """주 번호나 부 번호가 다르면(1.2.x -> 1.3.x) 네트워크 규칙이 바뀌었을 수 있어 LAN 상대도 같은 버전이어야 함 (패치 번호만 다르면 같은 방 가능)"""
+    a, b = parse_version(latest), parse_version(current)
+    return len(a) >= 2 and len(b) >= 2 and a[:2] != b[:2]
+
+
 def fetch_latest(opener=None, timeout=TIMEOUT_SECS):
     """최신 릴리스 {"tag", "url"}을 돌려줌. 실패/형식 이상이면 None. opener(url, timeout) -> bytes 는 테스트에서 네트워크를 대신함"""
     try:
@@ -52,7 +75,7 @@ def fetch_latest(opener=None, timeout=TIMEOUT_SECS):
         if not isinstance(tag, str) or not parse_version(tag):
             return None
         url = data.get("html_url") if isinstance(data.get("html_url"), str) and data["html_url"].startswith("https://github.com/") else RELEASES_URL
-        return {"tag": tag, "url": url}
+        return {"tag": tag, "url": url, "summary": _summarize(data.get("body"))}
     except Exception:
         return None
 

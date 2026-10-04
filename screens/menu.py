@@ -149,6 +149,11 @@ class MenuMixin:
             self.toggle_fullscreen()
             return
         self.sound_mgr.play('move')
+        if btn_id == "update_skip":
+            upd = self.update_info()
+            if upd:
+                self.settings.set("update_skip", upd["tag"])
+            return
         if btn_id == "update":
             upd = self.update_info()
             if upd:
@@ -384,6 +389,8 @@ class MenuMixin:
         nr = self._t(name, self.font_mid, C_TEXT, lr.right + 10, rect.centery, "midleft")
         title_id = self.settings.get("title", "")
         title_txt = next((a[1] for a in __import__("stats_manager").ACHIEVEMENTS if a[0] == title_id and title_id in self.stats_mgr.achievements_done()), "")
+        if not title_txt:                                       # 고른 업적 칭호가 없으면 레벨 칭호 (Lv.5 이상)
+            title_txt = __import__("stats_manager").level_title(lv)
         if title_txt:                                           # 칭호(달성한 업적 이름): 이름 오른쪽에 작게
             self._t(self._menu_fit(title_txt, self.font_tiny, 80), self.font_tiny, C_GOLD, nr.right + 8, rect.centery + 1, "midleft")
         diff = BOT_DIFFICULTY_LABELS.get(self.settings.get("bot_difficulty", "mixed"), "혼합").split(" (")[0]
@@ -465,6 +472,11 @@ class MenuMixin:
                 if nxt:                                                  # 보이지 않던 보상(난이도 사다리 ★)을 메뉴에서 알려 줌
                     desc += f"   ★ 다음 도전: {LADDER_NAMES[nxt]} 봇 {LADDER_MIN_PLAYERS}인↑에서 {LADDER_RANK}위 안"
         self._t(self._menu_fit(desc, self.font_help, 900), self.font_help, COL_SUB, cx, by + 238, "midtop")
+        games_all = self.stats_mgr.data.get("total_games", 0)
+        n_prac = len(self.stats_mgr.ch()["practice"]["done"])
+        if games_all < 3 and not (n_prac >= 3 and games_all >= 1):              # 처음 몇 판: 입문 순서를 체크리스트로 (연습 기초 과제 3개 -> 첫 경기)
+            g = f"처음이라면  {'✓' if n_prac >= 3 else '□'} ① 연습 기초 과제 3개 ({min(n_prac, 3)}/3)   {'✓' if games_all >= 1 else '□'} ② 첫 경기 끝까지 해 보기"
+            self._t(self._menu_fit(g, self.font_help, 900), self.font_help, C_GOLD if n_prac < 3 else COL_HINT, cx, by + 262, "midtop")
 
         # 5. 하단 바: 버전 · 키 안내 · 게임 종료
         vr = self._t(f"v{APP_VERSION}", self.font_tiny, COL_HINT, 24, SCREEN_HEIGHT - 42, "topleft")
@@ -478,6 +490,18 @@ class MenuMixin:
             pygame.draw.rect(self.screen, _mix((22, 28, 48), C_GOLD, 0.30 if hov else 0.16), ur, border_radius=12)
             pygame.draw.rect(self.screen, C_GOLD, ur, 1, border_radius=12)
             self._t(label, self.font_tiny, C_GOLD, ur.centerx, ur.centery, "center")
+            sk = pygame.Rect(ur.right + 8, ur.y, self.font_tiny.size("건너뛰기")[0] + 20, 24)                 # 이 버전 건너뛰기
+            self.menu_buttons["update_skip"] = sk
+            pygame.draw.rect(self.screen, (60, 70, 100) if sk.collidepoint(pygame.mouse.get_pos()) else (36, 44, 70), sk, 1, border_radius=12)
+            self._t("건너뛰기", self.font_tiny, COL_SUB, sk.centerx, sk.centery, "center")
+            from update_check import breaks_lan                                                              # 무엇이 바뀌었나 요약 + LAN 경고 (왼쪽 아래 빈 자리)
+            ly = SCREEN_HEIGHT - 66
+            lines = [(x, COL_HINT) for x in (upd.get("summary") or [])]
+            if breaks_lan(upd["tag"]):
+                lines.append(("LAN 멀티: 상대도 같은 버전 필요", C_ORANGE))
+            for ln, col in lines[-3:][::-1]:
+                self._t(self._menu_fit(ln, self.font_tiny, 262), self.font_tiny, col, 24, ly, "bottomleft")           # 가운데 안내 줄(x 300~)과 겹치지 않는 폭
+                ly -= 17
         self._keycap_row([("↑↓←→", "이동"), ("Enter", "선택"), ("R", "전적"), ("S", "설정"), ("F1", "규칙"), ("Esc", "종료")],
                          cx, SCREEN_HEIGHT - 42, gap=20, font=self.font_small, label_col=COL_SUB)
         quit_r = pygame.Rect(SCREEN_WIDTH - 24 - 112, SCREEN_HEIGHT - 50, 112, 34)

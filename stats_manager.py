@@ -34,6 +34,18 @@ def xp_for_next(level):
     return int(100 * max(1, int(level)) ** 1.3)
 
 
+LEVEL_TITLES = ((5, "견습"), (10, "숙련자"), (15, "베테랑"), (20, "전략가"), (30, "명인"), (40, "전설"), (50, "블록 로열"))      # 레벨 칭호: 업적 칭호를 고르지 않았을 때 프로필에 표시 (Lv.10 이후의 장기 목표)
+
+
+def level_title(level):
+    """레벨에 해당하는 칭호 (Lv.5 미만이면 빈 문자열)"""
+    out = ""
+    for lv, name in LEVEL_TITLES:
+        if int(level) >= lv:
+            out = name
+    return out
+
+
 def level_of(xp):
     """경험치 -> (레벨, 이번 레벨에서 쌓은 경험치, 이번 레벨을 채우는 데 필요한 경험치). 레벨 1에서 시작"""
     xp = max(0, int(xp))

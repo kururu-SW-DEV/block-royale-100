@@ -865,6 +865,11 @@ class GameMixin:
                 self._open_modal("호스트가 게임을 종료했습니다", ["방장이 게임을 나가서 이 게임이 종료되었습니다.",
                                                          saved or "메인 메뉴로 돌아갑니다."],
                                  [("ok_menu", "메인 메뉴로", "blue", "ENTER")])
+            elif nm.taken_over:
+                self._notice_shown = True
+                saved = self._abort_match_with_record()
+                self._open_modal("연결이 오래 끊겨 봇이 대신 플레이했습니다", ["15초 넘게 호스트와 연결이 끊겨 호스트가 내 자리를 봇에게 넘겼습니다.", saved or "메인 메뉴로 돌아갑니다."],
+                                 [("ok_menu", "메인 메뉴로", "blue", "ENTER")])
             elif nm.seconds_since_host_packet() > 15.0:
                 self._notice_shown = True
                 saved = self._abort_match_with_record()

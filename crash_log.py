@@ -28,7 +28,7 @@ def write_error(title, exc_text):
             with open(path, "rb") as f:
                 data = f.read()
             with open(path, "wb") as f:
-                f.write(data[len(data) // 2:])
+                f.write(data[len(data) // 2:].decode("utf-8", "ignore").encode("utf-8"))      # 자를 때 글자 중간이 깨지지 않게 시작 부분의 잘린 바이트는 버림
         with open(path, "a", encoding="utf-8") as f:
             f.write(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')}  v{APP_VERSION}  {title} =====\n{exc_text}\n")
     except Exception:
@@ -51,12 +51,46 @@ def install():
     threading.excepthook = _thread_excepthook
 
 
+_swallowed = {}
+
+
+def note_swallowed(where):
+    """조용히 넘기는 예외(패킷 처리 등): 곳마다 횟수를 세고 처음 한 번만 traceback을 error.log에 남김 (LAN 문제 추적용)"""
+    n = _swallowed.get(where, 0) + 1
+    _swallowed[where] = n
+    if n == 1:
+        write_error(f"Swallowed exception ({where}, first occurrence)", traceback.format_exc())
+
+
+def emergency_save(app):
+    """치명적 오류로 종료하기 전에 설정/전적과 진행 중이던 판의 리플레이를 저장해 보려 함 (실패해도 무시)"""
+    for fn in (lambda: app.settings.save(), lambda: app.stats_mgr.save()):
+        try:
+            fn()
+        except Exception:
+            pass
+    try:
+        rec, m = getattr(app, "replay_rec", None), getattr(app, "match", None)
+        if rec is not None and m is not None and not rec.finished and not getattr(m, "practice", False):
+            from replay import save_replay
+            rank = m.local_rank if m.local_rank > 0 else m.alive_count + 1
+            save_replay(rec.finish(rank, m.total_players, m.local_ko_count, m.local_engine.score, m.survival_seconds()))
+    except Exception:
+        pass
+
+
 def show_fatal_message(exc_text):
     """(Windows) 콘솔이 없는 exe에서 갑자기 꺼지지 않고, 로그 위치를 알려 주는 창을 띄움"""
     try:
         import ctypes
         last = exc_text.strip().splitlines()[-1] if exc_text.strip() else ""
-        ctypes.windll.user32.MessageBoxW(
-            0, f"예기치 않은 오류로 게임이 종료됩니다.\n\n{last}\n\n오류 기록: {log_path()}", "BLOCK ROYALE 100", 0x10)
+        try:
+            import i18n
+            en = i18n.language() == "en"
+        except Exception:
+            en = False
+        msg = (f"The game will close because of an unexpected error.\n\n{last}\n\nError log: {log_path()}" if en
+               else f"예기치 않은 오류로 게임이 종료됩니다.\n\n{last}\n\n오류 기록: {log_path()}")
+        ctypes.windll.user32.MessageBoxW(0, msg, "BLOCK ROYALE 100", 0x10)
     except Exception:
         pass

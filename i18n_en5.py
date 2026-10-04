@@ -142,6 +142,11 @@ EXACT = {
 }
 
 EXACT.update({
+    "건너뛰기": "Skip", "LAN 멀티: 상대도 같은 버전 필요": "LAN: others need the same version",
+    "견습": "Apprentice", "숙련자": "Adept", "베테랑": "Veteran", "전략가": "Strategist", "명인": "Master", "전설": "Legend", "블록 로열": "Block Royale",
+    "배틀로얄 · 커스텀": "Battle Royale · Custom", "서바이벌 · 커스텀": "Survival · Custom",
+    "연결이 오래 끊겨 봇이 대신 플레이했습니다": "Disconnected too long; a bot played in your place",
+    "15초 넘게 호스트와 연결이 끊겨 호스트가 내 자리를 봇에게 넘겼습니다.": "You were disconnected from the host for over 15 seconds, so the host handed your seat to a bot.",
     "고스트 레이스": "Ghost Race", "끝": "End",
     "켜면 혼자 하는 경기에서 저장된 내 리플레이 중 점수가 가장 높은 판의 보드가 왼쪽 상태 칸 아래에 작게 함께 달립니다. 같은 경기 시각의 그 판 점수와의 차이도 보여 줍니다. 리플레이가 없으면 아무것도 표시되지 않습니다.": "When on, in solo matches the board of your highest-scoring saved replay runs in a small panel under the left status box, with the score difference at the same match time. Nothing shows if you have no replays.",
     "내 최고 판이 경기 옆에 함께 달립니다 (아직 저장된 리플레이 없음)": "Your best run races alongside the match (no saved replays yet)",
@@ -154,7 +159,6 @@ EXACT.update({
     "아직 메시지가 없습니다. 인사를 건네 보세요!": "No messages yet. Say hello!", "메시지를 입력하세요": "Type a message", "여기를 클릭하거나 Tab": "Click here or press Tab",
     "대기실  ·  호스트": "Lobby  ·  Host", "대기실  ·  참가자": "Lobby  ·  Guest", "방 참가": "Join Room",
     "화면의 글이 모두 바뀝니다 (저장된 데이터 속 이름 등 일부는 그대로)": "The whole UI switches language; a few names (e.g. in saved data) stay as they were",
-    "게임 화면 블록의 모양을 바꿉니다. 색은 위의 '블록 색상' 설정을 따르며, 로고와 미니 보드는 그대로입니다.": "Changes the look of blocks in the game. Color follows the 'Block color' setting above; the logo and mini boards are unchanged.",
     "  잠긴 스킨: ": "  Locked skins: ",
     "업적 3개 달성": "Earn 3 achievements",
     "픽셀": "Pixel", "유리": "Glass", "별빛": "Starlight", "불씨": "Ember", "프리즘": "Prism",
@@ -173,6 +177,8 @@ EXACT.update({
 })
 
 TEMPLATES = {
+    "처음이라면  {} ① 연습 기초 과제 3개 ({#}/3)   {} ② 첫 경기 끝까지 해 보기": "New here?  {} 1) 3 basic practice tasks ({}/3)   {} 2) play your first match to the end",
+    " 칭호 '{}'": " title '{}'",
     "내 최고 판({}점)이 경기 옆에 함께 달립니다 (혼자 하는 경기)": "Your best run ({} pts) races alongside the match (solo matches)",
     "{#}인": "{} players",
     "♥ 아군 위기!  {}": "♥ Ally in danger!  {}",

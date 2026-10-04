@@ -3597,7 +3597,7 @@ class UIRenderer:
         if rw and rw["xp"].get("gain", 0) > 0:
             xp = rw["xp"]
             up = xp["lv_after"] > xp["lv_before"]
-            lines.append((f"경험치 +{xp['gain']} XP   ·   Lv.{xp['lv_after']}" + ("   ★ 레벨 업!" if up else "") + (f"   ·   다음 해금: {rw['next_unlock']}" if rw.get("next_unlock") else ""), C_GOLD if up else (170, 200, 235)))
+            lines.append((f"경험치 +{xp['gain']} XP   ·   Lv.{xp['lv_after']}" + ("   ★ 레벨 업!" + (f" 칭호 '{__import__('stats_manager').level_title(xp['lv_after'])}'" if __import__('stats_manager').level_title(xp['lv_after']) != __import__('stats_manager').level_title(xp['lv_before']) else "") if up else "") + (f"   ·   다음 해금: {rw['next_unlock']}" if rw.get("next_unlock") else ""), C_GOLD if up else (170, 200, 235)))
         if rw and rw["highlights"]:
             lines.append(("명장면:  " + " · ".join(match.HIGHLIGHT_LABELS.get(h, (h, None))[0] for h in rw["highlights"][:4]), (255, 215, 130)))
         goal = getattr(match, "next_goal", None)

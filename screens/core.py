@@ -44,7 +44,10 @@ class CoreMixin:
     def update_info(self):
         """새 버전이 확인됐으면 {"tag", "url"}, 아니면 None"""
         chk = self._update_checker
-        return chk.result if (chk is not None and chk.done and self.settings.get("update_check", False)) else None
+        res = chk.result if (chk is not None and chk.done and self.settings.get("update_check", False)) else None
+        if res and res.get("tag") == self.settings.get("update_skip", ""):
+            return None                                                   # '이 버전 건너뛰기'를 누른 버전은 다시 알리지 않음 (더 새 버전이 나오면 다시 알림)
+        return res
 
     def apply_handling(self):
         """설정의 DAS/ARR/소프트드롭(ms)을 실제 입력 처리에 반영"""
@@ -295,8 +298,8 @@ class CoreMixin:
         self.match.challenge_kind = kind
         self.match.race_ghost = None
         if mode == "SOLO" and self.settings.get("ghost_race", False):                # 고스트 레이스: 저장된 내 리플레이 중 최고 점수 판
-            from replay import load_replays, best_replay, ReplayPlayer
-            best = best_replay(load_replays())
+            from replay import load_replays_cached, best_replay, ReplayPlayer
+            best = best_replay(load_replays_cached(), mode=("survival" if not self.match.attacks_enabled else "battle"), total=self.match.total_players)
             if best is not None:
                 self.match.race_ghost = ReplayPlayer(best)
                 self.match.race_ghost.paused = True                                  # 재생 시각은 경기 시간(elapsed)에 맞춰 직접 이동

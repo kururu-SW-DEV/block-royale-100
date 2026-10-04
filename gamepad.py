@@ -21,7 +21,8 @@ STICK_OFF = 0.35         # 이만큼 아래로 돌아오면 입력 해제 (경�
 # 게임 중 버튼 -> 동작 이름 (settings의 ACTION 이름)
 GAME_BUTTONS = {0: "rotate_cw", 1: "rotate_ccw", 2: "hold", 3: "rotate_180", 4: "hold", 5: "hard_drop", 6: "target_cycle", 7: "pause"}
 # 메뉴 등 버튼 -> 키
-MENU_BUTTONS = {0: pygame.K_RETURN, 1: pygame.K_ESCAPE, 7: pygame.K_RETURN, 6: pygame.K_TAB}
+MENU_BUTTONS = {0: pygame.K_RETURN, 1: pygame.K_ESCAPE, 7: pygame.K_RETURN, 6: pygame.K_TAB,
+                2: pygame.K_SPACE, 3: pygame.K_p, 4: pygame.K_PAGEUP, 5: pygame.K_PAGEDOWN}          # X=Space(리플레이 일시정지) Y=P(여기서부터 연습/연습) LB/RB=페이지 넘기기(업적/목록)
 MENU_DIRS = {"left": pygame.K_LEFT, "right": pygame.K_RIGHT, "up": pygame.K_UP, "down": pygame.K_DOWN}
 GAME_DIRS = {"left": "move_left", "right": "move_right", "down": "soft_drop", "up": "hard_drop"}
 
@@ -31,7 +32,8 @@ CB = {name: getattr(pygame, "CONTROLLER_BUTTON_" + name, -1) for name in
       ("A", "B", "X", "Y", "BACK", "START", "LEFTSHOULDER", "RIGHTSHOULDER", "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT")}
 CTRL_GAME_BUTTONS = {CB["A"]: "rotate_cw", CB["B"]: "rotate_ccw", CB["X"]: "hold", CB["Y"]: "rotate_180", CB["LEFTSHOULDER"]: "hold",
                      CB["RIGHTSHOULDER"]: "hard_drop", CB["BACK"]: "target_cycle", CB["START"]: "pause"}
-CTRL_MENU_BUTTONS = {CB["A"]: pygame.K_RETURN, CB["B"]: pygame.K_ESCAPE, CB["START"]: pygame.K_RETURN, CB["BACK"]: pygame.K_TAB}
+CTRL_MENU_BUTTONS = {CB["A"]: pygame.K_RETURN, CB["B"]: pygame.K_ESCAPE, CB["START"]: pygame.K_RETURN, CB["BACK"]: pygame.K_TAB,
+                     CB["X"]: pygame.K_SPACE, CB["Y"]: pygame.K_p, CB["LEFTSHOULDER"]: pygame.K_PAGEUP, CB["RIGHTSHOULDER"]: pygame.K_PAGEDOWN}
 CTRL_DPAD = {CB["DPAD_UP"]: "up", CB["DPAD_DOWN"]: "down", CB["DPAD_LEFT"]: "left", CB["DPAD_RIGHT"]: "right"}
 _CBTN = (getattr(pygame, "CONTROLLERBUTTONDOWN", -1), getattr(pygame, "CONTROLLERBUTTONUP", -1))
 _CAXIS = getattr(pygame, "CONTROLLERAXISMOTION", -1)
@@ -170,6 +172,8 @@ class GamepadMapper:
                 self.on_device_event(e)
                 continue
             inst = getattr(e, "instance_id", 0)
+            if inst in self.ctrls and e.type in (pygame.JOYBUTTONDOWN, pygame.JOYBUTTONUP, pygame.JOYHATMOTION, pygame.JOYAXISMOTION):
+                continue                                      # SDL은 GameController로 연 장치도 조이스틱 이벤트를 함께 보냄: 컨트롤러 이벤트만 처리해야 입력이 두 번 오지 않음
             made = []
             if e.type == pygame.JOYHATMOTION:
                 made = self._set_dirs((inst, "hat"), self._hat_dirs(e.value), in_game)

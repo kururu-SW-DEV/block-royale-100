@@ -13,7 +13,8 @@ import secrets
 from config import DEFAULT_UDP_PORT, DISCOVERY_BROADCAST_PORT, NAME_COLOR_COUNT, APP_VERSION
 
 UNSTABLE_AFTER = 3.0         # (호스트) 참가자에게서 이만큼 신호가 없으면 '연결 불안정'으로 표시
-DROP_AFTER = 15.0            # 이만큼 없으면 연결 끊김으로 보고 탈락 처리 (예전 6초에서 늘림: 잠깐 끊겼다 돌아오는 경우를 버팀)
+DROP_AFTER = 15.0             # 게임 중 이만큼 없으면 연결 끊김으로 보고 탈락 처리 (예전 6초에서 늘림: 잠깐 끊겼다 돌아오는 경우를 버팀)
+LOBBY_DROP_AFTER = 10.0       # 대기실에서 이 시간(초) 동안 신호(1초마다 오는 PING 포함)가 없으면 명단에서 뺌
 
 
 def _sanitize_token(tok):
@@ -43,13 +44,13 @@ class MsgType:
     # 호스트 -> 참가자
     JOIN_ACK = "JOIN_ACK"; JOIN_NACK = "JOIN_NACK"; ROSTER = "ROSTER"; GAME_START = "GAME_START"
     WORLD_SYNC = "WORLD_SYNC"; LOBBY_RETURN = "LOBBY_RETURN"; HOST_LEFT = "HOST_LEFT"; PROFILE_ACK = "PROFILE_ACK"
-    PROBE_ACK = "PROBE_ACK"
+    PROBE_ACK = "PROBE_ACK"; TAKEN_OVER = "TAKEN_OVER"        # TAKEN_OVER: 오래 끊겨 봇이 그 자리를 이어받았다는 통보 (모르는 종류는 옛 버전이 무시하므로 프로토콜 번호는 그대로)
     # LAN 방 알림
     BEACON = "BEACON"; BEACON_CLOSED = "BEACON_CLOSED"
 
     ALL = frozenset({"JOIN_REQ", "CLIENT_STATE", "ATTACK", "PING", "LEAVE", "PROFILE", "CHAT", "PROBE", "JOIN_ACK",
                      "JOIN_NACK", "ROSTER", "GAME_START", "WORLD_SYNC", "LOBBY_RETURN", "HOST_LEFT", "PROFILE_ACK",
-                     "PROBE_ACK", "BEACON", "BEACON_CLOSED"})
+                     "PROBE_ACK", "TAKEN_OVER", "BEACON", "BEACON_CLOSED"})
 
 
 def _disable_udp_connreset(sock):
@@ -259,6 +260,8 @@ class NetworkManager:
         self._chat_lock = threading.Lock()
         self._chat_seen = set()        # (클라이언트) 이미 받은 채팅 순번 (중복 수신 방지)
         self.host_left = False         # (클라이언트) 호스트가 방을 닫았다는 통보를 받음
+        self.taken_over = False        # (클라이언트) 오래 끊겨 호스트가 내 자리를 봇에게 넘겼다는 통보를 받음
+        self.taken_tokens = {}         # (호스트) 봇이 이어받은 참가자의 세션 토큰 -> 마지막으로 통보한 시각 (돌아온 참가자에게 알려 주기 위함)
         self.last_server_packet = 0.0  # (클라이언트) 호스트에게서 마지막으로 패킷을 받은 시각
         self.left_events = []          # (호스트) 나간 참가자 이름 목록 (화면 알림용)
         self.probe_results = {}        # 직접 조회한 주소의 방 정보 {(host, port): {ok, ts, room_name, players, max_players, open}}
@@ -370,6 +373,10 @@ class NetworkManager:
                     if cinfo is None:
                         cinfo = self._host_try_rebind(msg, addr)          # 같은 세션 토큰이면 새 주소로 이어 붙임 (공유기 주소 변경/재접속)
                         if cinfo is None:
+                            tk = _sanitize_token(msg.get("tok"))
+                            if tk and tk in self.taken_tokens and time.time() - self.taken_tokens[tk] > 1.0:
+                                self.taken_tokens[tk] = time.time()
+                                self._send_taken_over(addr)                # 봇에게 자리를 넘긴 참가자가 돌아옴: 이유를 알려 줌
                             continue
                     seq = msg.get("seq")
                     if isinstance(seq, int) and seq <= cinfo.get("seq", -1):
@@ -442,8 +449,12 @@ class NetworkManager:
                     if addr in self.clients:
                         self.clients[addr]["last_seen"] = time.time()
             except Exception:
-                # 패킷 깨짐 등 무시
-                pass
+                # 패킷 깨짐 등 무시 (다만 곳별 횟수를 세고 처음 한 번은 error.log에 남김)
+                try:
+                    import crash_log
+                    crash_log.note_swallowed("host receive loop")
+                except Exception:
+                    pass
 
     def _host_try_rebind(self, msg, addr):
         """(호스트) 등록되지 않은 주소에서 온 CLIENT_STATE가 기존 참가자와 같은 세션 토큰을 가졌으면 그 참가자의 주소를 새 주소로 바꿈.
@@ -476,6 +487,17 @@ class NetworkManager:
             except Exception:
                 pass
             return
+        if info is None:                                        # 같은 세션 토큰의 참가자가 다른 주소로 다시 JOIN하면 새 참가자를 만들지 않고 기존 자리에 이어 붙임 (대기실/경기 중 공유기 주소 변경)
+            tok = _sanitize_token(msg.get("tok"))
+            if tok:
+                for old_addr, old_info in list(self.clients.items()):
+                    if old_info.get("token") == tok and old_addr != addr:
+                        self.clients.pop(old_addr, None)
+                        old_info["last_seen"] = time.time()
+                        self.clients[addr] = old_info
+                        info = old_info
+                        print(f"[Network] Client {info['id']} rejoined from {addr}.")
+                        break
         if info is None:
             if self.game_started or len(self.clients) + 1 >= self.room_settings.get("max_players", 100):
                 reason = "started" if self.game_started else "full"
@@ -668,6 +690,9 @@ class NetworkManager:
             return
         if takeover and self.game_started:
             snap = self.remote_players_state.pop(info["id"], {}).get("snap")
+            if info.get("token"):
+                self.taken_tokens[info["token"]] = time.time()
+            self._send_taken_over(addr)
             self.takeover_events.append((info["id"], info.get("name", info["id"]), snap))
             self._host_publish_chat("SYS", "시스템", f"{info.get('name', info['id'])} 님의 연결이 끊겨 봇이 대신 플레이합니다", system=True)
             self.host_broadcast_roster()
@@ -681,11 +706,23 @@ class NetworkManager:
         self.host_broadcast_roster()
         print(f"[Network] Client {info['id']} left.")
 
-    def reap_clients(self, timeout=DROP_AFTER):
-        """(호스트) 게임 중 일정 시간 아무 신호가 없는 참가자를 연결 끊김으로 처리"""
-        if not self.game_started:
-            return
+    def _send_taken_over(self, addr):
+        """(호스트) 그 주소로 "봇이 대신 플레이 중" 통보 (상대가 돌아와 있다면 이유를 알 수 있게)"""
+        try:
+            self.sock.sendto(json.dumps({"type": MsgType.TAKEN_OVER}).encode('utf-8'), addr)
+        except Exception:
+            pass
+
+    def reap_clients(self, timeout=DROP_AFTER, lobby=False):
+        """(호스트) 일정 시간 아무 신호가 없는 참가자를 정리. 게임 중이면 봇이 이어받고, 대기실(lobby=True)이면 명단에서 뺌 (강제 종료한 참가자가 남아 있지 않게)"""
         now = time.time()
+        if not self.game_started:
+            if not lobby:
+                return
+            for addr, info in list(self.clients.items()):
+                if now - info.get("last_seen", now) > LOBBY_DROP_AFTER:
+                    self._host_drop_client(addr)
+            return
         for addr, info in list(self.clients.items()):
             if now - info.get("last_seen", now) > timeout:
                 self._host_drop_client(addr, takeover=True)
@@ -749,6 +786,7 @@ class NetworkManager:
         self.chat_log.clear()
         self._chat_seen.clear()
         self.host_left = False
+        self.taken_over = False
         self.last_server_packet = 0.0
 
         try:
@@ -835,6 +873,9 @@ class NetworkManager:
 
                 if mtype == MsgType.HOST_LEFT:
                     self.host_left = True
+
+                elif mtype == MsgType.TAKEN_OVER:
+                    self.taken_over = True
 
                 elif mtype == MsgType.LOBBY_RETURN:
                     # 호스트가 다시 대기실로 돌아옴: 지난 경기 상태를 비우고 다음 시작 신호를 기다림

@@ -452,6 +452,7 @@ if __name__ == "__main__":
         _selftest()
         pygame.quit()
         sys.exit(0)
+    app = None
     try:
         app = BlockRoyaleApp()
         app.run()
@@ -459,5 +460,7 @@ if __name__ == "__main__":
         import traceback
         text = traceback.format_exc()
         crash_log.write_error("Fatal error in main loop", text)      # 오류 원인을 파일에 남기고 안내 후 종료
+        if app is not None:
+            crash_log.emergency_save(app)                            # 진행 중이던 판의 전적/리플레이가 통째로 사라지지 않게 저장 시도
         crash_log.show_fatal_message(text)
         sys.exit(1)

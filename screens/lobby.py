@@ -165,6 +165,7 @@ class LobbyMixin:
         self.menu_bg.update(dt)
         rs = self.net_mgr.room_settings
         if self.net_mgr.mode == "HOST":
+            self.net_mgr.reap_clients(lobby=True)              # 대기실에서 응답이 끊긴 참가자 정리
             diff, mode = self.settings.get("bot_difficulty", "mixed"), self.settings.get("game_mode", "battle")
             team = bool(self.settings.get("rule_team", False)) and mode != "survival"
             if rs.get("target") != self.target_player_count or rs.get("diff") != diff or rs.get("mode") != mode or rs.get("team") != team:

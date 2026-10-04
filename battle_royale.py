@@ -436,7 +436,8 @@ class BattleRoyaleMatch:
         p = self.players.get(pid)
         if not p or not p["is_alive"] or p.get("bot") or pid == self.local_player_id:
             return False
-        bot = AIBot(bot_id=pid, name=p["name"], difficulty="normal")
+        diff = self.bot_difficulty if self.bot_difficulty in ("easy", "normal", "hard", "master") else "normal"      # 방 난이도를 따름 (혼합이면 보통)
+        bot = AIBot(bot_id=pid, name=p["name"], difficulty=diff)
         eng = bot.engine
         loaded = False
         if isinstance(snap, dict):

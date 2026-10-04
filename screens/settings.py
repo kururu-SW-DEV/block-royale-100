@@ -58,7 +58,6 @@ TAB_NAV = {
               ],
     "help": [("title", None, "title_prev", "title_next"), ("rules", "open_rules", None, None), ("tips_replay", "tips_replay", None, None),
              ("matchlog", "matchlog_toggle", "matchlog=off", "matchlog=on"),
-             ("gamepad", "gamepad_toggle", "gamepad=off", "gamepad=on"),
              ("ghost", "ghost_toggle", "ghost=off", "ghost=on"),
              ("update", "update_toggle", "update=off", "update=on"), ("errlog", "open_errlog", None, None)],
     "general": [("fs", "toggle_fs", "fs=window", "fs=full"), ("res", "res_next", "res_prev", "res_next"),
@@ -71,7 +70,8 @@ TAB_NAV = {
               ("rule_team", "rt_toggle", "rt=off", "rt=on")],
     "react": [("react_das", None, "das_dec", "das_inc"), ("react_arr", None, "arr_dec", "arr_inc"), ("react_sdf", None, "sdf_dec", "sdf_inc"),
               ("react_dcd", None, "dcd_dec", "dcd_inc"), ("react_dcancel", "dcancel_inc", "dcancel_dec", "dcancel_inc"),
-              ("react_hpre", "hpre_inc", "hpre_dec", "hpre_inc")],
+              ("react_hpre", "hpre_inc", "hpre_dec", "hpre_inc"),
+              ("gamepad", "gamepad_toggle", "gamepad=off", "gamepad=on")],
     "audio": [("bgm", "bgm_toggle", "bgm_dec", "bgm_inc"), ("stage_bgm", None, "stage_bgm_prev", "stage_bgm_next"),
               ("sfx", "sfx_toggle", "sfx_dec", "sfx_inc"), ("warn", "warn_next", "warn_prev", "warn_next"),
               ("announcer", "announcer_toggle", "announcer_toggle", "announcer_toggle"), ("sfx_test", "sfx_test", None, None)],
@@ -127,11 +127,11 @@ HELP = {
 # 탭별 '기본값으로' 대상 설정 키
 TAB_DEFAULT_KEYS = {
     "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake", "language"],
-    "help": ["match_log", "update_check", "gamepad", "ghost_race"],
+    "help": ["match_log", "update_check", "ghost_race"],
     "general": ["resolution", "mini_detail", "color_mode", "text_size", "block_skin", "key_hints"],
     "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume", "warn_volume", "announcer"],
     "keys": [],
-    "react": ["das_ms", "arr_ms", "sdf_ms", "dcd_ms", "das_cancel"],
+    "react": ["das_ms", "arr_ms", "sdf_ms", "dcd_ms", "das_cancel", "gamepad"],
     "rules": ["rule_garbage", "rule_gravity", "rule_badges", "rule_team"],
 }
 
@@ -708,7 +708,6 @@ class SettingsMixin:
         self._s_row("shake", y, 52, "화면 흔들림", "쿼드/피격/K.O. 흔들림, 큰 순간의 번쩍임 (끔: 둘 다 없음)")
         self._s_cycler("shake_prev", "shake_next", SHAKE_LABELS.get(shake, "보통"), RIGHT, y + 26)
         y += 52
-
     def _render_tab_help(self):
         y = TOP
         done_ids = self.stats_mgr.achievements_done()
@@ -728,14 +727,9 @@ class SettingsMixin:
         self._s_row("matchlog", y, 50, "경기 기록 저장", "테스트용: 경기마다 JSON 기록을 남김")
         self._s_seg([("matchlog=off", "끔"), ("matchlog=on", "켜기")], "matchlog=on" if log_on else "matchlog=off", RIGHT, y + 25)
         y += 50
-        pad_on = bool(self.settings.get("gamepad", True))
-        npad = len(self.gamepad.joys) + len(self.gamepad.ctrls)
-        self._s_row("gamepad", y, 50, "게임패드", f"연결된 컨트롤러 {npad}개  ·  십자키/스틱 이동, A·B 회전" if npad else "연결된 컨트롤러 없음  ·  연결하면 바로 사용할 수 있습니다")
-        self._s_seg([("gamepad=off", "끔"), ("gamepad=on", "켜기")], "gamepad=on" if pad_on else "gamepad=off", RIGHT, y + 25)
-        y += 50
         gh_on = bool(self.settings.get("ghost_race", False))
-        from replay import load_replays, best_replay
-        _b = best_replay(load_replays())
+        from replay import load_replays_cached, best_replay
+        _b = best_replay(load_replays_cached(), mode="battle")
         self._s_row("ghost", y, 50, "고스트 레이스", (f"내 최고 판({_b['score']:,}점)이 경기 옆에 함께 달립니다 (혼자 하는 경기)" if _b else "내 최고 판이 경기 옆에 함께 달립니다 (아직 저장된 리플레이 없음)"))
         self._s_seg([("ghost=off", "끔"), ("ghost=on", "켜기")], "ghost=on" if gh_on else "ghost=off", RIGHT, y + 25)
         y += 50
@@ -924,6 +918,11 @@ class SettingsMixin:
             on_col = C_ACCENT if text not in ("끔", "사용자") else COL_SUB
             self._s_cycler(dec, inc, text, RIGHT, y + 28, color=on_col)
             y += 56
+        pad_on = bool(self.settings.get("gamepad", True))
+        npad = len(self.gamepad.joys) + len(self.gamepad.ctrls)
+        self._s_row("gamepad", y, 50, "게임패드", f"연결된 컨트롤러 {npad}개  ·  십자키/스틱 이동, A·B 회전" if npad else "연결된 컨트롤러 없음  ·  연결하면 바로 사용할 수 있습니다")
+        self._s_seg([("gamepad=off", "끔"), ("gamepad=on", "켜기")], "gamepad=on" if pad_on else "gamepad=off", RIGHT, y + 25)
+        y += 50
 
     # ------------------------------------------------------------------ 전체 화면
     def _render_settings(self):

@@ -483,7 +483,7 @@ class RecordsMixin:
                 self._t(str(rp["kos"]), self.font_small, (255, 150, 150), box_x + 360, y + 14, "center")
                 self._t(f"{rp['score']:,}", self.font_small, C_GOLD, box_x + 520, y + 14, "midright")
                 self._t(f"{rp['secs'] // 60}:{rp['secs'] % 60:02d}", self.font_small, C_TEXT, box_x + 640, y + 14, "center")
-                self._t("서바이벌" if rp.get("mode") == "survival" else "배틀로얄", self.font_small, C_DIM, box_x + 760, y + 14, "center")
+                self._t(("서바이벌" if rp.get("mode") == "survival" else "배틀로얄") + (" · 커스텀" if rp.get("custom") else ""), self.font_small, C_DIM, box_x + 760, y + 14, "center")
             return
         # ---- 재생 화면: 가운데 보드, 왼쪽 정보, 오른쪽 조작 안내, 아래 진행 바
         data = v.data

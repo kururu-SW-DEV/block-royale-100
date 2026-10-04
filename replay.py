@@ -161,13 +161,39 @@ def _clean(entry):
         v = entry.get(k, 0)
         out[k] = int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0 else 0
     out["date"] = entry.get("date", "")[:16] if isinstance(entry.get("date"), str) else ""
+    out["mode"] = "survival" if entry.get("mode") == "survival" else "battle"
+    out["custom"] = bool(entry.get("custom"))
     return out
 
 
-def best_replay(replays):
-    """고스트로 쓸 '내 최고 판': 점수가 가장 높은 판 (같으면 더 오래 버틴 판). 사건이 있는 판만. 없으면 None"""
-    ok = [r for r in replays if r.get("events")]
+def best_replay(replays, mode=None, total=None):
+    """고스트로 쓸 '내 최고 판': 점수가 가장 높은 판 (같으면 더 오래 버틴 판). 사건이 있는 일반 규칙 판만 (커스텀 규칙 판은 제외).
+    mode/total을 주면 같은 모드 판 중에서, 같은 인원 판이 있으면 그 판들 중에서 고름. 없으면 None"""
+    ok = [r for r in replays if r.get("events") and not r.get("custom")]
+    if mode is not None:
+        ok = [r for r in ok if r.get("mode", "battle") == mode]
+    if total is not None and any(r.get("total") == total for r in ok):
+        ok = [r for r in ok if r.get("total") == total]
     return max(ok, key=lambda r: (r.get("score", 0), r.get("secs", 0))) if ok else None
+
+
+_cache = {}
+
+
+def load_replays_cached(path=None):
+    """load_replays 결과를 파일 수정 시각/크기가 같으면 재사용 (설정 화면이 프레임마다 파일을 읽지 않게)"""
+    path = path or replay_path()
+    try:
+        st = os.stat(path)
+        key = (path, st.st_mtime_ns, st.st_size)
+    except OSError:
+        return []
+    hit = _cache.get("v")
+    if hit and hit[0] == key:
+        return hit[1]
+    data = load_replays(path)
+    _cache["v"] = (key, data)
+    return data
 
 
 def load_replays(path=None):
@@ -181,7 +207,7 @@ def load_replays(path=None):
     if not isinstance(items, list):
         return []
     out = [c for c in (_clean(e) for e in items) if c]
-    return out[-MAX_REPLAYS:]
+    return out[-(MAX_REPLAYS + 2):]                         # 최근 판 + 모드별 최고 판 고정 보관분
 
 
 def save_replay(entry, path=None):
@@ -190,8 +216,16 @@ def save_replay(entry, path=None):
     try:
         if not entry or len(entry.get("events", [])) < 3:       # 거의 아무 일도 없던 판은 저장하지 않음
             return False
+        entry = dict(entry)
+        entry.setdefault("mode", "battle")
         items = load_replays(path) + [entry]
-        items = items[-MAX_REPLAYS:]
+        recent = items[-MAX_REPLAYS:]
+        pins = []
+        for mode in ("battle", "survival"):                  # 모드별 최고 점수 판은 10판 순환에서 밀려나도 남겨 고스트가 갑자기 바뀌지 않게 함
+            best = best_replay(items, mode=mode)
+            if best is not None and not any(best is r for r in recent):
+                pins.append(best)
+        items = pins + recent
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"replays": items}, f, separators=(",", ":"))

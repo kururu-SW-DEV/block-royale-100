@@ -34,11 +34,22 @@ def main():
     missing = {}
     orig = HiFont.render
 
+    wide = {}
+    cut = {}
+
     def render(self, text, *a, **k):
         out = HiFont.text_filter(text) if HiFont.text_filter else text
         if isinstance(out, str) and HAN.search(out) and out not in ALLOWED:
             missing[out] = missing.get(out, 0) + 1
-        return orig(self, text, *a, **k)
+        surf = orig(self, text, *a, **k)
+        try:
+            if surf.get_width() > CANVAS.length(1366, 1) * 0.97:       # 화면 폭에 가까운 한 줄은 화면 밖으로 넘칠 위험 (영어는 한국어보다 길어지기 쉬움)
+                wide[out] = surf.get_width()
+            if isinstance(out, str) and out.endswith(("...", "…")) and len(out) > 12:
+                cut[out] = cut.get(out, 0) + 1
+        except Exception:
+            pass
+        return surf
 
     HiFont.render = render
     random.seed(5)
@@ -104,6 +115,13 @@ def main():
     finally:
         HiFont.render = orig
         i18n.set_language("ko")
+    if wide:
+        for k, v in list(wide.items())[:10]:
+            print("너무 넓음", v, repr(k[:80]))
+        raise AssertionError(f"영어 UI에서 화면 폭을 넘을 수 있는 한 줄 {len(wide)}종")
+    if cut:                                                       # 잘려서 '...'로 끝난 글 (정보가 사라지는 곳): 목록을 보여 주고 많아지면 실패
+        print("잘린 글", len(cut), [k[:50] for k in list(cut)[:8]])
+        assert len(cut) <= 12, f"영어 UI에서 잘린 글이 너무 많음: {len(cut)}종"
     if missing:
         for k, v in sorted(missing.items(), key=lambda kv: -kv[1])[:40]:
             print(v, repr(k))
