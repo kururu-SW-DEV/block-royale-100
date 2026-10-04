@@ -17,7 +17,7 @@ from app_common import (
 CARD_BG = (22, 28, 48)
 COL_SUB = (160, 172, 205)          # 보조 글자 (배경 대비 충분한 밝기)
 COL_HINT = (140, 152, 185)         # 가장 어두운 글자의 하한
-PILL_GAP = 10                       # 오른쪽 위 알약 사이 간격 (모두 같게)
+PILL_GAP = 4                        # 오른쪽 위 메뉴 항목 사이 간격 (항목 안쪽 여백이 따로 있음)
 UTIL_ROW = ["practice", "daily", "weekly", "records", "settings", "toggle_sound", "toggle_fs"]
 
 DESCRIPTIONS = {
@@ -312,86 +312,79 @@ class MenuMixin:
             pygame.draw.line(self.screen, accent, (ax + 30, ay), (ax + 22, ay + 7), 3)
 
     def _menu_card(self, bid, rect, kind, accent, title, desc, key, chip, chip_col, hero, index):
+        """메뉴 카드: 평평한 면 + 1px 테두리. 선택/포커스는 왼쪽 강조선과 면 밝기로만 표시 (바깥 빛 없음 -> 이웃 카드와 겹치지 않음)"""
         rect = pygame.Rect(rect)
         self.menu_buttons[bid] = rect                       # 클릭 영역은 처음부터 최종 위치
         t = self._menu_hl.get(bid, 1.0 if self._menu_focus_id() == bid else 0.0)
         pressed = (self._menu_press == bid)
-        dr = rect.move(0, self._menu_slide(index) + (2 if pressed else 0))
-        self._menu_glow(dr, accent, t)
-        base = (0.14 if hero else 0.05) + (0.10 if hero else 0.11) * t + (0.06 if pressed else 0.0)
-        bg = _mix(CARD_BG, accent, base)
-        edge = accent if hero else _mix(_mix(accent, CARD_BG, 0.6), accent, t)
-        pygame.draw.rect(self.screen, bg, dr, border_radius=14 if hero else 12)
-        pygame.draw.rect(self.screen, edge, dr, 2 if (hero or t > 0.5) else 1, border_radius=14 if hero else 12)
+        dr = rect.move(0, self._menu_slide(index) + (1 if pressed else 0))
+        radius = 10
+        bg = _mix(CARD_BG, accent, (0.07 if hero else 0.025) + 0.06 * t + (0.04 if pressed else 0.0))
+        edge = _mix((50, 62, 94), accent, (0.55 if hero else 0.0) + 0.45 * t)
+        pygame.draw.rect(self.screen, bg, dr, border_radius=radius)
+        pygame.draw.rect(self.screen, edge, dr, 1, border_radius=radius)
+        if hero or t > 0.5:                                  # 왼쪽 강조선
+            pygame.draw.rect(self.screen, accent, (dr.x + 1, dr.y + 16, 3, dr.h - 32), border_radius=2)
         if t > 0.5:
-            self._menu_focus_ring(dr, accent, bg, 14 if hero else 12)
-        gx, gy = (dr.x + 24, dr.y + 18) if hero else (dr.x + 18, dr.y + 20)
+            self._menu_focus_ring(dr, accent, bg, radius)
+        gx, gy = (dr.x + 28, dr.y + 22) if hero else (dr.x + 22, dr.y + 22)
         self._menu_glyph(kind, gx, gy, accent, hero)
-        tx = dr.x + (116 if hero else 84)
-        badge_w = 46
+        tx = dr.x + (118 if hero else 88)
+        kr = pygame.Rect(dr.right - 18 - 26, dr.y + 14, 26, 22)                      # 번호 키: 속 빈 키캡
+        pygame.draw.rect(self.screen, _mix(edge, CARD_BG, 0.2), kr, 1, border_radius=6)
+        self._t(key, self.font_small, COL_SUB if t < 0.5 else C_TEXT, kr.centerx, kr.centery, "center")
         if hero:
-            self._t(title, self.font_hero, C_TEXT, tx, dr.y + 18)
-            self._t(self._menu_fit(desc, self.font_help, dr.w - (tx - dr.x) - badge_w - 34), self.font_help, COL_SUB, tx, dr.y + 58)
+            self._t(title, self.font_hero, C_TEXT, tx, dr.y + 16)
+            self._t(self._menu_fit(desc, self.font_help, dr.w - (tx - dr.x) - 70), self.font_help, COL_SUB, tx, dr.y + 54)
+            self._t("Enter  >", self.font_small, accent, dr.right - 20, dr.bottom - 18, "midright")
         else:
             self._t(title, self.font_menu, C_TEXT, tx, dr.y + 14)
-            self._t(self._menu_fit(desc, self.font_help, dr.w - (tx - dr.x) - badge_w - 24), self.font_help, COL_SUB, tx, dr.y + 44)
-        kr = pygame.Rect(dr.right - 20 - 34, dr.y + 14, 34, 26)
-        pygame.draw.rect(self.screen, accent, kr, border_radius=7)
-        self._t(key, self.font_mid, (12, 16, 28), kr.centerx, kr.centery, "center")
-        if hero:
-            self._t("Enter  >", self.font_small, accent, dr.right - 20, dr.y + 52, "topright")
-        if chip:                                            # 실시간 정보 칩 (카드 오른쪽 아래)
-            maxw = dr.w - (tx - dr.x) - 30
-            s = self._menu_fit(chip, self.font_small, maxw)
-            cy = dr.bottom - (18 if hero else 14)
-            tr = self._t(s, self.font_small, chip_col, dr.right - 22, cy, "midright")
-            pygame.draw.circle(self.screen, chip_col, (tr.x - 9, cy), 3)
+            self._t(self._menu_fit(desc, self.font_help, dr.w - (tx - dr.x) - 56), self.font_help, COL_SUB, tx, dr.y + 42)
+        if chip:                                            # 실시간 정보 한 줄 (설명 아래, 왼쪽 맞춤)
+            maxw = dr.w - (tx - dr.x) - (110 if hero else 24)
+            cs = self._menu_fit(chip, self.font_small, maxw)
+            cy = dr.bottom - (18 if hero else 16)
+            pygame.draw.circle(self.screen, chip_col, (tx + 3, cy), 3)
+            self._t(cs, self.font_small, chip_col, tx + 14, cy, "midleft")
 
     def _menu_pill(self, bid, right, y, label, key, tint, dot=None):
-        """오른쪽 위 알약 하나 (오른쪽 끝 기준으로 폭을 계산해 그리고 왼쪽 끝 x를 반환)"""
+        """오른쪽 위 메뉴 항목 하나 (테두리 없는 글자 + 작은 키 표시, 포커스/호버는 밑줄). 오른쪽 끝 기준으로 폭을 계산해 그리고 왼쪽 끝 x를 반환"""
         lw = self.font_small.size(label)[0]
-        kw = self.font_tiny.size(key)[0] + 12
-        w = 18 + (14 if dot else 0) + lw + 10 + kw + 10
+        kw = self.font_tiny.size(key)[0]
+        w = 8 + (14 if dot else 0) + lw + 8 + kw + 8
         rect = pygame.Rect(right - w, y, w, 36)
         self.menu_buttons[bid] = rect
         t = self._menu_hl.get(bid, 1.0 if self._menu_focus_id() == bid else 0.0)
         pressed = (self._menu_press == bid)
-        bg = _mix((22, 28, 48), (36, 46, 76), t)
-        pygame.draw.rect(self.screen, bg if not pressed else (44, 56, 90), rect, border_radius=18)
-        edge = _mix(_mix((56, 70, 108), tint, 0.3), tint, t)
-        pygame.draw.rect(self.screen, edge, rect, 1, border_radius=18)
-        if t > 0.5:
-            self._menu_focus_ring(rect, tint, bg, 18)
-        x = rect.x + 16
+        x = rect.x + 8
         if dot:
-            pygame.draw.circle(self.screen, dot, (x + 4, rect.centery), 4)
+            pygame.draw.circle(self.screen, dot, (x + 3, rect.centery), 3)
             x += 14
-        self._t(label, self.font_small, C_TEXT if t > 0.5 else (200, 210, 232), x, rect.centery, "midleft")
-        kr = pygame.Rect(rect.right - 10 - kw, rect.centery - 9, kw, 18)
-        pygame.draw.rect(self.screen, (36, 44, 70), kr, border_radius=5)
-        pygame.draw.rect(self.screen, (78, 92, 132), kr, 1, border_radius=5)
-        self._t(key, self.font_tiny, (215, 225, 245), kr.centerx, kr.centery, "center")
+        col = _mix((176, 188, 218), C_TEXT, 1.0 if pressed else t)
+        self._t(label, self.font_small, col, x, rect.centery, "midleft")
+        self._t(key, self.font_tiny, _mix((104, 116, 150), C_TEXT, 0.5 * t), x + lw + 8, rect.centery + 1, "midleft")
+        if t > 0.05:                                         # 밑줄: 호버/포커스 때 왼쪽에서 오른쪽으로 차오름
+            ul = int((lw + 8 + kw) * min(1.0, t))
+            pygame.draw.rect(self.screen, C_ACCENT, (rect.x + 8 + (14 if dot else 0), rect.bottom - 5, ul, 2), border_radius=1)
+        if t > 0.5:
+            self._menu_focus_ring(rect, tint, (10, 14, 28), 8)
         return rect.x
 
     def _menu_profile_chip(self):
         rect = pygame.Rect(24, 18, 364, 44)
         self.menu_buttons['match_summary'] = rect
         t = self._menu_hl.get('match_summary', 1.0 if self._menu_focus_id() == 'match_summary' else 0.0)
-        bg = _mix((20, 26, 46), (30, 40, 68), t)
-        pygame.draw.rect(self.screen, bg, rect, border_radius=22)
-        pygame.draw.rect(self.screen, _mix((60, 74, 110), C_ACCENT, t), rect, 1, border_radius=22)
+        bg = _mix((14, 19, 36), (26, 34, 60), t)
+        pygame.draw.rect(self.screen, bg, rect, border_radius=10)
+        pygame.draw.rect(self.screen, _mix((44, 56, 88), C_ACCENT, 0.7 * t), rect, 1, border_radius=10)
         if t > 0.5:
-            self._menu_focus_ring(rect, C_ACCENT, bg, 22)
+            self._menu_focus_ring(rect, C_ACCENT, bg, 10)
         col = NAME_COLORS[self.name_color][1]
-        lv = self.stats_mgr.level()[0]                           # 레벨 배지: 이름 색 테두리 안에 "Lv.N"
+        lv = self.stats_mgr.level()[0]                           # 레벨: 이름 색의 작은 글자 (배지 테두리 없이)
         lv_txt = f"Lv.{lv}"
-        lv_w = max(34, self.font_tiny.size(lv_txt)[0] + 12)
-        lv_r = pygame.Rect(rect.x + 10, rect.centery - 10, lv_w, 20)
-        pygame.draw.rect(self.screen, (24, 30, 52), lv_r, border_radius=10)
-        pygame.draw.rect(self.screen, col, lv_r, 1, border_radius=10)
-        self._t(lv_txt, self.font_tiny, col, lv_r.centerx, lv_r.centery, "center")
+        lr = self._t(lv_txt, self.font_tiny, col, rect.x + 14, rect.centery, "midleft")
         name = self._menu_fit(self.player_name, self.font_mid, 110)
-        nr = self._t(name, self.font_mid, col, lv_r.right + 8, rect.centery, "midleft")
+        nr = self._t(name, self.font_mid, C_TEXT, lr.right + 10, rect.centery, "midleft")
         title_id = self.settings.get("title", "")
         title_txt = next((a[1] for a in __import__("stats_manager").ACHIEVEMENTS if a[0] == title_id and title_id in self.stats_mgr.achievements_done()), "")
         if title_txt:                                           # 칭호(달성한 업적 이름): 이름 오른쪽에 작게
@@ -406,6 +399,18 @@ class MenuMixin:
         self.menu_bg.draw(self.screen)
         self.menu_buttons.clear()
         cx = SCREEN_WIDTH // 2
+
+        def _scrim(surf):                                  # 아래쪽으로 갈수록 어두워지는 막: 떨어지는 배경 블록이 카드/글자 뒤에서 읽기를 방해하지 않게
+            h = surf.get_height()
+            for yy in range(h):
+                pygame.draw.line(surf, (6, 9, 20, int(190 * (yy / h) ** 1.3)), (0, yy), (surf.get_width(), yy))
+        self.renderer._blit_overlay(("menu_scrim",), (SCREEN_WIDTH, 440), _scrim, (0, SCREEN_HEIGHT - 440))
+
+        def _scrim_top(surf):                              # 위쪽 메뉴 줄 뒤도 같은 이유로 살짝 어둡게
+            h = surf.get_height()
+            for yy in range(h):
+                pygame.draw.line(surf, (6, 9, 20, int(200 * (1.0 - yy / h) ** 1.5)), (0, yy), (surf.get_width(), yy))
+        self.renderer._blit_overlay(("menu_scrim_top",), (SCREEN_WIDTH, 96), _scrim_top, (0, 0))
 
         # 1. 왼쪽 위 프로필 칩 + 오른쪽 위 유틸리티 (이동 2 + 토글 2)
         self._menu_profile_chip()
@@ -445,12 +450,12 @@ class MenuMixin:
         n = self.target_player_count
         atk_off = self.settings.get("game_mode") == "survival"
         diff_short = BOT_DIFFICULTY_LABELS.get(self.bot_difficulty, "혼합").split(" (")[0] + " 봇"      # 어떤 난이도로 시작하는지 카드에서 바로 보이게
-        self._menu_card("quick_play", (cx - 320, by, 640, 104), "quick", C_ACCENT, "빠른 시작",
+        self._menu_card("quick_play", (cx - 320, by, 640, 112), "quick", C_ACCENT, "빠른 시작",
                         (f"봇 {max(0, n - 1)}명과 서바이벌  ·  {n}인 (공격 없음)  ·  {diff_short}" if atk_off else f"봇 {max(0, n - 1)}명과 바로 대전  ·  {n}인 배틀로얄  ·  {diff_short}"),
                         "1", quick_chip, quick_col, True, 0)
-        self._menu_card("host_room", (cx - 320, by + 116, 314, 88), "host", C_GREEN, "방 만들기",
+        self._menu_card("host_room", (cx - 320, by + 126, 313, 92), "host", C_GREEN, "방 만들기",
                         "친구를 초대해 함께", "2", f"내 IP {self.local_ip}", COL_SUB, False, 1)
-        self._menu_card("join_room", (cx + 6, by + 116, 314, 88), "join", C_GOLD, "방 참가하기",
+        self._menu_card("join_room", (cx + 7, by + 126, 313, 92), "join", C_GOLD, "방 참가하기",
                         "LAN 검색 · IP 접속", "3", join_chip, join_col, False, 2)
 
         # 4. 포커스된 항목의 한 줄 설명 (세 모드의 차이는 여기서 설명)
@@ -462,7 +467,7 @@ class MenuMixin:
                 nxt = next((d for d in LADDER if d not in self.stats_mgr.ladder_cleared()), None)
                 if nxt:                                                  # 보이지 않던 보상(난이도 사다리 ★)을 메뉴에서 알려 줌
                     desc += f"   ★ 다음 도전: {LADDER_NAMES[nxt]} 봇 {LADDER_MIN_PLAYERS}인↑에서 {LADDER_RANK}위 안"
-        self._t(self._menu_fit(desc, self.font_help, 900), self.font_help, COL_SUB, cx, by + 226, "midtop")
+        self._t(self._menu_fit(desc, self.font_help, 900), self.font_help, COL_SUB, cx, by + 238, "midtop")
 
         # 5. 하단 바: 버전 · 키 안내 · 게임 종료
         vr = self._t(f"v{APP_VERSION}", self.font_tiny, COL_HINT, 24, SCREEN_HEIGHT - 42, "topleft")
@@ -482,8 +487,8 @@ class MenuMixin:
         self.menu_buttons['quit_game'] = quit_r
         t = self._menu_hl.get('quit_game', 1.0 if fid == 'quit_game' else 0.0)
         pressed = (self._menu_press == 'quit_game')
-        pygame.draw.rect(self.screen, _mix((22, 28, 48), (52, 30, 40), t) if not pressed else (60, 34, 46), quit_r, border_radius=17)
-        pygame.draw.rect(self.screen, _mix(_mix((56, 70, 108), C_DANGER, 0.45), C_DANGER, t), quit_r, 1, border_radius=17)
+        pygame.draw.rect(self.screen, _mix((14, 19, 36), (52, 30, 40), t) if not pressed else (60, 34, 46), quit_r, border_radius=10)
+        pygame.draw.rect(self.screen, _mix(_mix((50, 62, 94), C_DANGER, 0.2), C_DANGER, t), quit_r, 1, border_radius=10)
         if t > 0.5:
-            self._menu_focus_ring(quit_r, C_DANGER, (22, 28, 48), 17)
+            self._menu_focus_ring(quit_r, C_DANGER, (22, 28, 48), 10)
         self._t("게임 종료", self.font_small, C_TEXT if t > 0.5 else (200, 210, 232), quit_r.centerx, quit_r.centery, "center")
