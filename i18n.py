@@ -25,13 +25,11 @@ def _load():
     if _loaded:
         return
     _loaded = True
-    import importlib
     exact, templates = {}, {}
-    for name in ("i18n_en", "i18n_en2", "i18n_en3", "i18n_en4", "i18n_en5"):         # 번역표 묶음 (없는 묶음은 건너뜀)
-        try:
-            mod = importlib.import_module(name)
-        except ImportError:
-            continue
+    # 번역표 묶음은 반드시 '정적 import'로 읽음: importlib.import_module(이름)으로 읽으면 PyInstaller가 묶음을 exe에 넣지 않아
+    # 빌드된 exe에서는 영어 표가 통째로 빠지고 조용히 한국어로 남았음 (v1.2.0 ~ v1.4.3). 새 묶음을 만들면 여기에 import를 추가할 것
+    import i18n_en, i18n_en2, i18n_en3, i18n_en4, i18n_en5
+    for mod in (i18n_en, i18n_en2, i18n_en3, i18n_en4, i18n_en5):
         exact.update(mod.EXACT)
         templates.update(mod.TEMPLATES)
     _exact.update(exact)

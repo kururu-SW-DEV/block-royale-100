@@ -17,6 +17,19 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt pyinstaller
       - run: .\build_exe.bat
+      - name: exe selftest (영어 번역표가 exe 안에 들어갔는지 포함)
+        shell: pwsh
+        timeout-minutes: 6
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          Start-Process -FilePath ./release/BlockRoyale100.exe -ArgumentList "--selftest" -Wait
+          $log = Join-Path $env:APPDATA "BlockRoyale100/selftest.log"
+          if (-not (Test-Path $log)) { Write-Error "selftest.log not found"; exit 1 }
+          Get-Content $log
+          if (-not (Select-String -Path $log -Pattern "SELFTEST OK" -Quiet)) { Write-Error "selftest failed"; exit 1 }
+          if (-not (Select-String -Path $log -Pattern "i18n: OK" -Quiet)) { Write-Error "English tables missing in exe"; exit 1 }
       - uses: softprops/action-gh-release@v2
         with:
           name: BLOCK ROYALE 100 ${{ github.ref_name }}

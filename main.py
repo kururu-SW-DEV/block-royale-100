@@ -414,6 +414,19 @@ def _selftest_pool():
     return ("OK(%d workers)" % workers) if got == want else "FAILED(result mismatch)"
 
 
+def _selftest_i18n():
+    """영어 번역표 5개가 (exe 안에서도) 모두 읽히는지 확인: 묶음마다 대표 문구 하나씩. 빠지면 영어로 바꿔도 한국어로 남음"""
+    import i18n
+    samples = {"설정": "Settings", "생존자": "Alive", "서든 데스": "Sudden Death", "전적 기록실": "Records", "견습": "Apprentice"}
+    prev = i18n.language()
+    i18n.set_language("en")
+    try:
+        bad = [ko for ko, en in samples.items() if i18n.tr(ko) != en]
+    finally:
+        i18n.set_language(prev)
+    return "OK" if not bad else "FAILED(missing: %s)" % ",".join(bad)
+
+
 def _selftest():
     """--selftest: 창 없이(SDL dummy) 초기화, 메뉴/게임 렌더링, 저장 경로를 점검하고 종료 (빌드된 exe 검증용)"""
     app = BlockRoyaleApp()
@@ -426,13 +439,14 @@ def _selftest():
         app.renderer.key_hints = app._build_key_hints()
         app.renderer.render(app.match, app.sound_mgr)
     pool_note = _selftest_pool()
+    i18n_note = _selftest_i18n()
     if app.sound_mgr._bgm_thread is not None:
         app.sound_mgr._bgm_thread.join(timeout=15.0)     # BGM 합성이 끝난 뒤의 정확한 수를 남김 (빌드 검증용)
     from settings_manager import SETTINGS_FILE
     from stats_manager import STATS_FILE
-    msg = ("SELFTEST OK | settings: %s | stats: %s | sounds: %d | bgm: %d | frozen: %s | botpool: %s"
+    msg = ("SELFTEST OK | settings: %s | stats: %s | sounds: %d | bgm: %d | frozen: %s | botpool: %s | i18n: %s"
            % (SETTINGS_FILE, STATS_FILE, len(app.sound_mgr.sounds), len(app.sound_mgr.bgm_stages),
-              bool(getattr(sys, "frozen", False)), pool_note))
+              bool(getattr(sys, "frozen", False)), pool_note, i18n_note))
     print(msg)
     try:                                   # 콘솔이 없는 exe에서도 결과를 확인할 수 있도록 파일로도 기록
         from app_paths import data_path

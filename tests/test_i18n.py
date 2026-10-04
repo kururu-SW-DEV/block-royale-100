@@ -147,6 +147,17 @@ def test_standings_info_lines_wrap_instead_of_truncating():
     print("  OK 순위표 머리 줄")
 
 
+def test_translation_tables_are_imported_statically():
+    """번역표 묶음(i18n_en*.py)은 정적 import로 읽어야 PyInstaller가 exe에 넣음. importlib로 이름을 만들어 읽으면 exe에서 영어가 통째로 빠짐 (v1.2.0~v1.4.3 버그)"""
+    import ast
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    tree = ast.parse(open(os.path.join(root, "i18n.py"), encoding="utf-8").read())
+    imported = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+    files = {f[:-3] for f in os.listdir(root) if f.startswith("i18n_en") and f.endswith(".py")}
+    assert files and files <= imported, f"정적 import 안 된 번역표: {sorted(files - imported)}"
+    assert not any(isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "import_module" for n in ast.walk(tree)), "importlib.import_module은 exe 빌드에서 모듈이 빠질 수 있음"
+
+
 if __name__ == "__main__":
     pygame.init()
     from settings_manager import SETTINGS_FILE
