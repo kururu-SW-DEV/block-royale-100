@@ -95,7 +95,7 @@ TEMPLATES = {
     "{} 봇": "{} Bot",
     "끝 ×{}": "Combo end ×{}",
     "최고 {}초": "Best {}s",
-    "곧 {}줄 도착": "{} lines incoming soon",
+    "곧 {}줄 도착": "Rising: {}",
     "{#}콤보": "{} combo",
     "{}  (나)": "{}  (me)",
     "난이도 클리어 {}": "Difficulty cleared {}",

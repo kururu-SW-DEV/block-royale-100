@@ -2033,9 +2033,11 @@ class UIRenderer:
         col = C_DANGER if danger else (C_ORANGE if n > 0 else C_DIM)
         # 숫자와 "줄"은 실제로 그려진 글자 아래끝(기준선)을 맞춰 나란히, 박스 가운데 정렬
         num = self._text(f"+{n}" if n > 0 else "0", self.font_title, col)
-        unit = self._text("줄", self.font_mid, C_DIM)
-        nb, ub = num.get_bounding_rect(), unit.get_bounding_rect()
+        unit = self._text("line" if (n == 1 and __import__("i18n").language() == "en") else "줄", self.font_mid, C_DIM)        # 영어는 1줄일 때 단수
         gap = 8
+        if num.get_width() + gap + unit.get_width() > rect.w - 22:           # 영어 "lines" 등 단위가 길어 박스를 넘으면 작은 글자로
+            unit = self._text("line" if (n == 1 and __import__("i18n").language() == "en") else "줄", self.font_small, C_DIM)
+        nb, ub = num.get_bounding_rect(), unit.get_bounding_rect()
         total = num.get_width() + gap + unit.get_width()
         x0 = rect.centerx - total // 2
         base_y = rect.y + 68                                        # 두 글자의 아래끝이 놓일 y
