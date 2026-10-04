@@ -278,9 +278,8 @@ class MenuMixin:
         self.renderer._blit_overlay(("mcglow", w, h, accent), (w + 16, h + 16), build, (rect.x - 8, rect.y - 8), alpha=int(70 * t))
 
     def _menu_focus_ring(self, rect, accent, bg, radius):
-        """키보드로 이동했을 때만 보이는 바깥 링 (마우스 호버와 구분)"""
-        if self._menu_kb:
-            pygame.draw.rect(self.screen, _mix(accent, bg, 0.45), rect.inflate(10, 10), 1, border_radius=radius + 4)
+        """(쓰지 않음) 예전에는 키보드로 이동했을 때 카드 바깥에 링을 그렸으나, 카드 테두리와 겹쳐 이중 테두리로 보였다. 포커스는 카드/항목 자체의 색과 강조선·밑줄로 표시한다"""
+        return
 
     def _menu_slide(self, index):
         """카드 등장 연출: 위치는 처음부터 최종 자리에 두고 그릴 때만 아래에서 살짝 올라옴"""
@@ -319,14 +318,12 @@ class MenuMixin:
         pressed = (self._menu_press == bid)
         dr = rect.move(0, self._menu_slide(index) + (1 if pressed else 0))
         radius = 10
-        bg = _mix(CARD_BG, accent, (0.07 if hero else 0.025) + 0.06 * t + (0.04 if pressed else 0.0))
-        edge = _mix((50, 62, 94), accent, (0.55 if hero else 0.0) + 0.45 * t)
+        bg = _mix(CARD_BG, accent, 0.025 + 0.08 * t + (0.04 if pressed else 0.0))          # 강조는 포커스된 카드 하나에만 (빠른 시작도 예외 없음)
+        edge = _mix((50, 62, 94), accent, 0.9 * t)
         pygame.draw.rect(self.screen, bg, dr, border_radius=radius)
         pygame.draw.rect(self.screen, edge, dr, 1, border_radius=radius)
-        if hero or t > 0.5:                                  # 왼쪽 강조선
+        if t > 0.5:                                          # 포커스: 왼쪽 강조선 + 강조 테두리 (바깥 링은 이중 테두리처럼 보여 쓰지 않음)
             pygame.draw.rect(self.screen, accent, (dr.x + 1, dr.y + 16, 3, dr.h - 32), border_radius=2)
-        if t > 0.5:
-            self._menu_focus_ring(dr, accent, bg, radius)
         gx, gy = (dr.x + 28, dr.y + 22) if hero else (dr.x + 22, dr.y + 22)
         self._menu_glyph(kind, gx, gy, accent, hero)
         tx = dr.x + (118 if hero else 88)
