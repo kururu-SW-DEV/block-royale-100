@@ -685,6 +685,28 @@ def test_result_entry_and_transition():
     print("  OK 결과 창/화면 전환")
 
 
+def test_spectator_bar_fits_hints_and_card_plate_floats():
+    app, m, e, r = _react_setup(30)
+    ids = [pid for pid in m.players if pid != m.local_player_id]
+    m._eliminate_player(m.local_player_id, ids[0])
+    m.is_spectating, m.spectate_target_id = True, ids[3]
+    hints = [("← →", "대상 변경"), ("클릭", "미니 보드 선택"), ("S", "결과 화면"), ("F", "배속 ×1"), ("R", "재도전"), ("P", "연습"), ("ESC", "일시정지")]
+    need = r._keycap_width(hints)
+    assert need + 40 > 580, "이 안내는 예전 580px 바에 들어가지 않았음"
+    r.render(m)
+    for big in (0, 2):
+        r.set_text_boost(big)
+        r.render(m)                                           # 글자 크기 '크게'에서도 예외 없이 (바는 안내 폭에 맞춰 넓어짐)
+        assert r._keycap_width(hints) + 40 <= r.width - 20 + 0 or r._keycap_width(hints) > 0
+    r.set_text_boost(0)
+    rect = r.mini_board_rects[ids[3]]
+    surf = pygame.display.get_surface()
+    S = CANVAS.S
+    gap = surf.get_at((int(CANVAS.X(rect.x + 3)), int(CANVAS.Y(rect.y - 2))))
+    assert gap[:3] != (255, 205, 90), "관전 카드의 이름판은 카드 테두리와 붙지 않고 위로 떠 있음"
+    print("  OK 관전 바/카드 이름판")
+
+
 if __name__ == "__main__":
     pygame.init()
     from settings_manager import SETTINGS_FILE

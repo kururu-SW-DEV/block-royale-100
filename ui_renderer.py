@@ -2265,7 +2265,7 @@ class UIRenderer:
                 # 홀드 칸을 둘 수 없는 작은 보드(100인 등)는 이름 줄에 홀드한 블록을 작게 표시
                 hold_icon = p.get("hold") if (detailed and not strip_w and is_alive) else None
                 hold_w = 13 if hold_icon else 0
-                spec_pad = 8 if is_spec else 0                   # 관전 대상은 이름 뒤에 금색 판 여백이 붙음
+                spec_pad = 14 if is_spec else 0                   # 관전 대상은 이름 뒤에 금색 판 여백이 붙음
                 max_name_w = max(8, int(bw) - ko_w - hold_w - spec_pad)
                 if hold_icon and tag_font.size(name_str[:2])[0] > max_name_w:
                     hold_icon, hold_w = None, 0                  # 이름(최소 2글자, 예: 번호 "03")이 우선: 자리가 모자라면 홀드 아이콘부터 뺌
@@ -2280,9 +2280,10 @@ class UIRenderer:
             def draw_tag():
                 if is_spec:
                     # 관전 중인 상대: 이름을 금색 판 위에 표시 (별도 표지 없이도 어디서든 눈에 띔)
-                    plate = pygame.Rect(board_rect.x - 1, tag_y - 1, name_surf.get_width() + 8, name_surf.get_height() + 2)
+                    ph_ = name_surf.get_height() + 1
+                    plate = pygame.Rect(board_rect.x, board_rect.y - 3 - ph_, name_surf.get_width() + 6, ph_)      # 카드 테두리와 겹쳐 한 덩어리로 보이지 않게 위로 띄움
                     pygame.draw.rect(self.screen, C_GOLD, plate, border_radius=4)
-                    self.screen.blit(name_surf, (board_rect.x + 3, tag_y))
+                    self.screen.blit(name_surf, (plate.x + 3, plate.y + 1))
                 else:
                     self.screen.blit(name_surf, (board_rect.x, tag_y))
                 if ko_surf is not None:
@@ -2298,7 +2299,7 @@ class UIRenderer:
             # 이름표(이름/판/K.O. 알약/홀드 아이콘)는 내용이 바뀔 때만 다시 그림
             self._blit_card_layer((pid, "tag"), (board_rect.x, board_rect.y, board_rect.w, tag_y, name_str, tuple(name_col), is_spec, ko, ko_w,
                                                  hold_icon, hold_w, id(tag_font), bw >= 46),
-                                  board_rect.x - 3, tag_y - 4, board_rect.w + 6, tag_font.get_height() + 8, draw_tag)
+                                  board_rect.x - 3, tag_y - 8, board_rect.w + 6, tag_font.get_height() + 12, draw_tag)
 
             # 블록: 쌓인 블록은 보드별 캐시 서피스 한 장으로 붙임 (고정/쓰레기/줄 제거로 모양이 바뀔 때만 다시 그림)
             cg = p.get("cg")
@@ -2685,12 +2686,11 @@ class UIRenderer:
                     _orig_line(CANVAS.display, tuple(int(c * k) for c in base), (CANVAS.X(ax - side * 8), CANVAS.Y(y - 12)), (CANVAS.X(ax), CANVAS.Y(y)), max(1, CANVAS.length(3)))
                     _orig_line(CANVAS.display, tuple(int(c * k) for c in base), (CANVAS.X(ax), CANVAS.Y(y)), (CANVAS.X(ax - side * 8), CANVAS.Y(y + 12)), max(1, CANVAS.length(3)))
 
-    # ---------------------------------------------------------------- 화면 전환 와이프
-    TR_SECS = 0.42
-    TR_CELL = 48
+    # ---------------------------------------------------------------- 화면 전환 (차분한 크로스페이드)
+    TR_SECS = 0.30
 
     def begin_transition(self, reduced=False):
-        """화면(state)이 바뀌는 순간 직전 프레임을 붙잡아 두고 와이프를 시작 (직전 프레임이 아직 화면에 남아 있는 때에 호출)"""
+        """화면(state)이 바뀌는 순간 직전 프레임을 붙잡아 두고 전환을 시작 (직전 프레임이 아직 화면에 남아 있는 때에 호출)"""
         try:
             snap = CANVAS.display.copy()
         except Exception:
@@ -2698,40 +2698,22 @@ class UIRenderer:
         self._tr = {"snap": snap, "t0": time.time(), "reduced": reduced}
 
     def draw_transition(self):
-        """새 화면 위에 옛 화면이 블록 칸으로 대각선으로 흩어지며 걷힘 (모션을 줄이면 단순 페이드)"""
+        """새 화면 위에서 옛 화면이 부드럽게 흐려지며 살짝 위로 밀려 올라감 (모션을 줄이면 위치 이동 없이 페이드만)"""
         tr = self._tr
         if tr is None:
             return
-        p = (time.time() - tr["t0"]) / (0.25 if tr["reduced"] else self.TR_SECS)
+        p = (time.time() - tr["t0"]) / (0.2 if tr["reduced"] else self.TR_SECS)
         if p >= 1.0:
             self._tr = None
             return
         disp, snap = CANVAS.display, tr["snap"]
-        if tr["snap"].get_size() != disp.get_size():
+        if snap.get_size() != disp.get_size():
             self._tr = None
             return
-        if tr["reduced"]:
-            snap.set_alpha(int(255 * (1.0 - p)))
-            disp.blit(snap, (0, 0))
-            return
-        cs = self.TR_CELL
-        cols, rows = self.width // cs + 1, self.height // cs + 1
-        palette = list(PIECE_COLORS.values())
-        span = 0.65
-        for cy in range(rows):
-            for cx in range(cols):
-                t_c = (cx + cy) / float(cols + rows) * span
-                local = (p - t_c) / (1.0 - span)
-                if local >= 1.0:
-                    continue
-                r = CANVAS.rect_f(cx * cs, cy * cs, cs, cs)
-                if local < 0.0:
-                    disp.blit(snap, r.topleft, r)
-                else:                                                              # 칸이 색 블록으로 바뀌며 줄어들어 사라짐
-                    sz = max(0, int(r.w * (1.0 - local)))
-                    if sz > 1:
-                        col = palette[(cx * 7 + cy * 3) % len(palette)]
-                        _orig_rect(disp, col, (r.centerx - sz // 2, r.centery - sz // 2, sz, sz))
+        e = p * p * (3.0 - 2.0 * p)                                   # 시작과 끝이 부드러운 곡선
+        snap.set_alpha(int(255 * (1.0 - e)))
+        dy = 0 if tr["reduced"] else -int(round(CANVAS.length(10) * e))
+        disp.blit(snap, (0, dy))
 
     def _render_bg_pulses(self, match, ox, oy):
         """큰 기술/K.O. 때 보드 중심에서 배경으로 퍼지는 얇은 링 (카드 뒤에 그려짐)"""
@@ -2753,9 +2735,18 @@ class UIRenderer:
         """위기 때 쌓인 블록이 맥박에 맞춰 붉게 숨 쉬고 화면 가장자리에 붉은 비네트. 색약 모드는 주황 + 점선 테두리"""
         cb = is_colorblind()
         col = (255, 150, 40) if cb else (255, 50, 60)
-        rows = max(1, BOARD_HEIGHT - max(0, highest))
-        self._blit_overlay(("danger_stack", bw, rows, cb), (bw, rows * cs),
-                           lambda ds: ds.fill((*col, 150)), (bx, by + (BOARD_HEIGHT - rows) * cs), alpha=max(0, min(255, int(pulse * 1.7))))
+        a = max(0, min(255, int(pulse * 1.9)))
+        # 빈 칸까지 붉은 상자로 칠하지 않고, 쌓인 블록만 맥박에 맞춰 붉게 달아오르고 스택 윗면에서 열기가 올라오는 느낌으로
+        for y in range(max(0, highest), BOARD_HEIGHT):
+            row = engine.grid[y]
+            for x in range(BOARD_WIDTH):
+                if row[x]:
+                    self._blit_overlay(("danger_cell", cs, cb), (cs, cs), lambda ds: ds.fill((*col, 120)), (bx + x * cs, by + y * cs), alpha=a)
+        if highest >= 2:
+            def _build_haze(ds):
+                for i in range(cs * 2):
+                    _orig_line(ds, (*col, int(110 * (i / float(cs * 2)) ** 2)), (0, i), (bw, i))
+            self._blit_overlay(("danger_haze", bw, cs, cb), (bw, cs * 2), _build_haze, (bx, by + highest * cs - cs * 2), alpha=a)
 
         def _build_vig(ds):
             for i in range(0, 72, 4):
@@ -3470,7 +3461,15 @@ class UIRenderer:
         who = (f"{target_p['trait']} 봇" if target_p.get("trait") else "봇") if target_p.get("is_ai", False) else "사람"
         ko = target_p.get("ko_count", 0)
 
-        bar_w, bar_h = 580, 60
+        net_on = match.net_mgr is not None and match.net_mgr.mode != "NONE"
+        hints = [("← →", "대상 변경"), ("클릭", "미니 보드 선택"), ("S", "결과 화면")]
+        if not net_on:
+            hints.append(("F", f"배속 ×{getattr(match, 'spectate_speed', 1)}"))
+            hints.append(("R", "재도전"))
+            hints.append(("P", "연습"))
+        hints.append(("ESC", "일시정지" if not net_on else "메뉴"))
+        bar_w, bar_h = max(580, self._keycap_width(hints) + 40), 60            # 안내가 많으면(글자 크기 '크게' 포함) 바를 넓혀 안내가 삐져나오지 않게
+        bar_w = min(bar_w, self.width - 20)
         rect = pygame.Rect(self.width // 2 - bar_w // 2 + int(ox),
                            self.main_board_y + self.main_board_h + 10 + int(oy), bar_w, bar_h)
         self._panel(rect, border=C_GOLD, bg=(16, 20, 36), radius=12, alpha=245, border_w=2)
@@ -3482,14 +3481,14 @@ class UIRenderer:
         if not target_p.get("is_ai", False):
             name_col = NAME_COLORS[match.get_name_colors().get(match.spectate_target_id, 0)][1]
         self._draw_text(f"{name}  ({who}, K.O. {ko})", self.font_hud, name_col, rect.x + 88, rect.y + 19, "midleft")
-        net_on = match.net_mgr is not None and match.net_mgr.mode != "NONE"
-        hints = [("← →", "대상 변경"), ("클릭", "미니 보드 선택"), ("S", "결과 화면")]
-        if not net_on:
-            hints.append(("F", f"배속 ×{getattr(match, 'spectate_speed', 1)}"))
-            hints.append(("R", "재도전"))
-            hints.append(("P", "연습"))
-        hints.append(("ESC", "일시정지" if not net_on else "메뉴"))
         self._keycap_hints(hints, rect.centerx, rect.y + 36)
+
+    def _keycap_width(self, items, gap=14):
+        """_keycap_hints가 그릴 전체 폭 (바 크기를 맞추는 데 씀)"""
+        total = 0
+        for key, label in items:
+            total += self._text(key, self.font_tiny, (215, 225, 245)).get_width() + 12 + 5 + self._text(label, self.font_tiny, C_DIM).get_width()
+        return total + gap * (len(items) - 1)
 
     def _keycap_hints(self, items, cx, y, gap=14):
         parts = []
