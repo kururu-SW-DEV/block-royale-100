@@ -534,6 +534,7 @@ def test_language_setting_switches_screens_without_errors():
     app._render_settings()
     app._settings_activate("lang=en")
     assert app.settings.get("language") == "en" and i18n.language() == "en"
+    app.settings.set("bot_difficulty", "easy")          # 설명 줄 검사는 쉬움 난이도 설명이 보여야 함 (기본값 "mixed"인 새 환경에서도 같게)
     seen = []
     orig = HiFont.render
     HiFont.render = lambda self, text, *a, **k: (seen.append(i18n.tr(text)), orig(self, text, *a, **k))[1]
