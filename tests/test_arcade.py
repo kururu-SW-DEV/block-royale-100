@@ -134,13 +134,15 @@ def test_result_screens_show_grade_score_and_xp_chips():
                 "highlights": [], "unlocks": [], "next_unlock": None, "grade": "A", "score": {"score": 12345, "place": 2, "best": False}}
     r.render(m)
     seen = []
-    orig = r._draw_text
+    orig, orig_fade = r._draw_text, r._fade_text
     r._draw_text = lambda text, *a, **k: (seen.append(text), orig(text, *a, **k))[1]
+    r._fade_text = lambda text, *a, **k: (seen.append(text), orig_fade(text, *a, **k))[1]
     r._res_t0 -= 5
     r._result_t0 = time.time() - 6
     r.render(m)
     assert any(str(t).startswith("SCORE") for t in seen) and "RANK" in seen, seen[:40]
-    r._draw_text = orig
+    assert not any("…" in str(t) for t in seen), "결과 창은 글을 '…'로 자르지 않음"
+    r._draw_text, r._fade_text = orig, orig_fade
     lines = r._standings_info_lines(m)
     assert any("랭크 A" in t and "12,345" in t and "점수표 #2" in t for t, _c in lines), lines
     print("  OK 결과 화면")
@@ -250,6 +252,41 @@ def test_combo_layer_and_announcer_settings():
     assert app.settings.get("announcer") != before and sm.announcer == (not before)
     app._settings_activate("announcer_toggle")
     print("  OK 콤보 층/아나운서")
+
+
+def test_result_window_layout_has_no_overlap_and_fits():
+    app = _app()
+    m, e, r = _game(app, 99)
+    ids = [pid for pid in m.players if pid != m.local_player_id]
+    m.timeline = [(i, 99 - i // 4, 3 + (i * 0.3) % 12, (i // 7) % 4) for i in range(80)]
+    m._eliminate_player(m.local_player_id, ids[0])
+    parts = [("참가", 20), ("순위", 49), ("K.O.", 16), ("생존", 16), ("오늘 첫 판", 101), ("TOP 10 3연속", 30), ("골든 타깃", 30)]
+    m.reward = {"xp": {"gain": 262, "parts": parts, "before": 120, "after": 382, "lv_before": 4, "lv_after": 5},
+                "highlights": ["perfect", "chain_ko", "combo10", "bounty"], "unlocks": ["불씨", "프리즘"], "next_unlock": None,
+                "grade": "A", "score": {"score": 48210, "place": 1, "best": True}}
+    m.new_achievements = ["first_ko", "ko5", "top10", "combo8"]
+    m.new_records = ["rank", "ko", "combo"]
+    m.next_goal = "배지 Lv.2까지 2 K.O."
+    for boost in (0, 2):
+        r.set_text_boost(boost)
+        L = r._result_layout(m, 760)
+        assert L["card_y"] + 76 < L["sum_y"] < L["sum_y"] + L["sum_h"] < L["adv_y"] < L["adv_y"] + L["adv_h"] < L["btn_y"] < L["foot_y"] < L["box_h"], L
+        assert L["box_h"] <= r.height - 24, (boost, L["box_h"])
+        assert len(L["chip_lines"]) <= 3
+        for kind, lines, _c in L["adv"]:
+            assert all("…" not in ln for ln in lines)
+            if kind != "lead":
+                assert all(r.font_small.size(ln)[0] <= L["cont"] - 40 for ln in lines), "줄바꿈으로 폭 안에 들어감"
+        r._res_t0 = time.time() - 6
+        r._result_t0 = time.time() - 6
+        r.render(m)
+    r.set_text_boost(0)
+    # 랭크 도장(72x72, 왼쪽)과 그래프(208x72, 오른쪽), 제목 가운데 영역이 서로 겹치지 않는 고정 배치
+    stamp, graph = pygame.Rect(24, 20, 72, 72), pygame.Rect(760 - 24 - 208, 20, 208, 72)
+    title = pygame.Rect(0, 24, r.font_title.size("K.O.  경기 탈락")[0], r.font_title.get_height())
+    title.centerx = 380
+    assert not stamp.colliderect(graph) and not stamp.colliderect(title) and not graph.colliderect(title)
+    print("  OK 결과 창 배치")
 
 
 if __name__ == "__main__":
