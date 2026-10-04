@@ -1895,7 +1895,7 @@ class UIRenderer:
             g = ch.by_id[gid]
             got = gid in ch.done
             ry = rect.y + 28 + i * 34
-            self._draw_text(("✓ " if got else "· ") + g["short"], self.font_tiny, C_GREEN if got else C_TEXT, rect.x + 8, ry)
+            self._draw_text(("● " if got else "· ") + g["short"], self.font_tiny, C_GREEN if got else C_TEXT, rect.x + 8, ry)
             if got:
                 continue
             prog = ch.progress(gid)

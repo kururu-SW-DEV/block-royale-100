@@ -158,6 +158,22 @@ def test_translation_tables_are_imported_statically():
     assert not any(isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "import_module" for n in ast.walk(tree)), "importlib.import_module은 exe 빌드에서 모듈이 빠질 수 있음"
 
 
+def test_no_glyphs_missing_from_the_game_font():
+    """맑은 고딕에는 체크/가위표 기호(✓ ✔ ✗ ✘ ✕)가 없어 네모(두부 글자)로 깨져 보임 -> 화면에 그리는 글에 쓰지 않음 (●○■□ 같은 있는 기호를 쓸 것)"""
+    bad = "✓✔✗✘✕"
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    hits = []
+    for base, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in ("tests", "backups", "tools", "build_tmp", "release", "docs", ".git", "__pycache__")]
+        for f in files:
+            if f.endswith(".py"):
+                text = open(os.path.join(base, f), encoding="utf-8").read()
+                for i, line in enumerate(text.splitlines(), 1):
+                    if any(c in line for c in bad) and not line.lstrip().startswith("#"):
+                        hits.append(f"{f}:{i}")
+    assert not hits, f"글꼴에 없는 기호 사용: {hits}"
+
+
 if __name__ == "__main__":
     pygame.init()
     from settings_manager import SETTINGS_FILE

@@ -128,6 +128,44 @@ def test_v133_crash_helpers():
     os.remove(path)
 
 
+def test_brief_card_has_mouse_buttons_to_start_and_leave():
+    """오늘의 도전/주간 변형 브리핑 카드: 마우스로 메인 메뉴로 나가는 버튼이 있어야 함 (예전에는 키보드 ESC뿐이고 클릭은 무조건 시작)"""
+    import datetime
+    from config import week_key
+    app = _app()
+    app.use_bot_pool = True                                   # 브리핑 카드는 실제 실행(봇 풀 사용)에서만 열림
+    try:
+        for kw in (dict(daily=datetime.date.today().strftime("%Y%m%d")), dict(weekly=week_key())):
+            app.start_game(mode="SOLO", total_players=20, **kw)
+            m = app.match
+            assert m.brief_open, "브리핑 카드가 열려야 함"
+            app._render_brief()
+            btn = app.brief_menu_btn
+            ev = lambda pos: pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=pos, button=1)
+            app._handle_brief_event(ev((btn.centerx, btn.centery)))
+            assert app.state == "MENU" and not m.brief_open or app.state == "MENU", "메인 메뉴 버튼이 동작하지 않음"
+            # 같은 카드에서 버튼이 아닌 곳을 누르면 시작 (카운트다운)
+            app.start_game(mode="SOLO", total_players=20, **kw)
+            m = app.match
+            app._render_brief()
+            app._handle_brief_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=(5, 5), button=1))
+            assert not m.brief_open and app.state == "GAME"
+    finally:
+        app.use_bot_pool = False
+
+
+def test_tips_replay_button_toggles_on_and_off():
+    app = _app()
+    app.settings.set("coach_done", True)
+    app.settings.set("tips_replay", False)
+    app._settings_activate("tips_replay")
+    assert app.settings.get("tips_replay") is True and app.settings.get("coach_done") is False
+    app._settings_activate("tips_replay")                       # 다시 누르면 꺼지고 첫 판 설명 상태도 원래대로
+    assert app.settings.get("tips_replay") is False and app.settings.get("coach_done") is True
+    app._settings_activate("tips_replay")
+    assert app.settings.get("tips_replay") is True
+
+
 if __name__ == "__main__":
     pygame.init()
     from settings_manager import SETTINGS_FILE

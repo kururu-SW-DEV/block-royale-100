@@ -475,7 +475,7 @@ class MenuMixin:
         games_all = self.stats_mgr.data.get("total_games", 0)
         n_prac = len(self.stats_mgr.ch()["practice"]["done"])
         if games_all < 3 and not (n_prac >= 3 and games_all >= 1):              # 처음 몇 판: 입문 순서를 체크리스트로 (연습 기초 과제 3개 -> 첫 경기)
-            g = f"처음이라면  {'✓' if n_prac >= 3 else '□'} ① 연습 기초 과제 3개 ({min(n_prac, 3)}/3)   {'✓' if games_all >= 1 else '□'} ② 첫 경기 끝까지 해 보기"
+            g = f"처음이라면  {'■' if n_prac >= 3 else '□'} ① 연습 기초 과제 3개 ({min(n_prac, 3)}/3)   {'■' if games_all >= 1 else '□'} ② 첫 경기 끝까지 해 보기"
             self._t(self._menu_fit(g, self.font_help, 900), self.font_help, C_GOLD if n_prac < 3 else COL_HINT, cx, by + 262, "midtop")
 
         # 5. 하단 바: 버전 · 키 안내 · 게임 종료

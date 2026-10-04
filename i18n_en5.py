@@ -136,12 +136,20 @@ EXACT = {
     "목표 3개를 달성해 별(★)을 모으세요. 여러 번 도전해도 달성한 별은 유지됩니다": "Complete the 3 goals to collect stars (★). Stars you earned are kept across attempts.",
     "오늘의 목표": "Today's Goals", "이번 주 목표": "This Week's Goals",
     " (이번 주 변형)": " (this week's variant)", "  ·  이번 주만의 규칙": "  ·  this week's special rule",
-    "달성함 ✓": "Done ✓", "도전!": "Go!",
+    "● 달성함": "● Done", "도전!": "Go!",
     "오늘 첫 도전입니다 — 기록이 남아 다음 도전에서 비교됩니다": "First try today — your record is saved and compared next time",
     "아직 기록 없음": "No record yet",
 }
 
 EXACT.update({
+    "1줄": "1 line", "+1줄": "+1 line",
+    "조준 모드": "Targeting", "경기 흐름": "Match Flow", "TAB 순환  ·  1~5 선택  ·  상단 칩 클릭": "TAB cycles  ·  1-5 select  ·  click the top chips",
+    "사람 우선, 없으면 탈락 직전인 상대": "Humans first, else whoever is closest to elimination",
+    "쌓인 블록 + 받을 공격이 가장 큰 상대": "Biggest stack + incoming garbage",
+    "나를 노리는 상대에게 (여럿이면 동시에)": "Whoever targets you (all at once if several)",
+    "K.O.를 가장 많이 쌓은 상대": "Player with the most K.O.s",
+    "무작위 1명을 노리고 계속 유지": "One random survivor, kept while alive",
+    "도전 시작": "Start Challenge",
     "건너뛰기": "Skip", "LAN 멀티: 상대도 같은 버전 필요": "LAN: others need the same version",
     "견습": "Apprentice", "숙련자": "Adept", "베테랑": "Veteran", "전략가": "Strategist", "명인": "Master", "전설": "Legend", "블록 로열": "Block Royale",
     "배틀로얄 · 커스텀": "Battle Royale · Custom", "서바이벌 · 커스텀": "Survival · Custom",
@@ -177,6 +185,8 @@ EXACT.update({
 })
 
 TEMPLATES = {
+    "받은 공격은 {}초 차징 뒤에 올라옵니다. 그 사이에 줄을 지우면 먼저 깎입니다. (한 번에 최대 {}줄)": "Received attacks rise after a {}s charge. Clearing lines in between cancels them first. (max {} lines at once)",
+    "경기 시작 {}분부터 매분 공격력 +{}% (최대 ×{}). 생존자가 절반이 되면 PHASE 2, 더 줄면 FINAL.": "From minute {} of the match, attack +{}% every minute (max ×{}). PHASE 2 at half the field, FINAL below that.",
     "처음이라면  {} ① 연습 기초 과제 3개 ({#}/3)   {} ② 첫 경기 끝까지 해 보기": "New here?  {} 1) 3 basic practice tasks ({}/3)   {} 2) play your first match to the end",
     " 칭호 '{}'": " title '{}'",
     "내 최고 판({}점)이 경기 옆에 함께 달립니다 (혼자 하는 경기)": "Your best run ({} pts) races alongside the match (solo matches)",

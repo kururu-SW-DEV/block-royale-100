@@ -1185,13 +1185,13 @@ class BattleRoyaleMatch:
         self._challenge_events()
 
     def challenge_summary(self):
-        """결과 화면용 (긴 문구, 짧은 문구). 오늘의 도전/주간 변형이 아니면 None. 예: ('오늘의 도전 ★★☆  쿼드 2회 ✓ · K.O. 3 ✓ · 10위 안 ✗', '오늘의 도전 ★2/3')"""
+        """결과 화면용 (긴 문구, 짧은 문구). 오늘의 도전/주간 변형이 아니면 None. 예: ('오늘의 도전 ★★☆  쿼드 2회 ● · K.O. 3 ● · 10위 안 ○', '오늘의 도전 ★2/3')"""
         ch = self.challenge
         if ch is None or self.challenge_kind not in ("daily", "weekly"):
             return None
         label = "오늘의 도전" if self.challenge_kind == "daily" else f"주간 변형 · {(self.mutator or {}).get('name', '')}"
         stars = "".join("★" if gid in ch.done else "☆" for gid in ch.order)
-        items = " · ".join(f"{ch.by_id[gid]['short']} {'✓' if gid in ch.done else '✗'}" for gid in ch.order)
+        items = " · ".join(f"{ch.by_id[gid]['short']} {'●' if gid in ch.done else '○'}" for gid in ch.order)
         return f"{label} {stars}  {items}", f"{label} ★{len(ch.done)}/{len(ch.order)}"
 
     def _challenge_events(self):

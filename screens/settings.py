@@ -380,9 +380,14 @@ class SettingsMixin:
             self._open_rules()
         elif btn_id == "tips_replay":
             self.sound_mgr.play('rotate')
-            self.settings.set("tips_seen", [], autosave=False)
-            self.settings.set("tips_replay", True, autosave=False)
-            self.settings.set("coach_done", False)
+            if self.settings.get("tips_replay"):                         # 켜져 있으면 다시 눌러 끔: 첫 판 설명은 켜기 전 상태로 되돌림
+                self.settings.set("tips_replay", False, autosave=False)
+                self.settings.set("coach_done", bool(getattr(self, "_coach_done_before_replay", True)))
+            else:
+                self._coach_done_before_replay = bool(self.settings.get("coach_done"))
+                self.settings.set("tips_seen", [], autosave=False)
+                self.settings.set("tips_replay", True, autosave=False)
+                self.settings.set("coach_done", False)
             self.tips_replay_notice_until = time.time() + 3.0
         elif btn_id in ("shake_prev", "shake_next"):
             self.sound_mgr.play('rotate')
@@ -719,9 +724,9 @@ class SettingsMixin:
         self._s_row("rules", y, 50, "규칙 요약 보기", "공격표 · 배지 · 역습 보너스 · 조준 모드 (게임 어디서든 F1)")
         self._s_btn("open_rules", pygame.Rect(RIGHT - 200, y + 7, 200, 36), "규칙 카드 열기", True)
         y += 50
-        done = time.time() < getattr(self, "tips_replay_notice_until", 0.0)
-        self._s_row("tips_replay", y, 50, "도움말 팁 다시 보기", "첫 판 설명과 상황별 팁을 다음 경기부터 다시 표시")
-        self._s_btn("tips_replay", pygame.Rect(RIGHT - 200, y + 7, 200, 36), "다시 보기 켜짐 ✓" if done else "다시 보기", True)
+        tips_on = bool(self.settings.get("tips_replay"))                  # 켜 두면 다음 경기부터 팁이 다시 나옴 (다 본 뒤 저절로 꺼짐)
+        self._s_row("tips_replay", y, 50, "도움말 팁 다시 보기", "다음 경기부터 팁과 첫 판 설명을 다시 표시 (켠 뒤 다시 누르면 끔)" if tips_on else "첫 판 설명과 상황별 팁을 다음 경기부터 다시 표시")
+        self._s_btn("tips_replay", pygame.Rect(RIGHT - 200, y + 7, 200, 36), "켜짐 · 누르면 끔" if tips_on else "다시 보기", True, color=C_GREEN if tips_on else None)
         y += 50
         log_on = bool(self.settings.get("match_log", False))
         self._s_row("matchlog", y, 50, "경기 기록 저장", "테스트용: 경기마다 JSON 기록을 남김")

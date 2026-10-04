@@ -62,35 +62,70 @@ class RulesMixin:
         if event.type == pygame.KEYDOWN or (event.type == pygame.MOUSEBUTTONDOWN and event.button in (1, 3)):
             self._close_rules()
 
+    # 조준 모드 한 줄 요약 (긴 설명은 게임 중 조준 칸 툴팁에 있음)
+    TARGET_SHORT = {"AUTO": ("자동", "사람 우선, 없으면 탈락 직전인 상대"), "KO": ("K.O.", "쌓인 블록 + 받을 공격이 가장 큰 상대"),
+                    "ATTACKERS": ("반격", "나를 노리는 상대에게 (여럿이면 동시에)"), "BADGES": ("배지", "K.O.를 가장 많이 쌓은 상대"),
+                    "RANDOM": ("랜덤", "무작위 1명을 노리고 계속 유지")}
+
+    def _rules_card(self, rect, title, accent):
+        """규칙 카드 안의 구역 하나: 연한 면 + 제목 앞 색 막대"""
+        r = self.renderer
+        r._panel(rect, border=(46, 58, 92), bg=(21, 27, 46), radius=12, alpha=235)
+        pygame.draw.rect(self.screen, accent, (rect.x + 16, rect.y + 17, 4, 20), border_radius=2)
+        r._draw_text(title, r.font_mid, C_TEXT, rect.x + 28, rect.y + 14)
+
     def _render_rules(self):
+        """규칙 요약 (F1): 위쪽에 숫자 표 3개(공격 줄 수 / K.O. 배지 / 역습 보너스), 아래쪽에 조준 모드와 경기 흐름. 구역마다 카드로 나누고 색은 제목 막대에만 씀"""
         from gfx import CANVAS
         r = self.renderer
+        self.screen = CANVAS
         CANVAS.overlay((4, 6, 12, 215))
-        w, h = 1120, 600
+        w, h = 1120, 620
         x, y = (SCREEN_WIDTH - w) // 2, (SCREEN_HEIGHT - h) // 2
-        r._panel((x, y, w, h), border=C_GOLD, bg=(16, 20, 36), radius=18, alpha=248, border_w=2)
-        r._draw_text("규칙 요약", r.font_large, C_GOLD, x + w // 2, y + 18, "midtop")
-        r._draw_text("아무 키나 클릭으로 닫기  ·  F1", r.font_tiny, C_DIM, x + w - 24, y + 28, "topright")
+        r._panel((x, y, w, h), border=(64, 78, 118), bg=(14, 18, 32), radius=18, alpha=250, border_w=1)
+        r._draw_text("규칙 요약", r.font_large, C_TEXT, x + 28, y + 16)
+        r._draw_text("아무 키나 클릭으로 닫기  ·  F1", r.font_tiny, C_DIM, x + w - 28, y + 28, "topright")
         game_match = self.match if (self.state == "GAME" and self.match is not None) else None
         cols = rules_card_data(game_match)
-        col_w = (w - 72) // 3
+        gap, pad = 14, 24
+        col_w = (w - 2 * pad - 2 * gap) // 3
+        top, card_h = y + 68, 284
+        accents = (C_ACCENT, C_GOLD, C_ORANGE)
         for ci, (title, rows) in enumerate(cols):
-            cx = x + 24 + ci * (col_w + 12)
-            r._draw_text(title if len(title) < 22 else title[:22] + "…", r.font_mid, C_ACCENT, cx, y + 76)
+            rect = pygame.Rect(x + pad + ci * (col_w + gap), top, col_w, card_h)
+            self._rules_card(rect, title, accents[ci])
+            row_h = 27
             for i, (a, b) in enumerate(rows):
-                ry = y + 112 + i * 27
-                r._draw_text(a, r.font_small, C_TEXT, cx + 4, ry)
-                r._draw_text(b, r.font_small, C_GOLD, cx + col_w - 8, ry, "topright")
-        r._draw_text("여럿이 나를 노릴 때 내 공격에 더해집니다", r.font_tiny, C_DIM, x + 24 + 2 * (col_w + 12) + 4, y + 112 + 6 * 27)
-        # 조준 모드 5종
-        my = y + 340
-        r._draw_text("조준 모드  (TAB 순환 · 1~5 선택 · 상단 칩 클릭)", r.font_mid, C_ACCENT, x + 28, my)
+                ry = rect.y + 54 + i * row_h
+                r._draw_text(a, r.font_small, (205, 214, 232), rect.x + 20, ry)
+                r._draw_text(b, r.font_small, C_GOLD, rect.right - 20, ry, "topright")
+                if i < len(rows) - 1:
+                    pygame.draw.line(self.screen, (36, 46, 74), (rect.x + 18, ry + row_h - 4), (rect.right - 18, ry + row_h - 4), 1)
+            if ci == 2:
+                r._draw_text("여럿이 나를 노릴 때 내 공격에 더해집니다", r.font_tiny, C_DIM, rect.x + 20, rect.bottom - 30)
+        # 아래 줄: 조준 모드 (왼쪽, 넓게) + 경기 흐름 (오른쪽)
+        by = top + card_h + gap
+        bh = y + h - pad - by
+        left_w = col_w * 2 + gap
+        aim = pygame.Rect(x + pad, by, left_w, bh)
+        self._rules_card(aim, "조준 모드", C_GREEN)
+        r._draw_text("TAB 순환  ·  1~5 선택  ·  상단 칩 클릭", r.font_tiny, C_DIM, aim.right - 20, aim.y + 20, "topright")
         for i, mode in enumerate(config.TARGET_MODES):
-            line = TARGET_MODE_HELP.get(mode, "")
-            r._draw_text(line if len(line) < 80 else line[:78] + "…", r.font_small, C_TEXT, x + 32, my + 34 + i * 24)
-        ny = my + 34 + 5 * 24 + 14
-        for j, note in enumerate(rules_card_notes(game_match)):
-            r._draw_text("• " + note, r.font_small, C_ORANGE if j else C_GREEN, x + 28, ny + j * 24)
+            name, desc = self.TARGET_SHORT.get(mode, (mode, ""))
+            ry = aim.y + 54 + i * 28
+            r._draw_text(f"{i + 1}", r.font_tiny, C_DIM, aim.x + 22, ry + 3)
+            r._draw_text(name, r.font_small, C_TEXT, aim.x + 44, ry)
+            r._draw_text(desc, r.font_small, (150, 162, 192), aim.x + 130, ry)
+        flow = pygame.Rect(aim.right + gap, by, col_w, bh)
+        self._rules_card(flow, "경기 흐름", (255, 120, 120))
+        fy = flow.y + 52
+        for note in rules_card_notes(game_match):
+            lines = r._wrap_words(note, r.font_small, flow.w - 44)
+            r._draw_text("•", r.font_small, C_GOLD, flow.x + 20, fy)
+            for ln in lines[:4]:
+                r._draw_text(ln, r.font_small, (205, 214, 232), flow.x + 36, fy)
+                fy += 22
+            fy += 8
 
 
 class BriefMixin:
@@ -113,7 +148,12 @@ class BriefMixin:
             else:
                 self._close_brief()
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button in (1, 3):
-            self._close_brief()
+            menu_btn = getattr(self, "brief_menu_btn", None)
+            if event.button == 1 and menu_btn is not None and menu_btn.collidepoint(event.pos):
+                self.sound_mgr.play('move')
+                self.return_to_menu()                                # 메인 메뉴 버튼: 시작하지 않고 메뉴로 (마우스로도 나갈 수 있게)
+            else:
+                self._close_brief()                                  # 그 밖의 클릭은 지금처럼 시작
 
     def _render_brief(self):
         import time as _t
@@ -150,7 +190,7 @@ class BriefMixin:
             r._panel(row, border=C_GREEN if got else (60, 74, 110), bg=(18, 36, 30) if got else (20, 26, 46), radius=10)
             r._draw_text("★" * int(g["tier"]) + "☆" * (3 - int(g["tier"])), r.font_mid, C_GOLD, row.x + 18, row.centery, "midleft")
             r._draw_text(g["text"], r.font_large, C_TEXT, row.x + 120, row.centery, "midleft")
-            r._draw_text("달성함 ✓" if got else "도전!", r.font_mid, C_GREEN if got else C_DIM, row.right - 20, row.centery, "midright")
+            r._draw_text("● 달성함" if got else "도전!", r.font_mid, C_GREEN if got else C_DIM, row.right - 20, row.centery, "midright")
         fy = y + 208 + 3 * 62 + 8
         lines = []
         if weekly:
@@ -168,4 +208,9 @@ class BriefMixin:
         for i, ln in enumerate(lines):
             r._draw_text(ln, r.font_small, C_GOLD if i == 0 else C_DIM, x + w // 2, fy + i * 24, "midtop")
         blink = int(_t.time() * 2) % 2 == 0
-        r._draw_text("아무 키나 눌러 시작   ·   ESC: 메뉴로", r.font_mid, accent if blink else C_DIM, x + w // 2, y + h - 40, "midtop")
+        mx, my = pygame.mouse.get_pos()
+        start_btn = pygame.Rect(x + w // 2 - 250, y + h - 96, 240, 42)           # 마우스로 시작 / 메인 메뉴로 나가는 버튼 (키보드는 아무 키 / ESC)
+        self.brief_menu_btn = pygame.Rect(x + w // 2 + 10, y + h - 96, 240, 42)
+        r._button(start_btn, "도전 시작", "green", start_btn.collidepoint(mx, my), "ENTER")
+        r._button(self.brief_menu_btn, "메인 메뉴로", "blue", self.brief_menu_btn.collidepoint(mx, my), "ESC")
+        r._draw_text("아무 키나 눌러 시작   ·   ESC: 메뉴로", r.font_small, accent if blink else C_DIM, x + w // 2, y + h - 36, "midtop")
