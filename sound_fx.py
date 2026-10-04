@@ -19,11 +19,24 @@ Block Royale 100 - Authentic Cyberpunk & Synthwave Sound Engine
 - 블록 파괴(Shatter & Pop) 및 크리스탈 타격 효과음 탑재
 """
 
+import os
 import time
 import threading
+import hashlib
+import json
 import pygame
-import numpy as np
 import random
+
+
+class _LazyNumpy:
+    """numpy는 소리를 새로 합성할 때만 필요함: 디스크 캐시로 시작하면 import 비용(약 150ms)과 메모리를 쓰지 않음. 처음 쓰는 순간 진짜 numpy로 바뀜"""
+    def __getattr__(self, name):
+        import numpy
+        globals()["np"] = numpy
+        return getattr(numpy, name)
+
+
+np = _LazyNumpy()
 
 NOTE_INDEX = {
     'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4,
@@ -124,15 +137,118 @@ class SoundManager:
             self.bgm_ch_b = pygame.mixer.Channel(7)
             self.active_channel = self.bgm_ch_a
             
-            # BGM 4곡(약 0.8초)은 백그라운드에서 합성하고, 그동안 효과음을 만듦 -> 창이 더 빨리 뜸
-            self._bgm_thread = threading.Thread(target=self._generate_all_bgm_stages, daemon=True)
-            self._bgm_thread.start()
-            self._generate_all_arcade_sounds()
-            self._generate_pitched_variants()
-            self._wait_bgm('menu')                     # 타이틀 화면 음악만 준비되면 시작, 나머지 곡은 뒤에서 계속 생성
+            if not self._load_audio_cache():           # 두 번째 실행부터는 저장해 둔 소리를 바로 불러옴
+                # BGM은 백그라운드에서 합성하고, 그동안 효과음을 만듦 -> 창이 더 빨리 뜸
+                self._generate_everything()
         except Exception as e:
             print(f"[SoundManager] Audio initialization failed: {e}. Audio disabled.")
             self.enabled = False
+
+    # ---- 합성한 소리의 디스크 캐시 (두 번째 실행부터 합성 약 0.4초 + BGM 3.5~10초와 그동안의 프레임 끊김을 없앰)
+    def _cache_file(self):
+        try:
+            from app_paths import data_path
+            return data_path("sound_cache.bin")
+        except Exception:
+            return None
+
+    def _cache_key(self):
+        """소리를 만드는 코드(sound_fx.py)와 믹서 설정이 같을 때만 캐시를 씀. 코드를 고치면 자동으로 새로 합성"""
+        try:
+            with open(os.path.abspath(__file__), "rb") as f:
+                src = f.read()
+        except OSError:
+            src = b""
+        try:
+            from config import APP_VERSION                    # exe로 묶이면 소스 파일을 읽을 수 없으므로 버전도 키에 넣음 (업데이트하면 소리를 새로 합성)
+        except Exception:
+            APP_VERSION = ""
+        return hashlib.sha1(src + repr(pygame.mixer.get_init()).encode() + repr(self._bgm_bake).encode() + str(APP_VERSION).encode()).hexdigest()
+
+    @staticmethod
+    def _raw(snd):
+        return snd.get_raw() if hasattr(snd, "get_raw") else None
+
+    def _load_audio_cache(self):
+        """캐시가 유효하면 효과음/BGM을 모두 채우고 True. 형식: [4바이트 헤더 길이][JSON 헤더][소리 원본 바이트들] (pickle을 쓰지 않아 파일이 바뀌어도 코드가 실행되지 않음)"""
+        path = self._cache_file()
+        if not path or not os.path.exists(path):
+            return False
+        try:
+            with open(path, "rb") as f:
+                hlen = int.from_bytes(f.read(4), "little")
+                head = json.loads(f.read(hlen).decode("utf-8"))
+                if head.get("key") != self._cache_key() or not head.get("bgm_done"):
+                    return False
+                snd, bgm = {}, {}
+                for kind, name, idx, n in head["items"]:
+                    obj = pygame.mixer.Sound(buffer=f.read(n))
+                    if kind == "s":
+                        snd[name] = obj
+                    else:
+                        bgm.setdefault(name, []).append(obj)
+            for k in list(bgm):
+                if not head["bgm_lists"].get(str(k)):
+                    bgm[k] = bgm[k][0]                      # 곡이 하나뿐인 단계(menu/results)는 리스트가 아니라 Sound 하나
+            self.sounds.update(snd)
+            self.bgm_stages.update(bgm)
+            return True
+        except Exception as e:
+            print(f"[SoundManager] Sound cache ignored: {e}")
+            self.sounds.clear()
+            self.bgm_stages.clear()
+            return False
+
+    def _save_audio_cache(self):
+        """합성이 모두 끝난 뒤 한 번 저장 (임시 파일에 쓰고 교체: 저장 도중 종료돼도 원본이 깨지지 않음)"""
+        path = self._cache_file()
+        if not path:
+            return
+        try:
+            items, blobs, lists = [], [], {}
+            for k, v in list(self.sounds.items()):
+                raw = self._raw(v)
+                items.append(["s", k, 0, len(raw)])
+                blobs.append(raw)
+            for k, v in list(self.bgm_stages.items()):
+                seq = v if isinstance(v, list) else [v]
+                lists[str(k)] = isinstance(v, list)
+                for n, x in enumerate(seq):
+                    raw = self._raw(x)
+                    items.append(["b", k, n, len(raw)])
+                    blobs.append(raw)
+            head = json.dumps({"key": self._cache_key(), "bgm_done": True, "items": items, "bgm_lists": lists}).encode("utf-8")
+            tmp = path + ".tmp"
+            with open(tmp, "wb") as f:
+                f.write(len(head).to_bytes(4, "little"))
+                f.write(head)
+                for b in blobs:
+                    f.write(b)
+            os.replace(tmp, path)
+        except Exception as e:
+            print(f"[SoundManager] Sound cache not saved: {e}")
+
+    def _generate_everything(self):
+        """캐시가 없을 때: BGM은 백그라운드로, 효과음은 바로 합성하고 끝나면 캐시에 저장"""
+        self._bgm_thread = threading.Thread(target=self._bgm_then_save, daemon=True)
+        self._bgm_thread.start()
+        self._generate_all_arcade_sounds()
+        self._generate_pitched_variants()
+        self._wait_bgm('menu')                     # 타이틀 화면 음악만 준비되면 시작, 나머지 곡은 뒤에서 계속 생성
+
+    def _bgm_then_save(self):
+        self._generate_all_bgm_stages()
+        th = self._sfx_ready_wait()
+        if th and all(k in self.bgm_stages for k in ('menu', 'results', 1, 2, 3)) and isinstance(self.bgm_stages.get(1), list) and len(self.bgm_stages[1]) >= 5:
+            self._save_audio_cache()
+
+    def _sfx_ready_wait(self):
+        """효과음 합성이 끝날 때까지 잠깐 기다림 (BGM 스레드가 먼저 끝났을 때 캐시에 효과음이 빠지지 않게)"""
+        for _ in range(200):
+            if 'combo_layer' in self.sounds and 'clear_c0' in self.sounds and 'vo_golden' in self.sounds:
+                return True
+            time.sleep(0.05)
+        return False
 
     def _wait_bgm(self, stage, timeout=6.0):
         """해당 BGM이 백그라운드 합성으로 준비될 때까지 잠깐 대기 (이미 준비됐으면 즉시 반환)"""

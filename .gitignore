@@ -25,3 +25,5 @@ __pycache__/
 Thumbs.db
 desktop.ini
 .DS_Store
+/sound_cache.bin
+/sound_cache.bin.tmp

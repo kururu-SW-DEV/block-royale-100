@@ -96,9 +96,15 @@ def _collide(rows, cells, px, py):
 
 
 def _drop(rows, cells, px, py):
-    while not _collide(rows, cells, px, py + 1):
-        py += 1
-    return py
+    """py에서 한 칸씩 내려 막히기 직전 y를 돌려줌 (_collide를 반복 호출하던 것과 같은 결과를 호출 단계 없이 계산: 봇 계산에서 가장 많이 불리는 함수)"""
+    while True:
+        ny = py + 1
+        for dx, dy in cells:
+            x = px + dx
+            y = ny + dy
+            if x < 0 or x >= W or y >= H or (y >= 0 and (rows[y] >> x) & 1):
+                return py
+        py = ny
 
 
 def _top(rows):

@@ -347,23 +347,28 @@ class UIRenderer:
         self.bg_surface = None
         self._led_bg_caches = {}
 
-    def _blit_card_layer(self, slot, key, x, y, w, h, draw):
+    def _blit_card_layer(self, slot, key, x, y, w, h, draw, lkey=None):
         """미니 카드의 자주 안 바뀌는 부분(이름표, 홀드/다음 칸)을 오프스크린에 한 번 그려 두고 한 장으로 붙임.
         draw()는 원래 그리기 코드 그대로이며, CANVAS의 출력 대상/원점만 잠시 바꿔 같은 좌표 반올림으로 그림 (_blit_mini_cells와 같은 방식)"""
-        if not self.mini_fast or getattr(self, "_shaking", False):
+        if not self.mini_fast:
             draw()
             return
         self._check_ver()
         X0, Y0 = CANVAS.X(x), CANVAS.Y(y)
+        loose = getattr(self, "_loose", False)                 # 화면 흔들림/피격 지터 중: 위치가 매 프레임 소수로 바뀌므로 정확한 반올림 대신 만들어 둔 레이어를 어긋난 만큼 밀어서 씀 (최대 1px 차이, 흔들리는 동안만)
+        ent = self._card_layers.get(slot)
+        if loose and lkey is not None and ent is not None and ent[6] == lkey:
+            self_dx, self_dy = CANVAS.X(x) - ent[4], CANVAS.Y(y) - ent[5]
+            CANVAS.display.blit(ent[2], (ent[3][0] + self_dx, ent[3][1] + self_dy))
+            return
         X0 -= X0 % 2
         Y0 -= Y0 % 2
         frac = (round((CANVAS.ox + x * CANVAS.S) % 2.0, 3), round((CANVAS.oy + y * CANVAS.S) % 2.0, 3))   # 반올림이 달라지는 위치만 키로 (같은 2px 격자 이동은 재사용)
-        ent = self._card_layers.get(slot)
         if ent is None or ent[0] != key or ent[1] != frac:
             surf = pygame.Surface((max(1, CANVAS.X(x + w) - X0 + 4), max(1, CANVAS.Y(y + h) - Y0 + 4)), pygame.SRCALPHA)
             with CANVAS.redirect(surf, X0, Y0):
                 draw()
-            ent = self._card_layers[slot] = (key, frac, surf)
+            ent = self._card_layers[slot] = (key, frac, surf, (X0, Y0), CANVAS.X(x), CANVAS.Y(y), lkey)
         CANVAS.display.blit(ent[2], (X0, Y0))
 
     def _blit_overlay(self, key, size, build, pos, alpha=None):
@@ -514,6 +519,7 @@ class UIRenderer:
         else:
             ox = random.uniform(-shake, shake) if shake > 0 else 0
             oy = random.uniform(-shake, shake) if shake > 0 else 0
+        self._loose = False
         self._shaking = shake > 0                        # 흔들리는 동안은 미니 카드 레이어 캐시를 쓰지 않고 직접 그림 (틀과 내용이 같은 반올림으로 그려져 어긋나지 않고, 매 프레임 레이어를 새로 만드는 비용도 없음)
 
         now_t = time.perf_counter()
@@ -869,9 +875,23 @@ class UIRenderer:
             x0, y0, ncols, nrows = self._led_panel_bg(rect)
             panels.append((x0, y0, ncols, nrows))
 
+        # 도트 위치는 고정된 격자라 물리 좌표 변환(rect_f)과 번짐 색(_mix)을 한 번만 계산해 재사용 (프레임당 약 440개 x 2번 채우기의 변환 비용 제거, 결과 픽셀은 동일)
+        led_cache = self.__dict__.setdefault("_led_dot_cache", {"ver": -1, "rects": {}, "glow": {}})
+        if led_cache["ver"] != (CANVAS.version, bg):
+            led_cache["ver"] = (CANVAS.version, bg)
+            led_cache["rects"].clear()
+            led_cache["glow"].clear()
+        rects_c, glow_c, disp = led_cache["rects"], led_cache["glow"], CANVAS.display
+
         def dot(cx, cy, col):
-            self.screen.fill(_mix(col, bg, 0.72), (cx - 1, cy - 1, 4, 4))     # 번짐(글로우)
-            self.screen.fill(col, (cx, cy, 2, 2))
+            rr = rects_c.get((cx, cy))
+            if rr is None:
+                rr = rects_c[(cx, cy)] = (CANVAS.rect_f(cx - 1, cy - 1, 4, 4), CANVAS.rect_f(cx, cy, 2, 2))
+            gcol = glow_c.get(col)
+            if gcol is None:
+                gcol = glow_c[col] = _mix(col, bg, 0.72)
+            disp.fill(gcol, rr[0])                                            # 번짐(글로우)
+            disp.fill(col, rr[1])
 
         lamp = (255, 70, 60) if int(now * 1.6) % 2 == 0 else (110, 36, 32)      # LIVE 램프 (양쪽 판)
         for x0, y0, ncols, nrows in panels:
@@ -2153,17 +2173,17 @@ class UIRenderer:
                         _orig_rect(target, col, (l_, t_, rw_ if rw_ >= 1 else 1, rh_ if rh_ >= 1 else 1), 0, border_radius=0)
                     else:
                         pygame.draw.rect(self.screen, col, (bx + start * cp, by + y_idx * cp, (x_idx - start) * cp - 0.6, max(1, cp - 0.6)))
-        if getattr(self, "_shaking", False):             # 흔들리는 동안은 레이어 없이 직접 그림 (틀과 같은 반올림, 레이어 재생성 비용 없음)
-            paint(CANVAS.display)
-            return
         ent = self._mini_layers.get(pid)
+        if getattr(self, "_loose", False) and ent is not None and ent[0][:-1] == key[:-1]:     # 흔들림/지터 중: 같은 내용의 레이어를 어긋난 만큼 밀어서 붙임 (매 프레임 100장을 다시 칠하던 비용 제거)
+            CANVAS.display.blit(ent[1], (ent[2][0] + CANVAS.X(bx) - ent[3], ent[2][1] + CANVAS.Y(by) - ent[4]))
+            return
         if ent is None or ent[0] != key:
             w = CANVAS.X(bx + bw) - X0 + 4
             h = CANVAS.Y(by + bh) - Y0 + 4
             surf = pygame.Surface((max(1, w), max(1, h)), pygame.SRCALPHA)
             with CANVAS.redirect(surf, X0, Y0):
                 paint(surf)
-            ent = self._mini_layers[pid] = (key, surf)
+            ent = self._mini_layers[pid] = (key, surf, (X0, Y0), CANVAS.X(bx), CANVAS.Y(by))
         CANVAS.display.blit(ent[1], (X0, Y0))
 
     def _render_mini_grid(self, player_list, ox, oy, total_w, total_h, match, max_bw=56.0, colors=None):
@@ -2207,6 +2227,7 @@ class UIRenderer:
                 bx += random.uniform(-2.0, 2.0)
                 by += random.uniform(-2.0, 2.0)
 
+            self._loose = bool(getattr(self, "_shaking", False)) or is_flashing
             board_rect = pygame.Rect(int(bx), int(by), int(bw), int(bh))
             self.mini_board_rects[pid] = board_rect
             # 블록은 틀(소수점을 버린 정수 Rect) 안쪽 1px 기준으로 그림. 소수 좌표로 그리면 화면 배율에 따라 반올림 차이로 블록이 틀 오른쪽/아래로 삐져나옴
@@ -2318,7 +2339,8 @@ class UIRenderer:
             # 이름표(이름/판/K.O. 알약/홀드 아이콘)는 내용이 바뀔 때만 다시 그림
             self._blit_card_layer((pid, "tag"), (board_rect.x, board_rect.y, board_rect.w, tag_y, name_str, tuple(name_col), is_spec, ko, ko_w,
                                                  hold_icon, hold_w, id(tag_font), bw >= 46),
-                                  board_rect.x - 3, tag_y - 8, board_rect.w + 6, tag_font.get_height() + 12, draw_tag)
+                                  board_rect.x - 3, tag_y - 8, board_rect.w + 6, tag_font.get_height() + 12, draw_tag,
+                                  lkey=(board_rect.w, name_str, tuple(name_col), is_spec, ko, ko_w, hold_icon, hold_w, id(tag_font), bw >= 46, tag_y - board_rect.y))
 
             # 블록: 쌓인 블록은 보드별 캐시 서피스 한 장으로 붙임 (고정/쓰레기/줄 제거로 모양이 바뀔 때만 다시 그림)
             cg = p.get("cg")
@@ -2485,7 +2507,8 @@ class UIRenderer:
                 nxt_key = tuple(p.get("next") or [])
                 self._blit_card_layer((pid, "strip"), (board_rect.x, board_rect.y, board_rect.w, board_rect.h, strip_w, bw, p.get("hold"), nxt_key,
                                                        id(self.font_tiny if bw < 90 else self.font_small)),
-                                      board_rect.right + 2, board_rect.y - 3, strip_w + 6, bh + 6, draw_strip)
+                                      board_rect.right + 2, board_rect.y - 3, strip_w + 6, bh + 6, draw_strip,
+                                      lkey=(board_rect.w, board_rect.h, strip_w, bw, p.get("hold"), nxt_key, id(self.font_tiny if bw < 90 else self.font_small)))
 
     # ---------------------------------------------------------------- 블록 반응 연출 (v1.1.7)
     SETTLE_SECS = 0.14          # 줄 제거 뒤 위 블록이 내려앉는 시간

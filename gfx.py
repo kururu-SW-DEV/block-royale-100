@@ -111,7 +111,7 @@ class Canvas:
         return max(minimum, n)
 
     def rect(self, r):
-        if isinstance(r, pygame.Rect):
+        if r.__class__ is pygame.Rect:
             return self.rect_f(r.x, r.y, r.w, r.h)
         try:
             x, y, w, h = r                                  # 실수 좌표(흔들림 등)도 잘라내지 않고 그대로 변환
@@ -121,10 +121,12 @@ class Canvas:
         return self.rect_f(x, y, w, h)
 
     def rect_f(self, x, y, w, h):
-        left, top = self.X(x), self.Y(y)
-        right, bottom = self.X(x + w), self.Y(y + h)
-        rw = right - left
-        rh = bottom - top
+        # X()/Y()와 같은 계산을 한 곳에서 직접 수행 (프레임당 수천 번 불리므로 호출 단계를 줄임, 결과는 동일)
+        S, ox, oy = self.S, self.ox, self.oy
+        left = int(round(ox + x * S))
+        top = int(round(oy + y * S))
+        rw = int(round(ox + (x + w) * S)) - left
+        rh = int(round(oy + (y + h) * S)) - top
         if w > 0 and rw < 1:
             rw = 1
         if h > 0 and rh < 1:
@@ -221,6 +223,9 @@ _orig_draw = {name: getattr(pygame.draw, name) for name in ("rect", "line", "lin
 CANVAS._orig = _orig_draw
 
 
+_draw_rect = _orig_draw["rect"]
+
+
 def _w(c, width):
     return 0 if width == 0 else c.length(width, 1)
 
@@ -228,12 +233,12 @@ def _w(c, width):
 def _rect(surface, color, rect, width=0, border_radius=0):
     if not isinstance(surface, Canvas):
         return _orig_draw["rect"](surface, color, rect, width, border_radius=border_radius)
-    if isinstance(rect, pygame.Rect):
+    if rect.__class__ is pygame.Rect:
         x, y, w, h = rect.x, rect.y, rect.w, rect.h
     else:
         x, y, w, h = rect
-    return _orig_draw["rect"](surface.display, color, surface.rect_f(x, y, w, h), _w(surface, width),
-                              border_radius=int(round(border_radius * surface.S)))
+    return _draw_rect(surface.display, color, surface.rect_f(x, y, w, h), 0 if width == 0 else surface.length(width, 1),
+                      border_radius=int(round(border_radius * surface.S)) if border_radius else 0)
 
 
 def _line(surface, color, start, end, width=1):
