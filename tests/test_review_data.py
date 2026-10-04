@@ -198,14 +198,14 @@ def test_achievements():
     app.stats_mgr.reset_stats()
     app.stats_mgr.record_match(1, 100, 6, 50, 3, 300)
     app.state = "RECORDS"
-    for mode in ("achv", "score", "trend", "survival", "battle"):
+    for mode in ("achv", "replay", "score", "trend", "survival", "battle"):
         app.records_mode = mode
         app._render_records()
     order = []
-    for _ in range(5):
+    for _ in range(6):
         app._handle_records_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT, mod=0, unicode=""))
         order.append(app.records_mode)
-    assert order == ["survival", "trend", "score", "achv", "battle"], order
+    assert order == ["survival", "trend", "score", "replay", "achv", "battle"], order
 
 
 if __name__ == "__main__":

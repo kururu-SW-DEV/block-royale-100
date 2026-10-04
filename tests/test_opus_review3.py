@@ -475,6 +475,8 @@ def test_trend_points_and_screen():
     _key(app, pygame.K_RIGHT)
     assert app.records_mode == "score", "추이 다음은 점수표 탭"
     _key(app, pygame.K_RIGHT)
+    assert app.records_mode == "replay"
+    _key(app, pygame.K_RIGHT)
     assert app.records_mode == "achv"
     print("  OK trend")
 

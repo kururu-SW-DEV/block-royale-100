@@ -10,7 +10,7 @@ import time
 from collections import deque
 
 from config import (
-    BOARD_WIDTH, BOARD_HEIGHT, TETROMINOES,
+    BOARD_WIDTH, BOARD_HEIGHT, SPAWN_Y, TETROMINOES,
     GARBAGE_ATTACK_TABLE, COMBO_BONUS, TSPIN_ATTACK_TABLE, TSPIN_MINI_ATTACK_TABLE, PERFECT_CLEAR_ATTACK,
 )
 from block_engine import JLSTZ_KICKS
@@ -172,7 +172,7 @@ def t_placements(rows):
     """T 블록의 도달 가능한 모든 고정 자리와 입력 경로: [(rot, px, py, kind, path)]
     path는 'L','R','D','cw','ccw' 입력 목록(마지막 하드 드롭은 따로)."""
     cells_by_rot = SHAPES["T"]
-    sx, sy, sr = 3, 0, 0
+    sx, sy, sr = 3, SPAWN_Y, 0
     if _collide(rows, cells_by_rot[sr], sx, sy):
         return []
     start = (sx, sy, sr, 0)
@@ -223,7 +223,7 @@ def t_placements(rows):
                 path.append(act)
             path.reverse()
             best[key] = (rank, r, x, y, kind, path)
-    return [(r, x, y, kind, path) for _rank, r, x, y, kind, path in best.values()]
+    return [(r, x, y, kind, path) for _rank, r, x, y, kind, path in best.values() if y >= 0]        # 숨김 구역에 걸치는 자리는 쓰지 않음 (_apply가 보이는 줄만 다룸)
 
 
 def _apply(rows, piece, rot, px, py, top=None):

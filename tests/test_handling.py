@@ -170,23 +170,24 @@ def test_handling_settings_ranges_and_presets():
     print("  OK 설정 범위/프리셋")
 
 
-def test_settings_screen_keys_tab_renders_and_navigates():
+def test_settings_screen_react_tab_renders_and_navigates():
     app, e = _app()
-    app.state, app.settings_tab, app.previous_state = "SETTINGS", "keys", "MENU"
+    app.state, app.settings_tab, app.previous_state = "SETTINGS", "react", "MENU"
     import screens.settings as SS
-    for f in range(SS.KEY_CARDS + len(SS.HANDLING_ROWS) + 1):
-        app.settings_focus["keys"] = f
+    for f in range(len(SS.TAB_NAV["react"])):
+        app.settings_focus["react"] = f
         app._kb_nav = True
         app._render_settings()
-    app.settings_focus["keys"] = SS.KEY_CARDS + 4                 # DAS 취소 행에서 → 로 토글
+    app.settings_focus["react"] = 4                                # DAS 취소 행에서 → 로 토글
     before = app.settings.get("das_cancel")
     app._settings_key_nav(pygame.K_RIGHT)
     assert app.settings.get("das_cancel") != before and app.DAS_CANCEL == (not before)
-    app.settings_focus["keys"] = SS.KEY_CARDS + 5                 # 프리셋 행
+    app.settings_focus["react"] = 5                                # 프리셋 행
     app._settings_key_nav(pygame.K_RIGHT)
+    app.settings_tab = "keys"
     app.settings_focus["keys"] = SS.PRESET_FOCUS
     app._settings_key_nav(pygame.K_UP)
-    assert app.settings_focus["keys"] == SS.KEY_CARDS + len(SS.HANDLING_ROWS) - 1
+    assert app.settings_focus["keys"] == SS.KEY_CARDS - 1
     print("  OK 설정 화면")
 
 

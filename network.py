@@ -9,9 +9,21 @@ import json
 import time
 import zlib
 import math
+import secrets
 from config import DEFAULT_UDP_PORT, DISCOVERY_BROADCAST_PORT, NAME_COLOR_COUNT, APP_VERSION
 
-PROTOCOL_VERSION = 1         # 호환되지 않는 패킷 변경 때 올림. JOIN_REQ의 proto와 다르면 호스트가 거절
+UNSTABLE_AFTER = 3.0         # (호스트) 참가자에게서 이만큼 신호가 없으면 '연결 불안정'으로 표시
+DROP_AFTER = 15.0            # 이만큼 없으면 연결 끊김으로 보고 탈락 처리 (예전 6초에서 늘림: 잠깐 끊겼다 돌아오는 경우를 버팀)
+
+
+def _sanitize_token(tok):
+    """세션 토큰(참가할 때 클라이언트가 만든 임의 문자열): 영문/숫자 8~32자만 허용, 아니면 빈 문자열"""
+    if isinstance(tok, str) and 8 <= len(tok) <= 32 and tok.isalnum():
+        return tok
+    return ""
+
+
+PROTOCOL_VERSION = 2         # 호환되지 않는 패킷 변경 때 올림. JOIN_REQ의 proto와 다르면 호스트가 거절
 
 _DIFFS = ("mixed", "easy", "normal", "hard", "master")     # settings_manager.BOT_DIFFICULTY_OPTIONS와 같아야 함 (테스트로 확인)
 MAX_CHAT_LEN = 120            # 채팅 한 줄 최대 글자 수
@@ -221,11 +233,13 @@ class NetworkManager:
         self.my_player_id = None
         self.connected = False
         self.state_seq = 0             # 클라이언트 상태 패킷 시퀀스 (송신용)
+        self.session_token = secrets.token_hex(8)   # 이번 접속의 비밀 토큰: 상태 패킷에 실어 보내 호스트가 주소가 바뀐 나를 알아보게 함
         self._world_ts = {}            # 마지막으로 처리한 WORLD_SYNC 타임스탬프 (조각 번호별)
 
         # 수신 큐 / 최근 수신 데이터
         self.incoming_attacks = []     # [(from_id, to_id, lines)]
         self.remote_players_state = {} # {player_id: state_dict}
+        self.takeover_events = []      # (호스트) 신호가 끊겨 봇이 대신 플레이할 참가자: [(id, 이름, 마지막 스냅샷), ...]
         self.game_started = False
         self.room_settings = {}
         self.initial_players = []
@@ -353,7 +367,9 @@ class NetworkManager:
                     # 등록된 클라이언트의 상태만 수용 (시퀀스가 오래된 패킷은 무시)
                     cinfo = self.clients.get(addr)
                     if cinfo is None:
-                        continue
+                        cinfo = self._host_try_rebind(msg, addr)          # 같은 세션 토큰이면 새 주소로 이어 붙임 (공유기 주소 변경/재접속)
+                        if cinfo is None:
+                            continue
                     seq = msg.get("seq")
                     if isinstance(seq, int) and seq <= cinfo.get("seq", -1):
                         continue
@@ -428,6 +444,28 @@ class NetworkManager:
                 # 패킷 깨짐 등 무시
                 pass
 
+    def _host_try_rebind(self, msg, addr):
+        """(호스트) 등록되지 않은 주소에서 온 CLIENT_STATE가 기존 참가자와 같은 세션 토큰을 가졌으면 그 참가자의 주소를 새 주소로 바꿈.
+        게임 중에만 동작하고, 토큰은 참가할 때 클라이언트가 만든 비밀 값이라 다른 사람이 흉내 내기 어렵다. 성공하면 참가자 정보, 아니면 None"""
+        tok = _sanitize_token(msg.get("tok"))
+        if not tok or not self.game_started:
+            return None
+        for old_addr, info in list(self.clients.items()):
+            if info.get("token") == tok and old_addr != addr:
+                self.clients.pop(old_addr, None)
+                info["last_seen"] = time.time()
+                self.clients[addr] = info
+                print(f"[Network] Client {info['id']} reconnected from {addr}.")
+                return info
+        return None
+
+    def unstable_ids(self):
+        """(호스트) 게임 중 신호가 UNSTABLE_AFTER초 넘게 끊긴 참가자 ID 집합 (화면에 '연결 불안정' 표시용)"""
+        if not self.game_started:
+            return set()
+        now = time.time()
+        return {info["id"] for info in list(self.clients.values()) if now - info.get("last_seen", now) > UNSTABLE_AFTER}
+
     def _host_handle_join(self, msg, addr):
         """참가 요청 처리. 같은 주소의 중복 요청에는 기존 ID로 ACK만 다시 보냄."""
         info = self.clients.get(addr)
@@ -459,7 +497,8 @@ class NetworkManager:
                 "color": _sanitize_color(msg.get("color")),
                 "last_seen": time.time(),
                 "state": {},
-                "seq": -1
+                "seq": -1,
+                "token": _sanitize_token(msg.get("tok"))
             }
             self.clients[addr] = info
             print(f"[Network] Client {new_id} ({addr}) joined.")
@@ -619,10 +658,18 @@ class NetworkManager:
             except Exception:
                 pass
 
-    def _host_drop_client(self, addr):
-        """(호스트) 참가자가 나갔거나 연결이 끊김: 목록에서 제거하고, 게임 중이면 탈락 처리되도록 상태를 표시"""
+    def _host_drop_client(self, addr, takeover=False):
+        """(호스트) 참가자가 나갔거나 연결이 끊김: 목록에서 제거하고, 게임 중이면 탈락 처리되도록 상태를 표시.
+        takeover=True(신호 끊김으로 인한 정리)이면 탈락시키지 않고, 마지막 보드를 넘겨받아 봇이 대신 플레이하도록 takeover_events에 올림"""
         info = self.clients.pop(addr, None)
         if not info:
+            return
+        if takeover and self.game_started:
+            snap = self.remote_players_state.pop(info["id"], {}).get("snap")
+            self.takeover_events.append((info["id"], info.get("name", info["id"]), snap))
+            self._host_publish_chat("SYS", "시스템", f"{info.get('name', info['id'])} 님의 연결이 끊겨 봇이 대신 플레이합니다", system=True)
+            self.host_broadcast_roster()
+            print(f"[Network] Client {info['id']} timed out; a bot takes over.")
             return
         st = dict(self.remote_players_state.get(info["id"], {}))
         st["is_alive"] = False
@@ -632,14 +679,14 @@ class NetworkManager:
         self.host_broadcast_roster()
         print(f"[Network] Client {info['id']} left.")
 
-    def reap_clients(self, timeout=6.0):
+    def reap_clients(self, timeout=DROP_AFTER):
         """(호스트) 게임 중 일정 시간 아무 신호가 없는 참가자를 연결 끊김으로 처리"""
         if not self.game_started:
             return
         now = time.time()
         for addr, info in list(self.clients.items()):
             if now - info.get("last_seen", now) > timeout:
-                self._host_drop_client(addr)
+                self._host_drop_client(addr, takeover=True)
 
     def seconds_since_host_packet(self):
         """(클라이언트) 호스트에게서 마지막 패킷을 받은 지 몇 초인지 (접속 전이면 0)"""
@@ -713,12 +760,14 @@ class NetworkManager:
             self.listen_thread.start()
 
             # 참가 요청 패킷 전송 (최대 5회 시도)
+            self.session_token = secrets.token_hex(8)
             join_msg = {
                 "type": MsgType.JOIN_REQ,
                 "name": player_name,
                 "color": self.my_color,
                 "proto": PROTOCOL_VERSION,
-                "app": APP_VERSION
+                "app": APP_VERSION,
+                "tok": self.session_token
             }
             data = json.dumps(join_msg).encode('utf-8')
             for _ in range(5):
@@ -752,7 +801,7 @@ class NetworkManager:
         if self.mode != "CLIENT" or not self.running or self.connected or not self.sock or self.join_rejected:
             return
         try:
-            data = json.dumps({"type": MsgType.JOIN_REQ, "name": getattr(self, "_join_name", "Player"), "color": self.my_color, "proto": PROTOCOL_VERSION, "app": APP_VERSION}).encode('utf-8')
+            data = json.dumps({"type": MsgType.JOIN_REQ, "name": getattr(self, "_join_name", "Player"), "color": self.my_color, "proto": PROTOCOL_VERSION, "app": APP_VERSION, "tok": self.session_token}).encode('utf-8')
             self.sock.sendto(data, self.server_addr)
         except Exception:
             pass
@@ -906,7 +955,8 @@ class NetworkManager:
         msg = {
             "type": MsgType.CLIENT_STATE,
             "seq": self.state_seq,
-            "state": state_dict
+            "state": state_dict,
+            "tok": self.session_token
         }
         try:
             self.sock.sendto(json.dumps(msg).encode('utf-8'), self.server_addr)

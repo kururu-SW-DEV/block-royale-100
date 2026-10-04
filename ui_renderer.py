@@ -23,6 +23,9 @@ from config import (
 C_BG_TOP = (14, 17, 30)
 C_BG_BOTTOM = (8, 9, 16)
 
+from i18n import tr as _tr
+
+
 def _ease_out(x):
     """0~1 진행도를 처음엔 빠르게 끝에선 천천히 (연출용)"""
     x = 0.0 if x < 0.0 else (1.0 if x > 1.0 else x)
@@ -612,6 +615,13 @@ class UIRenderer:
             pygame.draw.rect(self.screen, (14, 18, 32), br, border_radius=10)
             pygame.draw.rect(self.screen, C_GOLD, br, 1, border_radius=10)
             self.screen.blit(ts, (br.x + 16, br.centery - ts.get_height() // 2))
+        if getattr(match, "net_unstable_self", False) and not match.match_finished:
+            ts = self._text("호스트와 연결이 불안정합니다… 잠시 기다리면 자동으로 이어집니다", self.font_small, (255, 200, 120))
+            tr = pygame.Rect(0, 0, ts.get_width() + 28, 30)
+            tr.midbottom = (self.width // 2, self.height - 44)
+            CANVAS.alpha_rect(tr, (20, 14, 6, 220), radius=10)
+            CANVAS.alpha_rect(tr, (255, 170, 70, 220), width=1, radius=10)
+            self.screen.blit(ts, (tr.x + 14, tr.centery - ts.get_height() // 2))
         self._draw_coach_marks(match)
         self._render_phase_fx(match)
         self._render_countdown(match, ox, oy)
@@ -759,7 +769,8 @@ class UIRenderer:
 
     # ---------------------------------------------------------------- 채팅
     def wrap(self, text, font, max_w):
-        """글자 단위 줄바꿈 (한글 포함)"""
+        """글자 단위 줄바꿈 (한글 포함). 번역된 글자로 나눔"""
+        text = _tr(text)
         lines, cur = [], ""
         for ch in text:
             if cur and font.size(cur + ch)[0] > max_w:
@@ -819,7 +830,7 @@ class UIRenderer:
         cols = []
         gap = 14
         for n, e in enumerate(items):
-            surf = font.render(e["text"], False, (255, 255, 255)).convert_alpha()
+            surf = font.render(_tr(e["text"]), False, (255, 255, 255)).convert_alpha()          # 전광판 글자도 번역해서 그림
             w, h = surf.get_size()
             r0 = max(0, (rows - h) // 2)
             base = len(cols)
@@ -931,7 +942,7 @@ class UIRenderer:
         backlog_cols = max(0.0, st["tail"] - (st["scroll"] + virt))                                 # 이미 편성됐지만 아직 화면에 다 못 들어온 부분
         font = self._led_font_get()
         for e in st["pending"]:                                                                     # 대기 중인 소식의 예상 길이 (글자 폭 + 소식 사이 여백)
-            backlog_cols += font.size(e["text"])[0] + 14
+            backlog_cols += font.size(_tr(e["text"]))[0] + 14
         backlog_sec = backlog_cols / base_speed
         target = 1.0 + (self.LED_MAX_SPEEDUP - 1.0) * max(0.0, min(1.0, (backlog_sec - 1.0) / 5.0))   # 1초 -> 1배, 6초 이상 -> 최대 배율
         st["mult"] = st.get("mult", 1.0) + (target - st.get("mult", 1.0)) * min(1.0, dt * 3.0)        # 목표 배율로 부드럽게 접근 (뚝뚝 바뀌지 않게)
@@ -1287,6 +1298,7 @@ class UIRenderer:
             task = match.practice_current_task() if getattr(match, "practice", False) else None
             if getattr(match, "practice", False):
                 ttxt = f"과제 {task[0] + 1}/{len(match.PRACTICE_TASKS)} · {task[1]}" if task else "과제 모두 완료!  G 쓰레기 · B 초기화"
+                ttxt = _tr(ttxt)
                 while len(ttxt) > 6 and self.font_small.size(ttxt)[0] > r2.w - 20:
                     ttxt = ttxt[:-2].rstrip(" ·") + "…"
                 self._draw_text(ttxt, self.font_small, C_GREEN, r2.centerx, r2.y + 36, "midtop")
@@ -2243,8 +2255,11 @@ class UIRenderer:
             in_danger = is_alive and highest_y <= 5
 
             is_spec = (pid == spec_id)
+            is_ally = bool(getattr(match, "teams", None)) and match.is_ally(match.local_player_id, pid)
             if not is_alive:
                 bg_color, border_color, thick = (10, 11, 16), (28, 31, 40), 1
+            elif is_ally and not is_spec:                                    # 팀전: 같은 편 카드는 초록 테두리 (공격 대상이 아님)
+                bg_color, border_color, thick = (17, 28, 30), (90, 225, 150), 2
             elif is_spec:
                 bg_color, border_color, thick = (17, 21, 35), (255, 226, 150), 2
             elif is_targeted:
@@ -2271,16 +2286,21 @@ class UIRenderer:
                 pl = 0.5 + 0.5 * math.sin(now * (5.0 if is_spec else 8.0))
                 bcol = _mix((255, 200, 80), (255, 255, 255), 0.55 * pl) if is_spec else _mix((255, 84, 96), (255, 190, 190), 0.5 * pl)
                 self._draw_brackets(board_rect, bcol)
+            if pid in getattr(match, "net_unstable", ()):                    # 신호가 끊긴 참가자: 카드를 어둡게 하고 글자로 알림 (색에만 의존하지 않음)
+                CANVAS.alpha_rect(board_rect, (8, 10, 18, 170), radius=3)
+                self._draw_text("연결 불안정", self.font_tiny, (255, 190, 90), board_rect.centerx, board_rect.centery, "center")
             # 이름/K.O. 알약/홀드 아이콘 계산(글자 폭 측정 포함)은 카드 내용이 바뀔 때만 다시 함
             is_rival = (pid == getattr(match, "rival_id", None))
-            sig = (p["name"], is_rival, is_bounty, is_human, is_alive, is_targeted, is_spec, colors.get(pid, 0), p.get("ko_count", 0), bw, show_names, detailed,
+            sig = (p["name"], is_ally, is_rival, is_bounty, is_human, is_alive, is_targeted, is_spec, colors.get(pid, 0), p.get("ko_count", 0), bw, show_names, detailed,
                    strip_w, p.get("hold"), id(self.font_small), id(self.font_tiny), self._ver)
             info = self._card_info.get(pid) if self.mini_fast else None
             if info is not None and info[0] == sig:
                 _, name_str, name_col, tag_font, ko, ko_surf, ko_w, hold_icon, hold_w, name_surf = info
             else:
                 maxc = max(5, int(bw / 7))                       # 보드가 클수록 이름을 더 길게 표시
-                if is_human and is_alive:
+                if is_ally and is_alive:
+                    name_str, name_col = f"♥{p['name'][:maxc]}", (120, 235, 170)
+                elif is_human and is_alive:
                     name_str, name_col = f"★{p['name'][:maxc]}", NAME_COLORS[colors.get(pid, 0)][1]
                 elif is_targeted:
                     name_str, name_col = f"▶{p['name'][:maxc]}", C_DANGER
@@ -3267,7 +3287,8 @@ class UIRenderer:
         return h + (6 if h else 0)
 
     def _wrap_words(self, text, font, max_w):
-        """공백 단위로 줄바꿈 (… 로 자르지 않음). 한 단어가 폭보다 길면 글자 단위로 나눔"""
+        """공백 단위로 줄바꿈 (… 로 자르지 않음). 한 단어가 폭보다 길면 글자 단위로 나눔 (번역한 뒤에 나눔)"""
+        text = _tr(text)
         lines, cur = [], ""
         for word in text.split(" "):
             trial = (cur + " " + word) if cur else word
@@ -3564,10 +3585,9 @@ class UIRenderer:
             lines.append(second)
         out = []
         for txt, col in lines[:4]:
-            while len(txt) > 8 and self.font_small.size(txt)[0] > 1060:
-                txt = txt[:-2].rstrip(" ·(") + "…"
-            out.append((txt, col))
-        return out
+            for ln in self._wrap_words(txt, self.font_small, 1060):            # 길면 "…"로 자르지 않고 줄바꿈 (순위표 머리 줄 정리)
+                out.append((ln, col))
+        return out[:6]
 
     def _standings_scroll_seen(self, start):
         """스크롤로 새로 보이게 된 행은 등장 애니메이션 없이 바로 표시"""

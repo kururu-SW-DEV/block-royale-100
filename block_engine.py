@@ -6,7 +6,7 @@ Block Royale 100 - Core Block Game Engine
 import math
 import random
 from config import (
-    BOARD_WIDTH, BOARD_HEIGHT, TETROMINOES,
+    BOARD_WIDTH, BOARD_HEIGHT, SPAWN_Y, TETROMINOES,
     GARBAGE_ATTACK_TABLE, COMBO_BONUS, TSPIN_ATTACK_TABLE, TSPIN_MINI_ATTACK_TABLE,
     MAX_GARBAGE_PER_LOCK, PERFECT_CLEAR_ATTACK, MAX_INCOMING_GARBAGE, GARBAGE_CHARGE_DELAY, GARBAGE_MESSINESS
 )
@@ -54,7 +54,7 @@ class BlockEngine:
         self.current_piece = None
         self.current_rot = 0
         self.current_x = 3
-        self.current_y = 0
+        self.current_y = SPAWN_Y
 
         # 홀드 기능
         self.hold_piece = None
@@ -122,7 +122,7 @@ class BlockEngine:
         self.current_piece = self.next_queue.pop(0)
         self.current_rot = 0
         self.current_x = 3 if self.current_piece != 'O' else 4
-        self.current_y = 0
+        self.current_y = SPAWN_Y
         self.can_hold = True
         self._reset_piece_timers()
 
@@ -283,7 +283,7 @@ class BlockEngine:
             self.hold_piece = prev_current
             self.current_rot = 0
             self.current_x = 3 if self.current_piece != 'O' else 4
-            self.current_y = 0
+            self.current_y = SPAWN_Y
             self._reset_piece_timers()
             if self._check_collision(self.current_x, self.current_y, self.current_rot):
                 self.game_over = True
@@ -327,10 +327,12 @@ class BlockEngine:
         is_mini = (tspin_kind == 'mini')
 
         blocks = self._get_blocks(self.current_piece, self.current_rot, self.current_x, self.current_y)
+        if all(y < 0 for _x, y in blocks):                       # 락 아웃: 블록이 전부 보이는 칸 위(숨김 구역)에서 고정되면 탈락. 일부만 걸쳐 있으면 숨은 칸은 버리고 계속
+            self.game_over = True
         for x, y in blocks:
             if 0 <= y < self.height and 0 <= x < self.width:
                 self.grid[y][x] = self.current_piece
-            else:
+            elif y >= 0:                                         # 옆/아래로 보드 밖은 있을 수 없는 위치
                 self.game_over = True
         self.last_lock_cells = [(x, y) for x, y in blocks if 0 <= y < self.height]
         self.last_locked_piece = self.current_piece

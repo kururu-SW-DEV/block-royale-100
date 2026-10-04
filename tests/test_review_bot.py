@@ -61,14 +61,15 @@ def test_bot_brain_paths_match_engine():
             for c in range(10):
                 if c != hole and rng.random() < 0.85:
                     e.grid[row][c] = "G"
-        e.current_piece, e.current_rot, e.current_x, e.current_y = "T", 0, 3, 0
-        if e._check_collision(3, 0, 0):
+        from config import SPAWN_Y
+        e.current_piece, e.current_rot, e.current_x, e.current_y = "T", 0, 3, SPAWN_Y
+        if e._check_collision(3, SPAWN_Y, 0):
             continue
         rows = BB.rows_from_grid(e.grid)
         for rot, px, py, kind, path in BB.t_placements(rows)[:12]:
             f = BlockEngine(seed=1)
             f.grid = [r[:] for r in e.grid]
-            f.current_piece, f.current_rot, f.current_x, f.current_y = "T", 0, 3, 0
+            f.current_piece, f.current_rot, f.current_x, f.current_y = "T", 0, 3, SPAWN_Y
             for act in path:
                 ok = (f.move(-1, 0) if act == "L" else f.move(1, 0) if act == "R" else f.move(0, 1) if act == "D"
                       else f.rotate(clockwise=(act == "cw")))

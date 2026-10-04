@@ -72,6 +72,14 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         self.sound_mgr.set_sfx_volume(self.settings.get("sfx_volume", 70) / 100.0)
         self.sound_mgr.set_warn_scale(self.settings.get("warn_volume", 100) / 100.0)
         self.sound_mgr.set_announcer(self.settings.get("announcer", False))
+        from gamepad import GamepadMapper
+        self.gamepad = GamepadMapper(lambda action: self.settings.get_action_keys(action), lambda: bool(self.settings.get("gamepad", True)))
+        import i18n
+        from gfx import HiFont as _HF
+        _HF.text_filter = i18n.tr                        # 번역은 글자를 그리는 곳(HiFont)에서 한 번에 처리
+        i18n.set_language(self.settings.get("language", "ko"))
+        self._update_checker = None     # 업데이트 확인 (설정에서 켠 경우에만)
+        self._start_update_check()
         
         self.net_mgr = NetworkManager()
         try:
@@ -95,6 +103,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         self.das_timer = 0.0
         self.arr_timer = 0.0
         self.soft_drop_timer = 0.0
+        self.replay_rec = None          # 내 보드 리플레이 기록기 (경기마다 start_game이 새로 만듦)
+        self.replay_view = None         # 기록실에서 재생 중인 리플레이 (ReplayPlayer)
         self._idle_t = time.time()      # 마지막 입력 시각 (어트랙트 화면용)
         self._attract = None
         self.das_fired = False          # DAS가 끝나 자동 반복이 시작됐는지 (첫 자동 이동은 DAS가 끝나는 순간에 바로 일어남)
@@ -137,7 +147,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         self.match_recorded = False
         self.match_start_time = 0.0
         self.records_buttons = {}
-        self.settings_focus = {"match": 0, "general": 0, "audio": 0, "keys": 0}      # 설정 화면 키보드 탐색 위치
+        self.settings_focus = {"match": 0, "general": 0, "audio": 0, "keys": 0, "react": 0, "rules": 0, "help": 0}      # 설정 화면 키보드 탐색 위치
         self._kb_nav = False             # 설정 화면에서 키보드로 탐색 중인지 (포커스 표시용)
         self._row_rects = {}
         self._quit_confirmed = False
@@ -243,7 +253,9 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
             self.sound_mgr.tick()
             
             # 이벤트 처리
-            for event in pygame.event.get():
+            pad_in_game = (self.state == "GAME" and self.match is not None and not self.is_paused and self.modal is None and not self.rules_open
+                           and self.match.local_is_alive and not self.match.match_finished and self.match.countdown_left() <= 0)      # 그 밖에는 메뉴 방식(방향키/Enter/Esc)으로 변환
+            for event in self.gamepad.translate(pygame.event.get(), pad_in_game):
                 if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEWHEEL):      # 어트랙트 화면: 깨우는 입력은 메뉴 동작으로 넘기지 않고 소비
                     was_attract = self._attract_on()
                     self._attract_reset()

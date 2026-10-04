@@ -134,6 +134,7 @@ DEFAULT_SETTINGS = {
     "target_player_count": 100,
     "name_color": 0,             # 이름 색상 (config.NAME_COLORS 번호)
     "player_name": "",           # 플레이어 이름 (비어 있으면 Player_1)
+    "initials": "",              # 점수표에 올릴 이니셜 3글자 (비어 있으면 이름의 앞 3글자)
     "room_name": "",             # 호스트가 정한 방 제목 (비어 있으면 "<이름>의 방")
     "last_host": "",             # 방 참가에서 마지막으로 입력한 주소 (ip 또는 ip:포트)
     "recent_hosts": [],          # 최근 접속한 주소 목록 (최신순, 최대 6개)
@@ -145,6 +146,13 @@ DEFAULT_SETTINGS = {
     "color_mode": "normal",      # 블록 색상: "normal"(기본) / "colorblind"(색약 보정)
     "text_size": "normal",       # 글자 크기: "normal"(보통) / "large"(크게) - 게임 화면과 메뉴/설정/로비의 작은 글씨에 적용
     "key_hints": "always",       # 게임 화면 아래 조작 안내 바: "always"(항상) / "novice"(처음 10판만) / "off"(끔)
+    "language": "ko",            # 화면 글자 언어: "ko"(한국어) / "en"(English, 1단계: 메뉴·설정·HUD·결과 창 위주)
+    "rule_garbage": "normal",    # 커스텀 규칙: 쓰레기 줄 배율 "half"(x0.5) / "normal"(x1) / "heavy"(x1.5)
+    "rule_gravity": "normal",    # 커스텀 규칙: 내 낙하 속도 "slow"(x0.7) / "normal" / "fast"(x1.4)
+    "rule_team": False,          # 커스텀 규칙: 팀전(2팀). 나와 같은 편 봇은 서로 공격하지 않고, 상대 팀이 모두 탈락하면 이김 (혼자 하는 배틀로얄만, 기록 안 함)
+    "rule_badges": True,         # 커스텀 규칙: K.O. 배지 공격력 보너스 (끄면 K.O.를 해도 공격력이 오르지 않음)
+    "gamepad": True,             # 게임패드 입력 사용 (십자키/스틱/버튼을 키 입력처럼 처리)
+    "update_check": False,       # 시작할 때 GitHub Releases에서 새 버전이 있는지 한 번 확인 (옵트인, 기본 끔. 자동 설치 없음)
     "announcer": False,          # 로봇 아나운서 외침 (쿼드/T-스핀/콤보/퍼펙트/TOP 10/현상금 등 큰 순간에만, 기본 끔)
     "warn_volume": 100,          # 경고음(피격 경보/심장 박동) 상대 음량 0~100 (효과음 음량에 곱해짐)
     "tips_seen": [],             # 이미 보여 준 첫 경험 팁 id 목록 (설정에서 다시 보기로 비움)
@@ -244,6 +252,14 @@ def _valid_setting(key, value):
             return False, None
         if key == "block_skin" and value not in BLOCK_SKIN_OPTIONS:
             return False, None
+        if key == "language" and value not in ("ko", "en"):
+            return False, None
+        if key == "rule_garbage" and value not in ("half", "normal", "heavy"):
+            return False, None
+        if key == "rule_gravity" and value not in ("slow", "normal", "fast"):
+            return False, None
+        if key == "initials":
+            value = "".join(ch for ch in value if ch.isalnum())[:3].upper()
         if key == "target_mode" and value not in TARGET_MODE_OPTIONS:
             return False, None
         if key == "screen_shake" and value not in SHAKE_OPTIONS:

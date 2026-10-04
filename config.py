@@ -2,7 +2,7 @@
 Block Royale 100 - Configuration & Constants
 """
 
-APP_VERSION = "1.1.13"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
+APP_VERSION = "1.2.0"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
 
 # 화면 해상도 설정
 SCREEN_WIDTH = 1366
@@ -12,6 +12,7 @@ FPS = 60
 # 블록 보드 규격
 BOARD_WIDTH = 10
 BOARD_HEIGHT = 20
+SPAWN_Y = -1                    # 새 블록이 나오는 줄: 보이는 맨 윗줄 위의 숨겨진 한 줄 (가이드라인의 '숨김 구역' 단순화). 예전에는 0이라 스택이 맨 위 두 줄에 닿으면 바로 탈락했음
 
 # 테트로미노 모양 정의 (4x4 또는 3x3 회전 상태, SRS 표준 매트릭스)
 TETROMINOES = {

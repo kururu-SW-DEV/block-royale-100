@@ -45,31 +45,37 @@ COL_CTL_EDGE = (60, 74, 110)
 
 TABS = [("match", "tab_match", "게임", C_GREEN), ("general", "tab_general", "화면", C_ACCENT),
         ("audio", "tab_audio", "소리", C_ORANGE), ("keys", "tab_keys", "조작", C_GOLD),
-        ("help", "tab_help", "기타", C_GREEN)]
+        ("react", "tab_react", "반응", (255, 150, 90)), ("rules", "tab_rules", "규칙", C_DANGER), ("help", "tab_help", "기타", C_GREEN)]
 TAB_ORDER = [t[0] for t in TABS]
 
 # 키보드 탐색표: 탭 -> [(행 키, Enter, ←, →)]. 행 키는 화면에 그려지는 행과 도움말/포커스 표시에 쓰임
 TAB_NAV = {
-    "match": [("players", None, "dec_1", "inc_1"), ("diff", None, "diff_prev", "diff_next"),
+    "match": [("language", None, "lang_prev", "lang_next"), ("players", None, "dec_1", "inc_1"), ("diff", None, "diff_prev", "diff_next"),
               ("attack", "attack_toggle", "attack=on", "attack=off"),
               ("name", "name_edit", None, None), ("color", None, "color_prev", "color_next"),
               ("shake", None, "shake_prev", "shake_next"),
               ],
     "help": [("title", None, "title_prev", "title_next"), ("rules", "open_rules", None, None), ("tips_replay", "tips_replay", None, None),
-             ("matchlog", "matchlog_toggle", "matchlog=off", "matchlog=on")],
+             ("matchlog", "matchlog_toggle", "matchlog=off", "matchlog=on"),
+             ("gamepad", "gamepad_toggle", "gamepad=off", "gamepad=on"),
+             ("update", "update_toggle", "update=off", "update=on"), ("errlog", "open_errlog", None, None)],
     "general": [("fs", "toggle_fs", "fs=window", "fs=full"), ("res", "res_next", "res_prev", "res_next"),
                 ("mini", "mini_detail", "mini_detail=detailed", "mini_detail=simple"),
                 ("block_skin", None, "skin_prev", "skin_next"),
                 ("color_mode", "color_mode", "color_mode=normal", "color_mode=colorblind"),
                 ("text_size", "text_size", "text_size=normal", "text_size=large"),
                 ("key_hints", "key_hints", "key_hints_prev", "key_hints_next")],
+    "rules": [("rule_garbage", None, "rg_prev", "rg_next"), ("rule_gravity", None, "rgr_prev", "rgr_next"), ("rule_badges", "rb_toggle", "rb=off", "rb=on"),
+              ("rule_team", "rt_toggle", "rt=off", "rt=on")],
+    "react": [("react_das", None, "das_dec", "das_inc"), ("react_arr", None, "arr_dec", "arr_inc"), ("react_sdf", None, "sdf_dec", "sdf_inc"),
+              ("react_dcd", None, "dcd_dec", "dcd_inc"), ("react_dcancel", "dcancel_inc", "dcancel_dec", "dcancel_inc"),
+              ("react_hpre", "hpre_inc", "hpre_dec", "hpre_inc")],
     "audio": [("bgm", "bgm_toggle", "bgm_dec", "bgm_inc"), ("stage_bgm", None, "stage_bgm_prev", "stage_bgm_next"),
               ("sfx", "sfx_toggle", "sfx_dec", "sfx_inc"), ("warn", "warn_next", "warn_prev", "warn_next"),
               ("announcer", "announcer_toggle", "announcer_toggle", "announcer_toggle"), ("sfx_test", "sfx_test", None, None)],
 }
-KEY_CARDS = len(ACTION_NAMES)                 # 조작 탭: 0~8 = 키 카드, 9~14 = DAS/ARR/SDF/DCD/DAS 취소/반응 프리셋, 15 = 키 프리셋
-HANDLING_ROWS = ("das", "arr", "sdf", "dcd", "dcancel", "hpre")
-PRESET_FOCUS = KEY_CARDS + len(HANDLING_ROWS)
+KEY_CARDS = len(ACTION_NAMES)                 # 조작 탭: 0~9 = 키 카드, 10 = 키 프리셋 (반응 속도는 별도 '반응' 탭)
+PRESET_FOCUS = KEY_CARDS
 
 HELP_SKIN_BASE = "게임 화면 블록의 모양을 바꿉니다. 색은 위의 '블록 색상' 설정을 따르며, 로고와 미니 보드는 그대로입니다."
 
@@ -82,6 +88,9 @@ HELP = {
     "tips_replay": "처음 일어나는 일(받은 공격, 역습 보너스, 첫 K.O., 후반전)에 한 번씩 뜨는 도움말 팁과 첫 판 설명 말풍선을 다음 경기부터 다시 보여 줍니다.",
     "title": "달성한 업적의 이름을 칭호로 달 수 있습니다. 메인 메뉴의 프로필에 표시됩니다. 업적은 전적 기록실의 '업적' 탭에서 확인하세요.",
     "rules": "게임의 공격표, K.O. 배지, 역습 보너스, 조준 모드, 경기 흐름을 한 화면으로 보여 줍니다. 게임 중에도 F1 키로 열 수 있습니다.",
+    "gamepad": "게임패드의 십자키/왼쪽 스틱으로 이동, A 시계 회전, B 반시계 회전, X·LB 홀드, Y 180도 회전, RB 하드 드롭, Start 일시정지, Back 조준 변경. 메뉴에서는 십자키/스틱 = 방향키, A·Start = Enter, B = Esc입니다. 동작에 배정된 키를 따르며, 컨트롤러가 이상하게 동작하면 끄세요.",
+    "update": "켜면 게임을 시작할 때 GitHub에서 새 버전이 있는지 한 번만 확인하고, 있으면 메인 화면에 알려 줍니다. 자동으로 내려받거나 설치하지 않으며 개인 정보는 보내지 않습니다. 기본은 꺼짐입니다.",
+    "errlog": "예기치 않은 오류가 났을 때 원인을 적어 두는 error.log가 있는 폴더를 엽니다. 문제를 알릴 때 이 파일을 함께 보내 주세요.",
     "matchlog": "켜면 경기가 끝날 때마다 받은/보낸 공격, 조준 변경, 탈락 원인을 담은 기록(JSON)을 저장 폴더의 match_logs에 남깁니다. 플레이 테스트 결과를 함께 볼 때 쓰며, 기본은 꺼짐입니다.",
     "fs": "창 모드와 전체 화면을 바꿉니다. F11 키로 언제든 전환할 수 있습니다.",
     "res": "창 크기를 고릅니다. 모니터에 들어가는 크기만 보이며 창 가장자리를 끌어서도 조절할 수 있습니다.",
@@ -99,17 +108,28 @@ HELP = {
     "sfx_test": "현재 효과음 음량으로 대표 소리를 들어봅니다.",
     "preset": "조작키 묶음을 한 번에 바꿉니다. 아래 카드를 하나라도 바꾸면 '사용자 지정'이 됩니다.",
     "cards": "카드를 클릭하거나 Enter를 누른 뒤 새 키를 누르세요. 다른 동작이 쓰던 키면 자동으로 옮겨집니다. 고정 키: ESC 일시정지/메뉴 · F11 전체화면 · M 음소거 · T 설정",
-    "handling": "DAS: 누른 뒤 자동 반복이 시작되기까지(60fps 프레임 환산) · ARR: 반복 간격(0=즉시) · 소프트드롭 0=바닥까지 즉시 · DCD: 새 블록 뒤 DAS 재충전을 막아 오버슈트 방지 · DAS 취소: 방향 전환 시 새로 충전",
+    "rule_garbage": "상대에게 보내는 쓰레기 줄을 모두 이 배율로 곱합니다(올림). ×0.5는 느긋한 판, ×1.5는 거친 판입니다. 기본이 아니면 커스텀 경기라 전적/점수표/경험치에 기록되지 않습니다.",
+    "rule_gravity": "내 블록이 자동으로 내려오는 속도를 바꿉니다(느리게 ×0.7 속도, 빠르게 ×1.4 속도). 봇의 속도는 그대로입니다. 기본이 아니면 기록되지 않습니다.",
+    "rule_team": "팀전(2팀): 나와 같은 편 봇 절반은 서로 공격하지 않고, 상대 팀을 모두 탈락시키면 이깁니다. 같은 편은 초록 테두리로 표시됩니다. 혼자 하는 배틀로얄에서만 적용되고 기록되지 않습니다(4명 이상).",
+    "rule_badges": "끄면 K.O.를 해도 배지로 공격력이 오르지 않습니다(봇도 마찬가지). 기본이 아니면 기록되지 않습니다.",
+    "react_das": "DAS: 방향키를 누른 뒤 자동 반복이 시작되기까지의 지연입니다. 작을수록 빠르게 움직이며, 밑의 프레임은 60fps 기준 환산값입니다.",
+    "react_arr": "ARR: 자동 반복 이동의 간격입니다. 0이면 벽이나 블록에 닿을 때까지 한 번에 이동합니다.",
+    "react_sdf": "소프트드롭: 아래 키를 누를 때 한 칸 내려가는 간격입니다(작을수록 빠름). 0이면 바닥까지 즉시 내려가며, 고정은 락 딜레이를 따릅니다.",
+    "react_dcd": "DCD: 새 블록이 나온 뒤 이 시간 동안은 누르고 있던 방향키의 DAS가 다시 충전되지 않습니다. 방향키를 누른 채 하드 드롭할 때 새 블록이 벽으로 날아가는 것을 막아 줍니다.",
+    "react_dcancel": "방향을 바꿀 때(한쪽 키를 떼고 반대쪽 키가 눌려 있을 때) DAS를 새로 충전합니다. 켜면 방향 전환 직후의 오버슈트가 줄어듭니다.",
+    "react_hpre": "느긋 · 기본 · 빠름 · 프로 중에서 DAS/ARR/소프트드롭/DCD/DAS 취소를 한 번에 맞춥니다. 값을 직접 바꾸면 '사용자'로 표시됩니다.",
     "rebinding": "새 키를 누르세요  ·  ESC 취소",
 }
 
 # 탭별 '기본값으로' 대상 설정 키
 TAB_DEFAULT_KEYS = {
-    "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake"],
-    "help": ["match_log"],
+    "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake", "language"],
+    "help": ["match_log", "update_check", "gamepad"],
     "general": ["resolution", "mini_detail", "color_mode", "text_size", "block_skin", "key_hints"],
     "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume", "warn_volume", "announcer"],
-    "keys": ["das_ms", "arr_ms", "sdf_ms", "dcd_ms", "das_cancel"],
+    "keys": [],
+    "react": ["das_ms", "arr_ms", "sdf_ms", "dcd_ms", "das_cancel"],
+    "rules": ["rule_garbage", "rule_gravity", "rule_badges", "rule_team"],
 }
 
 
@@ -192,6 +212,17 @@ class SettingsMixin:
             self.sound_mgr.set_sfx_volume(value / 100.0)
         self.sound_mgr.play('move')
 
+    def _open_error_log_folder(self):
+        """error.log가 있는 폴더를 탐색기로 엶 (파일이 아직 없어도 폴더는 열림). 실패해도 게임에는 영향 없음"""
+        try:
+            import os
+            from crash_log import log_path
+            folder = os.path.dirname(os.path.abspath(log_path()))
+            if hasattr(os, "startfile"):
+                os.startfile(folder)
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------ 키보드 탐색
     def _settings_focus_id(self):
         """키보드로 선택된 항목의 키 (행 키 또는 조작 탭의 카드/핸들링 ID)"""
@@ -200,8 +231,6 @@ class SettingsMixin:
         if tab == "keys":
             if f == PRESET_FOCUS:
                 return "preset"
-            if f >= KEY_CARDS:
-                return "hf_" + HANDLING_ROWS[min(len(HANDLING_ROWS) - 1, f - KEY_CARDS)]
             return "bind_" + ACTION_NAMES[f % KEY_CARDS][0]
         rows = TAB_NAV[tab]
         return rows[f % len(rows)][0]
@@ -230,9 +259,9 @@ class SettingsMixin:
         self.settings_focus[tab] = f
 
     def _settings_key_nav_keys(self, key, enter):
-        """조작 탭: 카드 3x3 + 반응 속도 3줄 + 프리셋 줄"""
+        """조작 탭: 키 카드 3열 + 프리셋 줄 (반응 속도는 '반응' 탭)"""
         n = KEY_CARDS
-        f = self.settings_focus.get("keys", 0) % (n + len(HANDLING_ROWS) + 1)
+        f = self.settings_focus.get("keys", 0) % (n + 1)
         moved = True
         if f == PRESET_FOCUS:                                     # 프리셋 줄: ←→로 고르고 ↓로 카드로
             if key in (pygame.K_LEFT, pygame.K_RIGHT) or enter:
@@ -242,16 +271,7 @@ class SettingsMixin:
             elif key == pygame.K_DOWN:
                 f = 0
             elif key == pygame.K_UP:
-                f = n + len(HANDLING_ROWS) - 1
-        elif f >= n:                                              # 핸들링 행: ↑↓ 이동, ←→ 값 조절
-            which = HANDLING_ROWS[f - n]
-            if key == pygame.K_UP:
-                f = f - 1 if f > n else n - 3
-            elif key == pygame.K_DOWN:
-                f = f + 1 if f < n + len(HANDLING_ROWS) - 1 else PRESET_FOCUS
-            elif key in (pygame.K_LEFT, pygame.K_RIGHT):
-                self._settings_activate(which + ("_dec" if key == pygame.K_LEFT else "_inc"))
-                moved = False
+                f = n - 1
         else:                                                     # 카드
             if key == pygame.K_LEFT:
                 f = (f - 1) % n
@@ -260,7 +280,7 @@ class SettingsMixin:
             elif key == pygame.K_UP:
                 f = PRESET_FOCUS if f < 3 else f - 3
             elif key == pygame.K_DOWN:
-                f = n if f + 3 >= n else f + 3
+                f = PRESET_FOCUS if f + 3 >= n else f + 3
             else:
                 self._settings_activate("bind_" + ACTION_NAMES[f][0])
                 moved = False
@@ -377,6 +397,49 @@ class SettingsMixin:
             if new != cur:
                 self.sound_mgr.play('rotate')
                 self.settings.set("game_mode", new)
+        elif btn_id in ("rt=on", "rt=off", "rt_toggle"):
+            self.sound_mgr.play('rotate')
+            cur = bool(self.settings.get("rule_team", False))
+            self.settings.set("rule_team", (btn_id.endswith("=on")) if "=" in btn_id else (not cur))
+        elif btn_id in ("lang_prev", "lang_next", "lang=ko", "lang=en"):
+            import i18n
+            cur = self.settings.get("language", "ko")
+            new = btn_id[5:] if "=" in btn_id else ("en" if cur == "ko" else "ko")
+            if new != cur:
+                self.sound_mgr.play('rotate')
+                self.settings.set("language", new)
+                i18n.set_language(new)
+                self.renderer.clear_visual_caches()                        # 번역된 글자 이미지 캐시를 비워 새 언어로 다시 그림
+        elif btn_id in ("rg_prev", "rg_next", "rgr_prev", "rgr_next", "rb=on", "rb=off", "rb_toggle"):
+            self.sound_mgr.play('rotate')
+            if btn_id.startswith("rg_"):
+                opts = ("half", "normal", "heavy")
+                cur = self.settings.get("rule_garbage", "normal")
+                self.settings.set("rule_garbage", opts[(opts.index(cur) + (-1 if btn_id == "rg_prev" else 1)) % 3])
+            elif btn_id.startswith("rgr_"):
+                opts = ("slow", "normal", "fast")
+                cur = self.settings.get("rule_gravity", "normal")
+                self.settings.set("rule_gravity", opts[(opts.index(cur) + (-1 if btn_id == "rgr_prev" else 1)) % 3])
+            else:
+                cur = bool(self.settings.get("rule_badges", True))
+                self.settings.set("rule_badges", (btn_id.endswith("=on")) if "=" in btn_id else (not cur))
+        elif btn_id in ("gamepad=on", "gamepad=off", "gamepad_toggle"):
+            cur = bool(self.settings.get("gamepad", True))
+            new = (btn_id.endswith("=on")) if "=" in btn_id else (not cur)
+            if new != cur:
+                self.sound_mgr.play('rotate')
+                self.settings.set("gamepad", new)
+        elif btn_id in ("update=on", "update=off", "update_toggle"):
+            cur = bool(self.settings.get("update_check", False))
+            new = (btn_id.endswith("=on")) if "=" in btn_id else (not cur)
+            if new != cur:
+                self.sound_mgr.play('rotate')
+                self.settings.set("update_check", new)
+                if new:
+                    self._start_update_check()
+        elif btn_id == "open_errlog":
+            self.sound_mgr.play('move')
+            self._open_error_log_folder()
         elif btn_id in ("matchlog=on", "matchlog=off", "matchlog_toggle"):
             cur = bool(self.settings.get("match_log", False))
             new = (btn_id.endswith("=on")) if "=" in btn_id else (not cur)
@@ -436,6 +499,8 @@ class SettingsMixin:
             self.sound_mgr.set_sfx_enabled(self.settings.get("sfx_enabled"))
             self.sound_mgr.set_bgm_volume(self.settings.get("bgm_volume") / 100.0)
             self.sound_mgr.set_sfx_volume(self.settings.get("sfx_volume") / 100.0)
+        elif tab == "react":
+            self.apply_handling()
         else:
             self.settings.reset_keys_to_default()
             self.apply_handling()
@@ -480,6 +545,8 @@ class SettingsMixin:
             pygame.draw.rect(self.screen, COL_ROW_HOVER, rect, border_radius=10)
         if sub:
             self._t(label, self.font_row, COL_TEXT, rect.x + 22, rect.y + 8)
+            from i18n import tr
+            sub = tr(sub)                                       # 번역한 글자로 길이를 재고 줄임 (자른 한국어는 번역표와 맞지 않으므로)
             max_sub = 470                                       # 오른쪽 컨트롤과 겹치지 않게 긴 보조 줄은 줄임표로 (글자 크기 '크게'에서도)
             while len(sub) > 4 and self.font_help.size(sub)[0] > max_sub:
                 sub = sub[:-2].rstrip(" ,·") + "…"
@@ -564,6 +631,10 @@ class SettingsMixin:
     # ------------------------------------------------------------------ 탭별 화면
     def _render_tab_match(self):
         y = TOP
+        lang = self.settings.get("language", "ko")
+        self._s_row("language", y, 52, "언어 / Language", "English UI covers menus, settings, HUD and results (rest stays Korean)" if lang == "en" else "English UI는 메뉴·설정·HUD·결과 창 위주 (나머지는 한국어)")
+        self._s_seg([("lang=ko", "한국어"), ("lang=en", "English")], "lang=" + lang, RIGHT, y + 26)
+        y += 52
         # 참가 인원
         self._s_row("players", y, 56, "참가 인원", "2 ~ 100명  ·  부족한 인원은 AI 봇이 채웁니다")
         cy = y + 28
@@ -586,7 +657,7 @@ class SettingsMixin:
         dc = {"easy": C_GREEN, "normal": C_ACCENT, "hard": C_ORANGE, "master": C_DANGER, "mixed": C_GOLD}.get(cur, C_TEXT)
         cleared = self.stats_mgr.ladder_cleared("battle")            # 100인급 대전에서 10위 안에 들어 클리어한 난이도는 ★ 표시
         star = "  ★ 클리어" if cur in cleared else ""
-        self._s_row("diff", y, 56, "AI 봇 난이도", BOT_DIFFICULTY_DESCS.get(cur, "") if not star else BOT_DIFFICULTY_DESCS.get(cur, "")[:40])
+        self._s_row("diff", y, 56, "AI 봇 난이도", BOT_DIFFICULTY_DESCS.get(cur, "") if not star else __import__("i18n").tr(BOT_DIFFICULTY_DESCS.get(cur, ""))[:40])
         self._s_cycler("diff_prev", "diff_next", BOT_DIFFICULTY_LABELS.get(cur, "혼합") + star, RIGHT, y + 28, color=dc)
         y += 56
         # 게임 모드: 배틀로얄(공격을 주고받음) / 서바이벌(공격 없이 각자 생존 경쟁)
@@ -595,8 +666,17 @@ class SettingsMixin:
         self._s_seg([("attack=on", "배틀로얄"), ("attack=off", "서바이벌")], "attack=on" if atk_on else "attack=off", RIGHT, y + 26)
         y += 52
         # 이름
-        self._s_row("name", y, 52, "플레이어 이름")
-        box = pygame.Rect(RIGHT - 320, y + 8, 320, 36)
+        self._s_row("name", y, 52, "플레이어 이름 · 이니셜")
+        ini_box = pygame.Rect(RIGHT - 232 - 12 - 84, y + 8, 84, 36)                 # 점수표에 올릴 이니셜 3글자 (이름 입력칸 왼쪽)
+        self.text_rects["initials"] = ini_box
+        ini_edit = (self.text_focus == "initials")
+        pygame.draw.rect(self.screen, (11, 13, 24), ini_box, border_radius=10)
+        pygame.draw.rect(self.screen, C_GOLD if ini_edit else COL_CTL_EDGE, ini_box, 2 if ini_edit else 1, border_radius=10)
+        ini_txt = (getattr(self, "initials_input", "") + self.chat_comp) if ini_edit else self._initials()
+        itr = self._t(ini_txt, self.font_val, C_GOLD, ini_box.centerx, ini_box.centery, "center")
+        if ini_edit and int(time.time() * 2) % 2 == 0:
+            pygame.draw.rect(self.screen, C_GOLD, (itr.right + 3, ini_box.y + 8, 2, ini_box.h - 16))
+        box = pygame.Rect(RIGHT - 232, y + 8, 232, 36)
         self.text_rects["player_name"] = box
         editing = (self.text_focus == "player_name")
         pygame.draw.rect(self.screen, (11, 13, 24), box, border_radius=10)
@@ -607,6 +687,8 @@ class SettingsMixin:
             pygame.draw.rect(self.screen, C_ACCENT, (tr.right + 3, box.y + 8, 2, box.h - 16))
         if not editing:
             self._t("클릭해서 수정", self.font_tiny, COL_SUB, box.right - 12, box.centery, "midright")
+        if not ini_edit:
+            self._t("이니셜", self.font_tiny, COL_SUB, ini_box.centerx, ini_box.y - 2, "midbottom")
         y += 52
         # 이름 색
         self._s_row("color", y, 52, "이름 색")
@@ -623,20 +705,33 @@ class SettingsMixin:
         done_ids = self.stats_mgr.achievements_done()
         cur_title = self.settings.get("title", "")
         title_name = next((a[1] for a in __import__("stats_manager").ACHIEVEMENTS if a[0] == cur_title and cur_title in done_ids), "없음")
-        self._s_row("title", y, 56, "칭호", f"달성한 업적 {len(done_ids)}개 중에서 선택 (메인 메뉴 프로필에 표시)")
-        self._s_cycler("title_prev", "title_next", title_name, RIGHT, y + 28, enabled=bool(done_ids), color=C_GOLD)
-        y += 56
-        self._s_row("rules", y, 56, "규칙 요약 보기", "공격표 · 배지 · 역습 보너스 · 조준 모드 (게임 어디서든 F1)")
-        self._s_btn("open_rules", pygame.Rect(RIGHT - 200, y + 10, 200, 36), "규칙 카드 열기", True)
-        y += 56
+        self._s_row("title", y, 50, "칭호", f"달성한 업적 {len(done_ids)}개 중에서 선택 (메인 메뉴 프로필에 표시)")
+        self._s_cycler("title_prev", "title_next", title_name, RIGHT, y + 25, enabled=bool(done_ids), color=C_GOLD)
+        y += 50
+        self._s_row("rules", y, 50, "규칙 요약 보기", "공격표 · 배지 · 역습 보너스 · 조준 모드 (게임 어디서든 F1)")
+        self._s_btn("open_rules", pygame.Rect(RIGHT - 200, y + 7, 200, 36), "규칙 카드 열기", True)
+        y += 50
         done = time.time() < getattr(self, "tips_replay_notice_until", 0.0)
-        self._s_row("tips_replay", y, 56, "도움말 팁 다시 보기", "첫 판 설명과 상황별 팁을 다음 경기부터 다시 표시")
-        self._s_btn("tips_replay", pygame.Rect(RIGHT - 200, y + 10, 200, 36), "다시 보기 켜짐 ✓" if done else "다시 보기", True)
-        y += 56
+        self._s_row("tips_replay", y, 50, "도움말 팁 다시 보기", "첫 판 설명과 상황별 팁을 다음 경기부터 다시 표시")
+        self._s_btn("tips_replay", pygame.Rect(RIGHT - 200, y + 7, 200, 36), "다시 보기 켜짐 ✓" if done else "다시 보기", True)
+        y += 50
         log_on = bool(self.settings.get("match_log", False))
-        self._s_row("matchlog", y, 56, "경기 기록 저장", "테스트용: 경기마다 JSON 기록을 남김")
-        self._s_seg([("matchlog=off", "끔"), ("matchlog=on", "켜기")], "matchlog=on" if log_on else "matchlog=off", RIGHT, y + 28)
-        y += 56 + 16
+        self._s_row("matchlog", y, 50, "경기 기록 저장", "테스트용: 경기마다 JSON 기록을 남김")
+        self._s_seg([("matchlog=off", "끔"), ("matchlog=on", "켜기")], "matchlog=on" if log_on else "matchlog=off", RIGHT, y + 25)
+        y += 50
+        pad_on = bool(self.settings.get("gamepad", True))
+        npad = len(self.gamepad.joys)
+        self._s_row("gamepad", y, 50, "게임패드", f"연결된 컨트롤러 {npad}개  ·  십자키/스틱 이동, A·B 회전" if npad else "연결된 컨트롤러 없음  ·  연결하면 바로 사용할 수 있습니다")
+        self._s_seg([("gamepad=off", "끔"), ("gamepad=on", "켜기")], "gamepad=on" if pad_on else "gamepad=off", RIGHT, y + 25)
+        y += 50
+        up_on = bool(self.settings.get("update_check", False))
+        upd = self.update_info()
+        self._s_row("update", y, 50, "업데이트 확인", f"새 버전 {upd['tag']} 이(가) 있습니다" if upd else "시작할 때 새 버전이 있는지 한 번 확인 (자동 설치 없음)")
+        self._s_seg([("update=off", "끔"), ("update=on", "켜기")], "update=on" if up_on else "update=off", RIGHT, y + 25)
+        y += 50
+        self._s_row("errlog", y, 50, "오류 기록", "문제를 알릴 때 error.log를 함께 보내 주세요")
+        self._s_btn("open_errlog", pygame.Rect(RIGHT - 200, y + 7, 200, 36), "error.log 폴더 열기", True)
+        y += 50 + 10
         self._t("F1: 규칙 요약  ·  T: 게임 중 설정  ·  M: 소리 켜고 끄기  ·  F11: 전체 화면", self.font_help, COL_SUB, IX + 22, y)
 
     def _render_tab_general(self):
@@ -715,11 +810,11 @@ class SettingsMixin:
         y = TOP
         cur_preset = self.settings.get("key_preset", "arcade")
         p_label = {"arcade": "아케이드 표준", "wasd": "WASD 게이머"}.get(cur_preset, "사용자 지정")
-        self._s_row("preset", y, 40, "프리셋")
+        self._s_row("preset", y, 48, "프리셋")
         self._s_seg([("preset_arcade", "아케이드 표준"), ("preset_wasd", "WASD 게이머")],
-                    "preset_" + cur_preset if cur_preset in ("arcade", "wasd") else None, RIGHT - 210, y + 20)
-        self._t(f"현재: {p_label}", self.font_val, C_GREEN if cur_preset in ("arcade", "wasd") else C_GOLD, RIGHT, y + 20, "midright")
-        y += 40 + 6
+                    "preset_" + cur_preset if cur_preset in ("arcade", "wasd") else None, RIGHT - 210, y + 24)
+        self._t(f"현재: {p_label}", self.font_val, C_GREEN if cur_preset in ("arcade", "wasd") else C_GOLD, RIGHT, y + 24, "midright")
+        y += 48 + 8
 
         used = {}
         for act_id, _n in ACTION_NAMES:
@@ -727,7 +822,7 @@ class SettingsMixin:
                 used.setdefault(k, []).append(act_id)
         conflicts = {a for acts in used.values() if len(acts) > 1 for a in acts}
 
-        card_w, card_h, gap = 282, 46, 5
+        card_w, card_h, gap = 282, 54, 7
         n_rows = (len(ACTION_NAMES) + 2) // 3
         self._row_rects["cards"] = pygame.Rect(IX, y, IW, n_rows * card_h + (n_rows - 1) * gap)
         focus_card = self._focus_key if self._kb_nav and self._focus_key.startswith("bind_") else None
@@ -743,73 +838,77 @@ class SettingsMixin:
             edge = C_GOLD if rebinding else (C_DANGER if is_conflict else (C_ACCENT if (hover or focused) else (52, 66, 104)))
             pygame.draw.rect(self.screen, bg, rect, border_radius=12)
             pygame.draw.rect(self.screen, edge, rect, 2 if (hover or rebinding or focused) else 1, border_radius=12)
-            self._t(act_name.split(" (")[0], self.font_val, COL_TEXT, rect.x + 16, rect.y + 3)
+            self._t(act_name.split(" (")[0], self.font_val, COL_TEXT, rect.x + 16, rect.y + 6)
             if rebinding:
-                self._t("새 키를 누르세요…", self.font_val, C_GOLD, rect.x + 16, rect.y + 23)
-                self._t("ESC 취소", self.font_tiny, COL_SUB, rect.right - 12, rect.y + 10, "topright")
+                self._t("새 키를 누르세요…", self.font_val, C_GOLD, rect.x + 16, rect.y + 28)
+                self._t("ESC 취소", self.font_tiny, COL_SUB, rect.right - 12, rect.y + 12, "topright")
             else:
                 kx = rect.x + 16
                 if not self.settings.get_action_keys(act_id):
-                    self._t("지정 안 됨 (클릭해서 지정)", self.font_tiny, COL_OFF, rect.x + 16, rect.y + 33, "midleft")
+                    self._t("지정 안 됨 (클릭해서 지정)", self.font_tiny, COL_OFF, rect.x + 16, rect.y + 39, "midleft")
                 for kc in self.settings.get_action_keys(act_id)[:3]:
                     ks = self.renderer._text(short_key_name(kc), self.font_val, (225, 232, 248))
-                    kr = pygame.Rect(kx, rect.y + 22, max(32, ks.get_width() + 18), 20)
+                    kr = pygame.Rect(kx, rect.y + 28, max(32, ks.get_width() + 18), 22)
                     pygame.draw.rect(self.screen, (44, 54, 86), kr, border_radius=7)
                     pygame.draw.rect(self.screen, (92, 108, 150), kr, 1, border_radius=7)
                     self.screen.blit(ks, (kr.centerx - ks.get_width() // 2, kr.centery - ks.get_height() // 2))
                     kx = kr.right + 6
                 if is_conflict:
-                    self._t("중복", self.font_tiny, C_DANGER, rect.right - 12, rect.y + 10, "topright")
-        y += n_rows * card_h + (n_rows - 1) * gap + 4
+                    self._t("중복", self.font_tiny, C_DANGER, rect.right - 12, rect.y + 12, "topright")
+        y += n_rows * card_h + (n_rows - 1) * gap + 6
         # 키를 옮겼다는 알림 (몇 초간)
         notice = getattr(self, "rebind_notice", None)
         if notice and time.time() < notice[1]:
             self._t(notice[0], self.font_help, C_GOLD, IX + IW // 2, y + 8, "midtop")
         elif conflicts:
             self._t("같은 키가 여러 동작에 배정되어 있습니다. 빨간 카드를 다시 지정하세요.", self.font_help, C_DANGER, IX + IW // 2, y + 8, "midtop")
-        y += 16
-        self._s_section("반응 속도", y)
-        y += 24
-        hrow = self._s_row("handling", y, 44, "")
-        group_w = IW // 3
-        for gi, (key, label) in enumerate([("das", "DAS 지연"), ("arr", "ARR 반복"), ("sdf", "소프트드롭")]):
-            gx = IX + gi * group_w + 12
-            v_now = self.settings.get(key + '_ms')
-            sub = {"das": f"약 {v_now * 0.06:.1f}프레임", "arr": ("즉시 이동" if v_now == 0 else f"약 {v_now * 0.06:.1f}프레임"),
-                   "sdf": ("바닥까지 즉시" if v_now == 0 else "")}[key]
-            self._t(label, self.font_val, COL_SUB, gx + 10, y + (15 if sub else 22), "midleft")
-            if sub:
-                self._t(sub, self.font_tiny, COL_OFF, gx + 10, y + 32, "midleft")
-            dec = pygame.Rect(gx + 100, y + 6, 32, 32)
-            val = pygame.Rect(dec.right + 4, y + 6, 76, 32)
-            inc = pygame.Rect(val.right + 4, y + 6, 32, 32)
-            self.settings_buttons["hf_" + key] = val
-            self._s_btn(key + "_dec", dec, "-")
-            self._s_btn(key + "_inc", inc, "+")
-            pygame.draw.rect(self.screen, COL_CTL_BG, val, border_radius=8)
-            pygame.draw.rect(self.screen, C_ACCENT, val, 1, border_radius=8)
-            v_ms = self.settings.get(key + '_ms')
-            self._t("즉시" if (key in ("arr", "sdf") and v_ms == 0) else f"{v_ms}ms", self.font_val, C_ACCENT, val.centerx, val.centery, "center")
-        y += 44 + 6
-        self._s_row("handling2", y, 44, "")
+        y += 22
+        self._t("반응 속도(DAS · ARR · 소프트드롭 · DCD · 프리셋)는 위쪽의 '반응' 탭에서 바꿉니다.", self.font_help, COL_SUB, IX + IW // 2, y + 6, "midtop")
+
+    def _render_tab_rules(self):
+        """규칙 탭(커스텀 규칙): 혼자 하는 배틀로얄에서 쓰레기 배율 / 내 낙하 속도 / 배지를 바꿈. 기본이 아니면 기록되지 않는 경기가 됨"""
+        st = self.settings
+        y = TOP
+        g, v, b = st.get("rule_garbage", "normal"), st.get("rule_gravity", "normal"), bool(st.get("rule_badges", True))
+        self._s_row("rule_garbage", y, 56, "쓰레기 줄 배율", "상대에게 보내는 쓰레기 줄에 곱함 (올림)")
+        self._s_cycler("rg_prev", "rg_next", {"half": "×0.5 (느긋하게)", "normal": "×1 (기본)", "heavy": "×1.5 (거칠게)"}[g], RIGHT, y + 28, color=C_ACCENT if g != "normal" else None)
+        y += 56
+        self._s_row("rule_gravity", y, 56, "내 낙하 속도", "블록이 자동으로 내려오는 속도 (봇은 그대로)")
+        self._s_cycler("rgr_prev", "rgr_next", {"slow": "느리게 (×0.7)", "normal": "기본", "fast": "빠르게 (×1.4)"}[v], RIGHT, y + 28, color=C_ACCENT if v != "normal" else None)
+        y += 56
+        self._s_row("rule_badges", y, 56, "K.O. 배지 보너스", "끄면 K.O.를 해도 공격력이 오르지 않음")
+        self._s_seg([("rb=on", "켜기"), ("rb=off", "끔")], "rb=on" if b else "rb=off", RIGHT, y + 28)
+        y += 56
+        team = bool(st.get("rule_team", False))
+        self._s_row("rule_team", y, 56, "팀전 (2팀)", "같은 편은 공격하지 않고 상대 팀을 모두 탈락시키면 승리")
+        self._s_seg([("rt=off", "끔"), ("rt=on", "켜기")], "rt=on" if team else "rt=off", RIGHT, y + 28)
+        y += 56 + 12
+        custom = (g, v, b) != ("normal", "normal", True) or team
+        self._t("커스텀 경기: 전적 · 점수표 · 경험치에 기록되지 않습니다 (혼자 하는 배틀로얄에만 적용)" if custom else
+                "모두 기본값입니다. 바꾸면 '커스텀 경기'가 되어 기록되지 않습니다 (혼자 하는 배틀로얄에만 적용)",
+                self.font_help, C_GOLD if custom else COL_SUB, IX + 22, y)
+
+    def _render_tab_react(self):
+        """반응 탭: DAS/ARR/소프트드롭/DCD/DAS 취소/프리셋을 다른 탭과 같은 '행' 모양(라벨 + 설명 + 값 조절)으로"""
         from settings_manager import handling_preset_name
-        cur_name = handling_preset_name(self.settings.get("das_ms"), self.settings.get("arr_ms"), self.settings.get("sdf_ms"),
-                                        self.settings.get("dcd_ms"), self.settings.get("das_cancel"))
-        dcd_v = self.settings.get("dcd_ms")
-        for gi, (key, label, text) in enumerate([("dcd", "DCD 지연", "끔" if dcd_v == 0 else f"{dcd_v}ms"),
-                                                 ("dcancel", "DAS 취소", "켬" if self.settings.get("das_cancel") else "끔"),
-                                                 ("hpre", "반응 프리셋", "사용자" if cur_name == "사용자 지정" else cur_name)]):
-            gx = IX + gi * group_w + 12
-            self._t(label, self.font_val, COL_SUB, gx + 10, y + 22, "midleft")
-            dec = pygame.Rect(gx + 100, y + 6, 32, 32)
-            val = pygame.Rect(dec.right + 4, y + 6, 76, 32)
-            inc = pygame.Rect(val.right + 4, y + 6, 32, 32)
-            self.settings_buttons["hf_" + key] = val
-            self._s_btn(key + "_dec", dec, "-" if key != "dcancel" else "<")
-            self._s_btn(key + "_inc", inc, "+" if key != "dcancel" else ">")
-            pygame.draw.rect(self.screen, COL_CTL_BG, val, border_radius=8)
-            pygame.draw.rect(self.screen, C_ACCENT if text not in ("끔", "사용자") else COL_OFF, val, 1, border_radius=8)
-            self._t(text, self.font_val, C_ACCENT if text not in ("끔", "사용자") else COL_SUB, val.centerx, val.centery, "center")
+        st = self.settings
+        y = TOP
+        das, arr, sdf, dcd = st.get("das_ms"), st.get("arr_ms"), st.get("sdf_ms"), st.get("dcd_ms")
+        cancel = bool(st.get("das_cancel"))
+        cur_name = handling_preset_name(das, arr, sdf, dcd, cancel)
+        rows = [
+            ("react_das", "DAS 지연", f"누른 뒤 자동 반복까지 · 약 {das * 0.06:.1f}프레임 (60fps 기준)", "das_dec", "das_inc", f"{das}ms"),
+            ("react_arr", "ARR 반복", "자동 반복 간격 · " + ("벽까지 즉시 이동" if arr == 0 else f"약 {arr * 0.06:.1f}프레임"), "arr_dec", "arr_inc", "즉시" if arr == 0 else f"{arr}ms"),
+            ("react_sdf", "소프트드롭", "아래 키를 누를 때 내려가는 간격 · " + ("바닥까지 즉시" if sdf == 0 else "숫자가 작을수록 빠름"), "sdf_dec", "sdf_inc", "즉시" if sdf == 0 else f"{sdf}ms"),
+            ("react_dcd", "DCD 지연", "새 블록 뒤 DAS 재충전을 막는 시간 (오버슈트 방지)", "dcd_dec", "dcd_inc", "끔" if dcd == 0 else f"{dcd}ms"),
+            ("react_dcancel", "방향 전환 시 DAS 취소", "방향을 바꿀 때 DAS를 새로 충전", "dcancel_dec", "dcancel_inc", "켬" if cancel else "끔"),
+            ("react_hpre", "반응 프리셋", "느긋 · 기본 · 빠름 · 프로를 한 번에 적용", "hpre_dec", "hpre_inc", "사용자" if cur_name == "사용자 지정" else cur_name),
+        ]
+        for key, label, desc, dec, inc, text in rows:
+            self._s_row(key, y, 56, label, desc)
+            on_col = C_ACCENT if text not in ("끔", "사용자") else COL_SUB
+            self._s_cycler(dec, inc, text, RIGHT, y + 28, color=on_col)
+            y += 56
 
     # ------------------------------------------------------------------ 전체 화면
     def _render_settings(self):
@@ -855,7 +954,7 @@ class SettingsMixin:
         pygame.draw.line(self.screen, (50, 75, 115), (IX, 186), (IX + IW, 186), 1)
 
         {"match": self._render_tab_match, "general": self._render_tab_general,
-         "audio": self._render_tab_audio, "keys": self._render_tab_keys, "help": self._render_tab_help}[self.settings_tab]()
+         "audio": self._render_tab_audio, "keys": self._render_tab_keys, "react": self._render_tab_react, "rules": self._render_tab_rules, "help": self._render_tab_help}[self.settings_tab]()
 
         # 하단: 도움말 바 (마우스를 올린 항목, 없으면 키보드로 선택한 항목의 설명) + 키 안내
         self._render_help_bar(mx, my)
@@ -892,7 +991,7 @@ class SettingsMixin:
             if key and key.startswith("bind_"):
                 key = "cards"
             elif key and key.startswith("hf_"):
-                key = "handling"
+                key = "react_das"
             if key == "diff":
                 text = BOT_DIFFICULTY_DESCS.get(self.settings.get("bot_difficulty", "mixed"), "")
             elif key == "res" and self.is_fullscreen:
@@ -904,6 +1003,8 @@ class SettingsMixin:
             self._t("항목에 마우스를 올리거나 ↑↓로 선택하면 설명이 여기에 표시됩니다.", self.font_help, COL_OFF, bar.x + 16, bar.centery, "midleft")
             return
         max_w = bar.w - 32
+        from i18n import tr
+        text = tr(text)                                                    # 번역한 글자로 나눔
         lines, cur = [], ""
         for ch in text:                                                   # 글자 폭 기준 줄바꿈 (한글은 띄어쓰기가 드물어 글자 단위)
             if self.font_help.size(cur + ch)[0] > max_w and cur:

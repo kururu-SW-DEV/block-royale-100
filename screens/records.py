@@ -4,7 +4,7 @@ BlockRoyaleApp(main.py)이 상속하는 믹스인: 메서드 본문은 원래 ma
 """
 
 from stats_manager import SIZE_BUCKETS, SIZE_BUCKET_IDS, ACHIEVEMENTS, ACH_CATEGORIES, ACH_CATEGORY
-from app_common import BOT_DIFFICULTY_LABELS, C_ACCENT, C_DIM, C_GOLD, C_GREEN, C_ORANGE, C_TEXT, SCREEN_WIDTH, _mix, pygame
+from app_common import CANVAS, BOT_DIFFICULTY_LABELS, C_ACCENT, C_DIM, C_GOLD, C_GREEN, C_ORANGE, C_TEXT, SCREEN_WIDTH, _mix, pygame
 
 
 RECORDS_DIFF_OPTIONS = (None, "mixed", "easy", "normal", "hard", "master")
@@ -65,6 +65,8 @@ class RecordsMixin:
                         else:
                             self._records_set_ach_page(int(btn_id[4:]))
                         return
+        if self.records_mode == "replay" and self._handle_replay_event(event):
+            return
         if event.type == pygame.KEYDOWN and event.key in RECORDS_SIZE_KEYS:
             self._records_set_filter(size=RECORDS_SIZE_KEYS[event.key])
             return
@@ -83,7 +85,7 @@ class RecordsMixin:
                 self.records_scroll = max(0, min(self.records_max_scroll, self.records_scroll + step))
             return
         if event.type == pygame.KEYDOWN and event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_TAB, pygame.K_a, pygame.K_d):
-            order = ("battle", "survival", "trend", "score", "achv")
+            order = ("battle", "survival", "trend", "score", "replay", "achv")
             step = -1 if event.key in (pygame.K_LEFT, pygame.K_a) else 1
             self._records_set_mode(order[(order.index(self.records_mode) + step) % len(order)] if self.records_mode in order else "battle")
             return
@@ -95,7 +97,7 @@ class RecordsMixin:
             mx, my = event.pos
             for btn_id, rect in self.records_buttons.items():
                 if rect.collidepoint(mx, my):
-                    if btn_id in ("mode_battle", "mode_survival", "mode_trend", "mode_score", "mode_achv"):
+                    if btn_id in ("mode_battle", "mode_survival", "mode_trend", "mode_score", "mode_replay", "mode_achv"):
                         self._records_set_mode(btn_id[5:])
                     elif btn_id.startswith("size_"):
                         self._records_set_filter(size=None if btn_id == "size_all" else btn_id[5:])
@@ -114,9 +116,76 @@ class RecordsMixin:
             self.sound_mgr.play('move')
             self.records_mode = mode
             self.records_scroll = 0
+            self.replay_view = None
+            if mode == "replay":
+                self._replay_reload()
+
+    def _replay_reload(self):
+        """저장된 리플레이를 다시 읽음 (최신 판이 위로)"""
+        from replay import load_replays
+        self.replay_list = list(reversed(load_replays()))
+        self.replay_sel = 0
+
+    def _handle_replay_event(self, event):
+        """리플레이 탭 입력: 목록(↑↓ 선택, Enter/클릭 재생)과 재생(Space 일시정지, ←→ 이동, ↑↓ 속도, Home 처음, Esc 목록으로). 처리했으면 True"""
+        from replay import ReplayPlayer
+        v = self.replay_view
+        if event.type == pygame.KEYDOWN:
+            k = event.key
+            shift = bool(getattr(event, "mod", 0) & pygame.KMOD_SHIFT)
+            if v is not None:
+                if k in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
+                    self.replay_view = None
+                elif k == pygame.K_SPACE:
+                    v.paused = not v.paused
+                    if not v.paused and v.finished:
+                        v.seek(0.0)
+                elif k in (pygame.K_LEFT, pygame.K_a):
+                    v.seek(v.t - (20.0 if shift else 5.0))
+                elif k in (pygame.K_RIGHT, pygame.K_d):
+                    v.seek(v.t + (20.0 if shift else 5.0))
+                elif k in (pygame.K_UP, pygame.K_w):
+                    v.speed = min(8.0, v.speed * 2.0)
+                elif k in (pygame.K_DOWN, pygame.K_s):
+                    v.speed = max(0.5, v.speed / 2.0)
+                elif k == pygame.K_HOME:
+                    v.seek(0.0)
+                    v.paused = False
+                else:
+                    return True
+                self.sound_mgr.play('move')
+                return True
+            lst = getattr(self, "replay_list", [])
+            if k in (pygame.K_UP, pygame.K_DOWN) and lst:
+                self.replay_sel = (self.replay_sel + (-1 if k == pygame.K_UP else 1)) % len(lst)
+                self.sound_mgr.play('move')
+                return True
+            if k in (pygame.K_RETURN, pygame.K_KP_ENTER) and lst:
+                self.replay_view = ReplayPlayer(lst[self.replay_sel])
+                self.sound_mgr.play('rotate')
+                return True
+            if k in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_TAB, pygame.K_a, pygame.K_d, pygame.K_ESCAPE):
+                return False                                      # 탭 이동/나가기는 기존 처리
+            return k in (pygame.K_SPACE, pygame.K_r)              # 목록에서 Space/R로 기록실이 닫히지 않게
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and v is None:
+            for i, rect in getattr(self, "replay_rows", {}).items():
+                if rect.collidepoint(event.pos):
+                    if self.replay_sel == i and getattr(self, "replay_list", None):
+                        self.replay_view = ReplayPlayer(self.replay_list[i])
+                    self.replay_sel = i
+                    self.sound_mgr.play('move')
+                    return True
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and v is not None:
+            if getattr(self, "replay_back", None) is not None and self.replay_back.collidepoint(event.pos):
+                self.replay_view = None
+                self.sound_mgr.play('move')
+            return True
+        return False
 
     def _update_records(self, dt):
         self.menu_bg.update(dt)
+        if self.replay_view is not None and self.records_mode == "replay":
+            self.replay_view.update(min(dt, 0.1))
 
     def _render_records(self):
         self.menu_bg.draw(self.screen)
@@ -131,15 +200,21 @@ class RecordsMixin:
 
         # 2. 모드 탭 (배틀로얄 / 서바이벌): 전적은 모드별로 따로 집계
         tab_y = box_y - 34
-        for i, (mid, label, col) in enumerate((("battle", "배틀로얄", C_GOLD), ("survival", "서바이벌", C_GREEN), ("trend", "추이", C_ACCENT), ("score", "점수표", (255, 150, 90)), ("achv", "업적", C_ORANGE))):
-            r = pygame.Rect(box_x + i * 98, tab_y, 92, 30)
+        for i, (mid, label, col) in enumerate((("battle", "배틀로얄", C_GOLD), ("survival", "서바이벌", C_GREEN), ("trend", "추이", C_ACCENT), ("score", "점수표", (255, 150, 90)), ("replay", "리플레이", (150, 200, 255)), ("achv", "업적", C_ORANGE))):
+            r = pygame.Rect(box_x + i * 92, tab_y, 86, 30)
             self.records_buttons["mode_" + mid] = r
             on = self.records_mode == mid
             hov = r.collidepoint(mx, my)
             pygame.draw.rect(self.screen, _mix((16, 20, 34), col, 0.30 if on else (0.14 if hov else 0.05)), r, border_radius=8)
             pygame.draw.rect(self.screen, col if on else (60, 72, 104), r, 2 if on else 1, border_radius=8)
             self._t(label, self.font_small, col if on else C_DIM, r.centerx, r.centery, "center")
-        self._t("1~4 규모 · F 난이도" if self.records_mode not in ("achv", "score") else ("← → 위 탭 이동  ·  1~5 · PgUp/PgDn 업적 페이지" if self.records_mode == "achv" else "← → 위 탭 이동  ·  1~4 규모"), self.font_tiny, C_DIM, box_x + box_w, tab_y + 15, "midright")
+        hints_ = {"achv": "← → 위 탭 이동  ·  1~5 · PgUp/PgDn 업적 페이지", "score": "← → 위 탭 이동  ·  1~4 규모", "replay": "← → 위 탭 이동  ·  ↑↓ 선택 · Enter 재생"}
+        self._t(hints_.get(self.records_mode, "1~4 규모 · F 난이도"), self.font_tiny, C_DIM, box_x + box_w, tab_y + 15, "midright")
+        if self.records_mode == "replay":
+            self._render_replays(box_x, box_y, box_w, mx, my)
+            if self.replay_view is None:
+                self._records_bottom_buttons(mx, my, box_x, box_y, box_w)
+            return
         if self.records_mode == "score":
             self._render_scores(box_x, box_y, box_w, tab_y, mx, my)
             self._records_bottom_buttons(mx, my, box_x, box_y, box_w)
@@ -149,7 +224,7 @@ class RecordsMixin:
             self._records_bottom_buttons(mx, my, box_x, box_y, box_w)
             return
         # 필터 칩: 인원 규모(1~4) / 난이도(F). 필터를 걸면 전체 누적이 아니라 최근 100경기 중 조건에 맞는 경기로 다시 집계
-        chip_x = box_x + 498
+        chip_x = box_x + 560
         size_chips = [("size_all", "전체", None)] + [("size_" + b[0], f"{b[3].split(' ')[0][0]} {b[1]}~{b[2]}", b[0]) for b in SIZE_BUCKETS]
         for cid, label, val in size_chips:
             w = 46 if val is None else 76
@@ -357,9 +432,90 @@ class RecordsMixin:
         self._t("   ·   ".join(parts), self.font_info, C_GREEN if (prev is None or last >= prev) else C_ORANGE, ix, gy + gh + 30)
         self._t("● 우승   파란 선: 5판 이동 평균", self.font_tiny, C_DIM, ix + iw, gy + gh + 34, "topright")
 
+    def _render_replays(self, box_x, box_y, box_w, mx, my):
+        """리플레이 탭: 최근 10판 목록, 선택하면 내 보드가 사건 순서대로 다시 만들어지는 재생 화면"""
+        lst = getattr(self, "replay_list", None)
+        if lst is None:
+            self._replay_reload()
+            lst = self.replay_list
+        self.replay_rows = {}
+        self.replay_back = None
+        v = self.replay_view
+        if v is None:
+            self._t("내 보드 리플레이", self.font_title, (150, 200, 255), box_x + 28, box_y + 20)
+            self._t("최근 10판 · 블록이 고정되고 줄이 올라오는 순간마다 보드가 바뀌는 모습을 다시 봅니다 (100명 전체가 아니라 내 보드만)", self.font_tiny, C_DIM, box_x + 30, box_y + 68)
+            head_y = box_y + 100
+            cols = [("날짜", 60, "left"), ("순위", 260, "center"), ("K.O.", 360, "center"), ("점수", 520, "right"), ("시간", 640, "center"), ("모드", 760, "center")]
+            for label, cx_, anc in cols:
+                self._t(label, self.font_tiny, C_DIM, box_x + cx_, head_y, "topleft" if anc == "left" else ("topright" if anc == "right" else "midtop"))
+            pygame.draw.line(self.screen, (70, 84, 120), (box_x + 28, head_y + 22), (box_x + box_w - 28, head_y + 22), 1)
+            if not lst:
+                self._t("아직 저장된 리플레이가 없습니다. 연습이 아닌 경기를 끝까지 하면 자동으로 저장됩니다.", self.font_mid, C_DIM, box_x + box_w // 2, box_y + 280, "center")
+                return
+            for i, rp in enumerate(lst[:10]):
+                y = head_y + 34 + i * 36
+                r = pygame.Rect(box_x + 24, y - 4, box_w - 48, 33)
+                self.replay_rows[i] = r
+                sel = (i == self.replay_sel)
+                if sel:
+                    pygame.draw.rect(self.screen, (28, 40, 72), r, border_radius=8)
+                    pygame.draw.rect(self.screen, (150, 200, 255), r, 1, border_radius=8)
+                elif r.collidepoint(mx, my):
+                    pygame.draw.rect(self.screen, (22, 30, 54), r, border_radius=8)
+                col = (255, 215, 90) if rp["rank"] == 1 else C_TEXT
+                self._t(rp["date"], self.font_small, col if sel else C_DIM, box_x + 60, y + 14, "midleft")
+                self._t(f"{rp['rank']}위 / {rp['total']}명", self.font_small, col, box_x + 260, y + 14, "center")
+                self._t(str(rp["kos"]), self.font_small, (255, 150, 150), box_x + 360, y + 14, "center")
+                self._t(f"{rp['score']:,}", self.font_small, C_GOLD, box_x + 520, y + 14, "midright")
+                self._t(f"{rp['secs'] // 60}:{rp['secs'] % 60:02d}", self.font_small, C_TEXT, box_x + 640, y + 14, "center")
+                self._t("서바이벌" if rp.get("mode") == "survival" else "배틀로얄", self.font_small, C_DIM, box_x + 760, y + 14, "center")
+            return
+        # ---- 재생 화면: 가운데 보드, 왼쪽 정보, 오른쪽 조작 안내, 아래 진행 바
+        data = v.data
+        cs = 24
+        bw_, bh_ = cs * 10, cs * 20
+        bx, by = box_x + (box_w - bw_) // 2, box_y + 24
+        pygame.draw.rect(self.screen, (10, 12, 22), (bx - 6, by - 6, bw_ + 12, bh_ + 12), border_radius=8)
+        pygame.draw.rect(self.screen, (60, 74, 112), (bx - 6, by - 6, bw_ + 12, bh_ + 12), 2, border_radius=8)
+        for y in range(20):
+            for x in range(10):
+                piece = v.grid[y][x]
+                if piece:
+                    self.renderer._draw_cell(bx + x * cs, by + y * cs, cs, piece)
+        last = v.last
+        if last is not None and v.t - v.last_t < 0.35:                      # 방금 일어난 사건 강조: 고정된 칸(줄이 지워진 판은 보드 모양이 바뀌어 생략) / 올라온 쓰레기 줄
+            a = int(180 * (1.0 - (v.t - v.last_t) / 0.35))
+            if last["k"] == "L" and not last["r"]:
+                for cx_, cy_ in last["c"]:
+                    CANVAS.alpha_rect((bx + cx_ * cs, by + cy_ * cs, cs, cs), (255, 255, 255, a), radius=3)
+            elif last["k"] == "G":
+                CANVAS.alpha_rect((bx, by + (20 - last["n"]) * cs, bw_, last["n"] * cs), (255, 90, 90, a // 2), radius=3)
+        lx = box_x + 36
+        self._t("리플레이", self.font_mid, (150, 200, 255), lx, by)
+        self._t(data.get("date", ""), self.font_small, C_DIM, lx, by + 34)
+        self._t(f"최종 {data['rank']}위 / {data['total']}명", self.font_small, C_TEXT, lx, by + 62)
+        self._t(f"K.O. {data['kos']}", self.font_small, (255, 150, 150), lx, by + 86)
+        self._t(f"점수 {v.score:,}", self.font_mid, C_GOLD, lx, by + 130)
+        self._t(f"{int(v.t) // 60}:{int(v.t) % 60:02d} / {int(v.duration) // 60}:{int(v.duration) % 60:02d}", self.font_mid, C_TEXT, lx, by + 170)
+        self._t(("일시정지" if v.paused else ("재생 끝" if v.finished else f"재생 ×{v.speed:g}")), self.font_small, C_ACCENT, lx, by + 206)
+        rx = bx + bw_ + 50
+        tips = [("Space", "재생 / 일시정지"), ("← →", "5초 이동 (Shift 20초)"), ("↑ ↓", "속도 ×2 / ÷2"), ("Home", "처음부터"), ("Esc", "목록으로")]
+        for i, (k_, t_) in enumerate(tips):
+            self._t(k_, self.font_small, C_GOLD, rx, by + 8 + i * 34)
+            self._t(t_, self.font_small, C_DIM, rx + 70, by + 8 + i * 34)
+        bar = pygame.Rect(box_x + 36, box_y + 540, box_w - 72, 10)
+        pygame.draw.rect(self.screen, (24, 29, 48), bar, border_radius=5)
+        fw = int(bar.w * (v.t / max(0.01, v.duration)))
+        if fw > 0:
+            pygame.draw.rect(self.screen, (150, 200, 255), (bar.x, bar.y, max(fw, 8), bar.h), border_radius=5)
+        self.replay_back = pygame.Rect(box_x + box_w - 160, box_y + 12, 130, 30)
+        pygame.draw.rect(self.screen, (20, 65, 85), self.replay_back, border_radius=8)
+        pygame.draw.rect(self.screen, (70, 200, 255), self.replay_back, 1, border_radius=8)
+        self._t("목록으로 (Esc)", self.font_tiny, (220, 250, 255), self.replay_back.centerx, self.replay_back.centery, "center")
+
     def _render_scores(self, box_x, box_y, box_w, tab_y, mx, my):
         """점수표 탭: 아케이드식 TOP 10 (점수 내림차순, 이니셜 / 최종 순위 / 인원 / K.O. / 날짜). 규모 칩(1~4)으로 거르고, 전체는 모든 규모를 합쳐 보여 줌"""
-        chip_x = box_x + 498
+        chip_x = box_x + 560
         size_chips = [("size_all", "전체", None)] + [("size_" + b[0], f"{b[3].split(' ')[0][0]} {b[1]}~{b[2]}", b[0]) for b in SIZE_BUCKETS]
         for cid, label, val in size_chips:
             w = 46 if val is None else 76
@@ -478,7 +634,9 @@ class RecordsMixin:
         self._t("PgUp / PgDn · 휠", self.font_tiny, C_DIM, box_x + box_w - 25, ny + 15, "midright")
 
     def _wrap_text(self, text, font, max_w):
-        """글자 단위 줄바꿈 (한글 포함)"""
+        """글자 단위 줄바꿈 (한글 포함). 번역된 글자로 나눔"""
+        from i18n import tr
+        text = tr(text)
         lines, cur = [], ""
         for ch in text:
             if cur and font.size(cur + ch)[0] > max_w:

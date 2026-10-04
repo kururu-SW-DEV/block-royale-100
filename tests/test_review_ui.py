@@ -65,7 +65,7 @@ def test_settings_keyboard_navigation():
     key(pygame.K_ESCAPE)
     assert app.state == "MENU"
     # 게임 탭
-    app.state = "SETTINGS"; app.settings_tab = "match"; app.settings_focus["match"] = 0
+    app.state = "SETTINGS"; app.settings_tab = "match"; app.settings_focus["match"] = 1          # 0은 언어 행, 1이 참가 인원
     app._render_settings()
     n0 = app.target_player_count
     key(pygame.K_LEFT)
@@ -144,17 +144,17 @@ def test_key_conflict_resolution_handling_and_number_keys():
         assert app.match.local_target_mode == TARGET_MODES[i], (i, app.match.local_target_mode)
     # 조작키 탭 렌더링 + 핸들링 키보드 조절
     app.state = "SETTINGS"; app.previous_state = "MENU"; app.settings_tab = "keys"
-    app._render_settings()
+    app._render_settings()                                   # 조작 탭(키 카드)
     key = lambda k: app._handle_event(pygame.event.Event(pygame.KEYDOWN, key=k, mod=0, unicode="", scancode=0))
-    for _ in range(((len(__import__("settings_manager").ACTION_NAMES) + 2) // 3)):
-        key(pygame.K_DOWN)                                   # 카드 줄(3개씩)을 지나 핸들링 행으로
+    app.settings_tab = "react"                               # 반응 속도는 별도 '반응' 탭
+    app.settings_focus["react"] = 0
     app._render_settings()
-    assert app._settings_focus_id() == "hf_das", app._settings_focus_id()
+    assert app._settings_focus_id() == "react_das", app._settings_focus_id()
     before = app.settings.get("das_ms")
     key(pygame.K_RIGHT)
     assert app.settings.get("das_ms") == before + 10 and abs(app.DAS_DELAY - (before + 10) / 1000) < 1e-9
     key(pygame.K_DOWN); key(pygame.K_LEFT)
-    assert app._settings_focus_id() == "hf_arr" and app.settings.get("arr_ms") == 9
+    assert app._settings_focus_id() == "react_arr" and app.settings.get("arr_ms") == 9
     print("  OK key conflicts / handling settings / number keys")
 
 

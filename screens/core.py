@@ -34,6 +34,18 @@ class CoreMixin:
         if self.match is not None:
             self.match.shake_scale = SHAKE_SCALE.get(self.settings.get("screen_shake"), 1.0)
 
+    def _start_update_check(self):
+        """설정에서 켠 경우에만 새 버전을 한 번 조회 (백그라운드, 실패하면 조용히 끝남)"""
+        if self._update_checker is None and self.settings.get("update_check", False):
+            from update_check import UpdateChecker
+            self._update_checker = UpdateChecker()
+            self._update_checker.start()
+
+    def update_info(self):
+        """새 버전이 확인됐으면 {"tag", "url"}, 아니면 None"""
+        chk = self._update_checker
+        return chk.result if (chk is not None and chk.done and self.settings.get("update_check", False)) else None
+
     def apply_handling(self):
         """설정의 DAS/ARR/소프트드롭(ms)을 실제 입력 처리에 반영"""
         self.DAS_DELAY = self.settings.get("das_ms") / 1000.0
@@ -273,9 +285,16 @@ class CoreMixin:
             bot_difficulty="mixed" if daily else (mutator.get("difficulty", self.bot_difficulty) if mutator else ((self.net_mgr.match_difficulty or self.bot_difficulty) if mode == "CLIENT" else self.bot_difficulty)),      # 참가자는 호스트가 정한 봇 난이도로 기록(전적/사다리가 자기 설정으로 잘못 기록되던 문제)
             # 게임 모드: 참가자는 호스트가 정한 값을 따르고, 그 외에는 내 설정을 씀 (오늘의 도전은 항상 배틀로얄)
             attacks_enabled=True if (daily or weekly) else (self.net_mgr.match_attacks if mode == "CLIENT" else self.settings.get("game_mode") != "survival"),
-            practice=practice, seed=seed, daily=daily, weekly=weekly, mutator=mutator, rival_id=rival, ghost=ghost, challenge=tracker
+            practice=practice, seed=seed, daily=daily, weekly=weekly, mutator=mutator, rival_id=rival, ghost=ghost, challenge=tracker,
+            team_mode=bool(self.settings.get("rule_team", False)) and mode == "SOLO" and not practice and not daily and not weekly
         )
         self.match.challenge_kind = kind
+        if mode == "SOLO" and not practice and not daily and not weekly:           # 커스텀 규칙: 혼자 하는 배틀로얄에만 적용, 기본값이 아닐 때만 켜짐
+            rg, rv, rb = self.settings.get("rule_garbage", "normal"), self.settings.get("rule_gravity", "normal"), bool(self.settings.get("rule_badges", True))
+            if (rg, rv, rb) != ("normal", "normal", True) or self.match.team_mode:
+                self.match.custom_rules = {"garbage": rg, "gravity": rv, "badges": rb, "team": self.match.team_mode}
+                bits = [f"쓰레기 {({'half': '×0.5', 'normal': '×1', 'heavy': '×1.5'})[rg]}", f"낙하 {({'slow': '느리게', 'normal': '기본', 'fast': '빠르게'})[rv]}", "배지 " + ("켬" if rb else "끔")]
+                self.match.add_commentary("커스텀 규칙 · " + " · ".join(bits) + " (기록되지 않음)", (255, 190, 90), prio=1)
         if practice:
             self.match.ta_bests = dict(self.stats_mgr.ch()["practice"]["ta"])
         self.match.local_color = self.name_color
@@ -283,6 +302,8 @@ class CoreMixin:
         self.match.set_target_mode(self.settings.get("target_mode"))        # 마지막으로 쓴 조준 모드를 이어서 사용
         self.match.novice = (not practice) and self.stats_mgr.data.get("total_games", 0) < 3        # 처음 3판: 조준 칩은 자동만 또렷하게
         self.match.log_enabled = bool(self.settings.get("match_log", False)) and not practice
+        from replay import ReplayRecorder
+        self.replay_rec = None if practice else ReplayRecorder({"mode": "survival" if not self.match.attacks_enabled else "battle"})      # 내 보드 리플레이 (연습 제외)
         lead = 0.0
         show_brief = bool(kind in ("daily", "weekly") and brief and getattr(self, "use_bot_pool", False))
         if show_brief:                                                   # 오늘의 도전/주간 변형: 규칙과 목표를 먼저 보여 주고, 아무 키나 누르면 카운트다운 시작

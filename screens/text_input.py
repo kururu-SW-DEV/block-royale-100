@@ -7,7 +7,16 @@ from app_common import CANVAS, pygame
 
 
 class TextInputMixin:
-    TEXT_LIMITS = {"chat": 120, "room_name": 24, "player_name": 16}
+    TEXT_LIMITS = {"chat": 120, "room_name": 24, "player_name": 16, "initials": 3}
+
+    def _auto_initials(self):
+        name = (getattr(self, "player_name", "") or "AAA").strip() or "AAA"
+        return "".join(ch for ch in name if ch.isalnum())[:3].upper() or "AAA"
+
+    def _initials(self):
+        """점수표에 올릴 이니셜 3글자: 설정에 직접 정한 값이 있으면 그것, 없으면 이름의 앞 3글자 (영문은 대문자)"""
+        ini = (self.settings.get("initials", "") or "").strip()
+        return ini[:3].upper() if ini else self._auto_initials()
 
     def _default_room_name(self):
         return f"{self.player_name}의 방"
@@ -16,6 +25,8 @@ class TextInputMixin:
         self.text_focus = field
         if field == "player_name":
             self.player_name_input = self.player_name
+        elif field == "initials":
+            self.initials_input = ""                 # 3글자 칸이라 이어 쓰지 않고 새로 입력 (비워 둔 채 끝내면 기존 값 유지)
         self.chat_comp = ""
         self.key_left_down = self.key_right_down = self.key_down_down = False
         self.h_dir = 0
@@ -42,6 +53,10 @@ class TextInputMixin:
             self.player_name = name
             self.settings.set("player_name", "" if name == "Player_1" else name)
             self._sync_profile()
+        if self.text_focus == "initials":
+            ini = "".join(ch for ch in (getattr(self, "initials_input", "") or "") if ch.isalnum()).upper()[:3]
+            if ini:
+                self.settings.set("initials", "" if ini == self._auto_initials() else ini)
         self.text_focus = None
         self.chat_comp = ""
         try:
@@ -51,13 +66,16 @@ class TextInputMixin:
             pass
 
     def _text_get(self, field):
-        return {"chat": self.chat_input, "room_name": self.room_name_input, "player_name": self.player_name_input}[field]
+        return {"chat": self.chat_input, "room_name": self.room_name_input, "player_name": self.player_name_input,
+                "initials": getattr(self, "initials_input", "")}[field]
 
     def _text_set(self, field, value):
         if field == "chat":
             self.chat_input = value
         elif field == "player_name":
             self.player_name_input = value
+        elif field == "initials":
+            self.initials_input = "".join(ch for ch in value if ch.isalnum()).upper()[:3]
         else:
             self.room_name_input = value
             if self.net_mgr.mode == "HOST":          # 입력하는 즉시 LAN 검색/방 조회에 반영

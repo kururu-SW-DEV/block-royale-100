@@ -368,11 +368,6 @@ class GameMixin:
                         self.sound_mgr.play('attack')        # 실제로 조준이 바뀐 경우에만 소리
                     break
 
-    def _initials(self):
-        """점수표에 올릴 이니셜 3글자: 이름의 앞 3글자 (영문은 대문자)"""
-        name = (getattr(self, "player_name", "") or "AAA").strip() or "AAA"
-        return name[:3].upper()
-
     def _build_reward(self, final_rank, highlights, skins_before):
         """경기 종료 정산 결과(경험치/레벨/명장면/새 스킨)를 match.reward에 담고, 결과 화면 연출 소리를 예약 (우승은 승리 팡파레가 길어서 소리 예약은 생략)"""
         from stats_manager import unlocked_skin_ids
@@ -695,6 +690,8 @@ class GameMixin:
             self.match.update(dt)
             if self.match.match_finished:
                 break
+        if self.replay_rec is not None and not self.replay_rec.finished:
+            self.replay_rec.update(self.match.local_engine, self.match.elapsed)          # 고정/쓰레기 사건만 기록 (프레임당 비용 거의 없음)
         if self.match.match_finished or self.match.local_is_alive:
             self.match.spectate_speed = 1
         self._save_challenges()
@@ -729,8 +726,14 @@ class GameMixin:
             self.result_lock_until = time.time() + 1.2 + (0 if self.match.practice else self.renderer.VICTORY_CEREMONY)      # 세리머니가 끝난 뒤에 순위표 입력을 받음
             self.sound_mgr.play_victory()
             
+        rec = self.replay_rec
+        if rec is not None and not rec.finished and (self.match.match_finished or not self.match.local_is_alive):
+            from replay import save_replay
+            rank_r = self.match.local_rank if self.match.local_rank > 0 else self.match.alive_count + 1
+            save_replay(rec.finish(rank_r, self.match.total_players, self.match.local_ko_count, self.match.local_engine.score,
+                                   self.match.survival_seconds()))                          # 마지막 판 10개까지 replays.json에 보관
         # 경기 종료/탈락 시 전적 통계 자동 갱신 (1회)
-        if not self.match_recorded and not self.match.practice and (self.match.match_finished or not self.match.local_is_alive):
+        if not self.match_recorded and not self.match.practice and not self.match.custom_rules and (self.match.match_finished or not self.match.local_is_alive):
             self.match_recorded = True
             survival_sec = self.match.survival_seconds()   # 탈락 순간의 시간 (일시정지 시간 제외)
             if self.match.match_finished and self.match.local_rank == 1:
@@ -824,6 +827,20 @@ class GameMixin:
                         details[sid] = snap
                 self.net_mgr.host_sync_world(all_st, details)
 
+    def _abort_match_with_record(self):
+        """방장이 나가거나 연결이 끊겨 경기가 중단될 때: 그 시점의 순위로 전적/경험치를 남김 (그냥 사라지던 판이 기록됨).
+        내가 아직 살아 있으면 지금 생존자 수가 순위, 이미 탈락했으면 탈락 순위. 반환: 알림 창에 보여 줄 문구 (기록할 게 없으면 None)"""
+        m = self.match
+        if m is None or m.practice or m.match_finished or getattr(self, "match_recorded", False):
+            return None
+        if m.local_is_alive:
+            m.local_rank = max(1, int(m.alive_count))
+            m.players[m.local_player_id]["rank"] = m.local_rank
+            m.freeze_local_stats()
+        m.aborted = True
+        m.match_finished = True                                   # 이후 일반 종료 흐름(전적 저장, 경험치 정산)이 그대로 이어짐
+        return f"그 시점의 기록(현재 {m.local_rank}위 / {m.total_players}명)을 저장했습니다."
+
     def _check_network_status(self):
         """게임 중: (클라이언트) 호스트 종료/연결 끊김 알림, (호스트) 참가자 이탈 알림 및 정리"""
         nm = self.net_mgr
@@ -842,15 +859,27 @@ class GameMixin:
         if nm.mode == "CLIENT" and not self._notice_shown:
             if nm.host_left:
                 self._notice_shown = True
-                self._open_modal("호스트가 게임을 종료했습니다", ["방장이 게임을 나가서 이 게임이 종료되었습니다.", "메인 메뉴로 돌아갑니다."],
+                saved = self._abort_match_with_record()
+                self._open_modal("호스트가 게임을 종료했습니다", ["방장이 게임을 나가서 이 게임이 종료되었습니다.",
+                                                         saved or "메인 메뉴로 돌아갑니다."],
                                  [("ok_menu", "메인 메뉴로", "blue", "ENTER")])
-            elif nm.seconds_since_host_packet() > 8.0:
+            elif nm.seconds_since_host_packet() > 15.0:
                 self._notice_shown = True
-                self._open_modal("호스트와 연결이 끊겼습니다", ["8초 이상 호스트에게서 응답이 없습니다.", "호스트가 종료되었거나 네트워크에 문제가 있을 수 있습니다."],
+                saved = self._abort_match_with_record()
+                self._open_modal("호스트와 연결이 끊겼습니다", ["15초 이상 호스트에게서 응답이 없습니다.", saved or "호스트가 종료되었거나 네트워크에 문제가 있을 수 있습니다."],
                                  [("ok_menu", "메인 메뉴로", "blue", "ENTER")])
+            elif nm.seconds_since_host_packet() > 4.0 and self.match is not None:
+                self.match.net_unstable_self = True                      # 잠깐 끊긴 것일 수 있으니 바로 끊지 않고 '연결 불안정'만 알림 (돌아오면 저절로 사라짐)
+        if nm.mode == "CLIENT" and self.match is not None and nm.seconds_since_host_packet() <= 4.0:
+            self.match.net_unstable_self = False
         elif nm.mode == "HOST":
+            self.match.net_unstable = nm.unstable_ids()                  # 신호가 잠깐 끊긴 참가자: 카드에 '연결 불안정' 표시 (15초까지 기다림)
             if not self.match.match_finished:            # 경기가 끝난 뒤 결과 화면을 보는 동안에는 참가자를 정리하지 않음
                 nm.reap_clients()
+            while nm.takeover_events:
+                tid, tname, tsnap = nm.takeover_events.pop(0)
+                if self.match.take_over_with_bot(tid, tsnap):
+                    self.match.add_floating_text(f"{tname} 님의 연결이 끊겨 봇이 대신 플레이합니다", (255, 190, 90), duration=3.0, size=22, category="alert")
             while nm.left_events:
                 name = nm.left_events.pop(0)
                 self.match.add_floating_text(f"{name} 님이 게임을 나갔습니다", (255, 190, 90), duration=3.0, size=22, category="alert")

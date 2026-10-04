@@ -157,6 +157,8 @@ def test_score_tab_and_attract_screen():
     app._handle_records_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_3, mod=0, unicode="3"))
     app._render_records()
     app._handle_records_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT, mod=0, unicode=""))
+    assert app.records_mode == "replay"
+    app._handle_records_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT, mod=0, unicode=""))
     assert app.records_mode == "achv"
     app.state = "MENU"
     app._idle_t = time.time()

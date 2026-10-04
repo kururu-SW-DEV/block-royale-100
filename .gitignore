@@ -27,3 +27,5 @@ desktop.ini
 .DS_Store
 /sound_cache.bin
 /sound_cache.bin.tmp
+/replays.json
+/replays.json.tmp

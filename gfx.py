@@ -285,6 +285,7 @@ class HiFont:
     """논리 크기(pt)로 지정하되 실제로는 배율만큼 큰 글꼴로 렌더링하는 글꼴 래퍼"""
     _fonts = {}
     _fonts_version = -1
+    text_filter = None            # 화면에 그리기 직전 글자를 바꾸는 함수 (i18n.tr): 모든 글자가 여기를 지나므로 번역을 한 곳에서 처리함
 
     def __init__(self, names, size, bold=False):
         self.names = names
@@ -304,12 +305,16 @@ class HiFont:
         return font
 
     def render(self, text, antialias=True, color=(255, 255, 255), background=None):
+        if HiFont.text_filter is not None:
+            text = HiFont.text_filter(text)
         rendered = self._real().render(text, True, color)
         surf = HiSurf(rendered.get_size(), pygame.SRCALPHA, CANVAS.S)
         surf.blit(rendered, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
         return surf
 
     def size(self, text):
+        if HiFont.text_filter is not None:
+            text = HiFont.text_filter(text)
         w, h = self._real().size(text)
         return (int(round(w / CANVAS.S)), int(round(h / CANVAS.S)))
 

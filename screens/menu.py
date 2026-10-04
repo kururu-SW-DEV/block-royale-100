@@ -149,6 +149,15 @@ class MenuMixin:
             self.toggle_fullscreen()
             return
         self.sound_mgr.play('move')
+        if btn_id == "update":
+            upd = self.update_info()
+            if upd:
+                try:
+                    import webbrowser
+                    webbrowser.open(upd["url"])
+                except Exception:
+                    pass
+            return
         if btn_id == "quick_play":
             self.start_game(mode="SOLO", total_players=self.target_player_count)
         elif btn_id == "host_room":
@@ -249,7 +258,9 @@ class MenuMixin:
 
     # ------------------------------------------------------------------ 그리기 부품
     def _menu_fit(self, text, font, max_w):
-        """글자 폭이 max_w를 넘으면 끝을 자르고 ..."""
+        """글자 폭이 max_w를 넘으면 끝을 자르고 ... (번역한 글자로)"""
+        from i18n import tr
+        text = tr(text)
         if font.size(text)[0] <= max_w:
             return text
         while len(text) > 1 and font.size(text + "...")[0] > max_w:
@@ -454,7 +465,17 @@ class MenuMixin:
         self._t(self._menu_fit(desc, self.font_help, 900), self.font_help, COL_SUB, cx, by + 226, "midtop")
 
         # 5. 하단 바: 버전 · 키 안내 · 게임 종료
-        self._t(f"v{APP_VERSION}", self.font_tiny, COL_HINT, 24, SCREEN_HEIGHT - 42, "topleft")
+        vr = self._t(f"v{APP_VERSION}", self.font_tiny, COL_HINT, 24, SCREEN_HEIGHT - 42, "topleft")
+        upd = self.update_info()
+        if upd:                                                          # 새 버전 알림: 누르면 릴리스 페이지가 브라우저에서 열림 (자동 설치 없음)
+            label = f"새 버전 {upd['tag']} 받기"
+            tw = self.font_tiny.size(label)[0]
+            ur = pygame.Rect((vr.right if vr is not None else 60) + 12, SCREEN_HEIGHT - 46, tw + 24, 24)
+            self.menu_buttons["update"] = ur
+            hov = ur.collidepoint(pygame.mouse.get_pos())
+            pygame.draw.rect(self.screen, _mix((22, 28, 48), C_GOLD, 0.30 if hov else 0.16), ur, border_radius=12)
+            pygame.draw.rect(self.screen, C_GOLD, ur, 1, border_radius=12)
+            self._t(label, self.font_tiny, C_GOLD, ur.centerx, ur.centery, "center")
         self._keycap_row([("↑↓←→", "이동"), ("Enter", "선택"), ("R", "전적"), ("S", "설정"), ("F1", "규칙"), ("Esc", "종료")],
                          cx, SCREEN_HEIGHT - 42, gap=20, font=self.font_small, label_col=COL_SUB)
         quit_r = pygame.Rect(SCREEN_WIDTH - 24 - 112, SCREEN_HEIGHT - 50, 112, 34)
