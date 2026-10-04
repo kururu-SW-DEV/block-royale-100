@@ -214,5 +214,5 @@ for _k, _v in list(EXACT.items()):
         EXACT.setdefault(_k + " -", _v + " -")
 EXACT["쓰레기 · 초기화 · 압박 드릴"] = "Garbage · Reset · Pressure drill"
 TEMPLATES.update({
-    "기초 {#}/{#}": "Basic {}/{}", "중급 {#}/{#}": "Intermediate {}/{}", "고급 {#}/{#}": "Advanced {}/{}", "마스터 {#}/{#}": "Master {}/{}",
+    "기초 {#}/{#}": "Basic {}/{}", "중급 {#}/{#}": "Mid {}/{}", "고급 {#}/{#}": "Adv {}/{}", "마스터 {#}/{#}": "Master {}/{}",
 })

@@ -93,7 +93,7 @@ TEMPLATES = {
     "내 순위  {}위 / {}명": "My rank  {} / {}",
     "난이도 클리어!  {}": "Difficulty cleared!  {}",
     "{} 봇": "{} Bot",
-    "끝 ×{}": "Combo end ×{}",
+    "끝 ×{}": "End ×{}",
     "최고 {}초": "Best {}s",
     "곧 {}줄 도착": "Rising: {}",
     "{#}콤보": "{} combo",
