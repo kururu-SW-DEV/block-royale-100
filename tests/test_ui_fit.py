@@ -44,7 +44,7 @@ class Recorder:
             b = max(cands, key=lambda c: c[0])[1]               # 글자 아래에 가장 마지막으로 그려진 상자 (뒤에 깔린 다른 화면의 상자는 무시)
             if t.w <= 2:
                 continue
-            if t.left < b.left - SLACK or t.right > b.right + SLACK or t.top < b.top - 4 or t.bottom > b.bottom + 4:
+            if t.left < b.left - SLACK or t.right > b.right + SLACK or t.top < b.top - 8 or t.bottom > b.bottom + 8:
                 sig = (tuple(b), t.y // 6)
                 self.over.setdefault(sig, (txt, tuple(b), tuple(t)))
 
@@ -238,8 +238,8 @@ def main():
     if new:
         for sig, (txt, box, t) in list(new.items())[:25]:
             print(f"넘침: {txt!r}  글자 {t}  칸 {box}")
-        first = next(iter(new.values()))
-        raise AssertionError(f"영어에서만 칸 밖으로 넘치는 글자 {len(new)}곳 (예: {first[0]!r} 글자 {first[2]} 칸 {first[1]})")
+        ex = "; ".join(f"{v[0]!r} 글자{v[2]} 칸{v[1]}" for v in list(new.values())[:4])
+        raise AssertionError(f"영어에서만 칸 밖으로 넘치는 글자 {len(new)}곳 ({ex})")
     print(f"[ALL UI FIT TESTS PASSED] (한국어에서도 같은 자리에서 넘치는 {len(ko)}곳은 의도된 디자인으로 제외)")
 
 

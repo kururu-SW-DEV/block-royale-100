@@ -54,7 +54,7 @@ def main():
         shutil.rmtree(data_dir, ignore_errors=True)
     width = max(len(r[0]) for r in results)
     for name, ok, sec, msg in results:
-        print(f"{'PASS' if ok else 'FAIL'}  {name.ljust(width)}  {sec:5.1f}s  {msg[:90]}")
+        print(f"{'PASS' if ok else 'FAIL'}  {name.ljust(width)}  {sec:5.1f}s  {msg[:90] if ok else msg[:600]}")
     failed = [r for r in results if not r[1]]
     print(f"\n{len(results) - len(failed)}/{len(results)} 통과")
     return 1 if failed else 0
