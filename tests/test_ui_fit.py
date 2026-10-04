@@ -227,13 +227,19 @@ def collect(lang):
 
 
 def main():
+    if not pygame.font.match_font("malgungothic"):
+        # 글자 폭은 글꼴에 따라 달라지므로, 실제 게임이 쓰는 맑은 고딕이 없는 PC(예: GitHub Actions 러너)에서는 비교가 의미 없어 건너뜀
+        print("[SKIP] 맑은 고딕이 없어 칸별 너비 검사를 건너뜁니다")
+        print("[ALL UI FIT TESTS PASSED] (skipped)")
+        return
     ko = collect("ko")
     en = collect("en")
     new = {sig: v for sig, v in en.items() if sig not in ko}
     if new:
         for sig, (txt, box, t) in list(new.items())[:25]:
             print(f"넘침: {txt!r}  글자 {t}  칸 {box}")
-        raise AssertionError(f"영어에서만 칸 밖으로 넘치는 글자 {len(new)}곳")
+        first = next(iter(new.values()))
+        raise AssertionError(f"영어에서만 칸 밖으로 넘치는 글자 {len(new)}곳 (예: {first[0]!r} 글자 {first[2]} 칸 {first[1]})")
     print(f"[ALL UI FIT TESTS PASSED] (한국어에서도 같은 자리에서 넘치는 {len(ko)}곳은 의도된 디자인으로 제외)")
 
 
