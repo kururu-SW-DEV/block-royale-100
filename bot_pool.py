@@ -14,10 +14,11 @@ import time
 
 MAX_WORKERS = 6
 MAX_INFLIGHT_PER_WORKER = 3            # 작업자 한 명당 동시에 맡길 수 있는 요청 수
+STALL_AFTER = 5.0                      # 맡긴 요청이 있는데 이 시간(초) 동안 어떤 결과도 오지 않으면 작업 프로세스가 멈춘 것으로 보고 끔 (죽지는 않았지만 응답이 없는 경우)
 STALE_AFTER = 8.0                      # 이 시간(초) 넘게 아무도 가져가지 않은 요청/결과는 정리 (탈락한 봇이 남긴 것)
 
 _state = {"procs": [], "req": None, "res": None, "next": 1, "ready": {}, "pending": set(), "hello": 0,
-          "broken": False, "started": False, "workers": 0,
+          "broken": False, "started": False, "workers": 0, "last_res": 0.0,
           "born": {}, "params": None, "params_blob": None, "params_ver": 0}
 
 
@@ -98,6 +99,7 @@ def stop():
     st["born"].clear()
     st["params"] = st["params_blob"] = None
     st["hello"] = 0
+    st["last_res"] = 0.0
     st["req"] = st["res"] = None
 
 
@@ -109,6 +111,7 @@ def pump():
     try:
         while True:
             rid, res = st["res"].get_nowait()
+            st["last_res"] = time.time()
             if rid == 0:
                 st["hello"] += 1
             elif rid in st["pending"]:
@@ -127,6 +130,8 @@ def pump():
             st["ready"].pop(rid, None)
     if any(not p.is_alive() for p in st["procs"]):
         _mark_broken()
+    elif st["pending"] and st["hello"] > 0 and time.time() - st["last_res"] > STALL_AFTER:
+        _mark_broken()                                 # 멈춘 작업자: 봇은 메인 프로세스에서 직접 계산하는 방식으로 이어감
 
 
 def enabled():
@@ -156,6 +161,8 @@ def submit(rows, cur, hold, qu, can_hold, combo, b2b, inc, depth, beam, atk, ts,
     except Exception:
         _mark_broken()
         return None
+    if not st["pending"]:
+        st["last_res"] = time.time()                   # 한가하다가 처음 맡기는 순간부터 응답 시간을 잼
     st["pending"].add(rid)
     st["born"][rid] = time.time()
     return rid

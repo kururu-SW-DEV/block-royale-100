@@ -303,7 +303,7 @@ class CoreMixin:
         self.match.novice = (not practice) and self.stats_mgr.data.get("total_games", 0) < 3        # 처음 3판: 조준 칩은 자동만 또렷하게
         self.match.log_enabled = bool(self.settings.get("match_log", False)) and not practice
         from replay import ReplayRecorder
-        self.replay_rec = None if practice else ReplayRecorder({"mode": "survival" if not self.match.attacks_enabled else "battle"})      # 내 보드 리플레이 (연습 제외)
+        self.replay_rec = None if practice else ReplayRecorder({"mode": "survival" if not self.match.attacks_enabled else "battle", "custom": bool(self.match.custom_rules)})      # 내 보드 리플레이 (연습 제외)
         lead = 0.0
         show_brief = bool(kind in ("daily", "weekly") and brief and getattr(self, "use_bot_pool", False))
         if show_brief:                                                   # 오늘의 도전/주간 변형: 규칙과 목표를 먼저 보여 주고, 아무 키나 누르면 카운트다운 시작
@@ -315,7 +315,7 @@ class CoreMixin:
             self.match.coach_until = time.time() + lead + 12.0
             self.match.coach_pending = True                  # coach_done은 코치를 볼 시간이 지난 뒤에(_check_tips) 저장: 바로 나가면 다음에 다시 보임
         self._cd_n = None                                    # 카운트다운 효과음 진행 (3-2-1-GO)
-        if not practice and self.match.attacks_enabled:      # 경기 중에 알려 줄 수 있는 아직 못 얻은 업적 / 평생 첫 K.O. 여부 (저장과 정식 판정은 경기가 끝날 때)
+        if not practice and self.match.attacks_enabled and not self.match.custom_rules:      # (커스텀 규칙 경기는 기록되지 않으므로 업적/최고 기록 알림도 띄우지 않음) 경기 중에 알려 줄 수 있는 아직 못 얻은 업적 / 평생 첫 K.O. 여부 (저장과 정식 판정은 경기가 끝날 때)
             from stats_manager import ACHIEVEMENTS
             _done = set(self.stats_mgr.achievements_done())
             self.match.live_ach = {aid: title for aid, title, _d, _ok in ACHIEVEMENTS if aid in self.match.LIVE_ACH and aid not in _done}

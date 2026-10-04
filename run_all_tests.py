@@ -6,11 +6,13 @@
 import os
 import subprocess
 import sys
+import tempfile
+import shutil
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TESTS_DIR = os.path.join(HERE, "tests")
-TESTS = ["test_engine_fixes.py", "test_royale.py", "test_v24_perfect_score.py", "test_review_network.py", "test_review_bot.py", "test_review_ui.py", "test_review_data.py", "test_review_rules.py", "test_opus_review2.py", "test_opus_review3.py", "test_challenges.py", "test_juice.py", "test_handling.py", "test_arcade.py", "test_perf.py", "test_v114.py", "test_render_smoke.py"]
+TESTS = ["test_engine_fixes.py", "test_royale.py", "test_v24_perfect_score.py", "test_review_network.py", "test_review_bot.py", "test_review_ui.py", "test_review_data.py", "test_review_rules.py", "test_opus_review2.py", "test_opus_review3.py", "test_challenges.py", "test_juice.py", "test_handling.py", "test_arcade.py", "test_perf.py", "test_v114.py", "test_i18n_audit.py", "test_render_smoke.py"]
 
 
 def _snapshot():
@@ -28,7 +30,8 @@ def _restore(snap):
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # 한글 결과 줄이 cp1252 같은 콘솔(GitHub Actions Windows 등)에서도 출력되도록
-    env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy", PYTHONIOENCODING="utf-8", PYTHONPATH=HERE)  # 프로젝트 루트를 import 경로에 추가(tests/ 안에서 실행돼도 block_engine 등을 찾도록)
+    data_dir = tempfile.mkdtemp(prefix="br_test_")              # 테스트는 빈 임시 데이터 폴더에서 실행: 내 settings/stats/replays/소리 캐시를 건드리지 않고, 처음 설치한 PC(CI)와 같은 조건
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy", PYTHONIOENCODING="utf-8", PYTHONPATH=HERE, BR_DATA_DIR=data_dir)  # 프로젝트 루트를 import 경로에 추가(tests/ 안에서 실행돼도 block_engine 등을 찾도록)
     snap = _snapshot()
     results = []
     try:
@@ -48,6 +51,7 @@ def main():
             results.append(("pyflakes", True, 0.0, f"건너뜀: {e}"))
     finally:
         _restore(snap)
+        shutil.rmtree(data_dir, ignore_errors=True)
     width = max(len(r[0]) for r in results)
     for name, ok, sec, msg in results:
         print(f"{'PASS' if ok else 'FAIL'}  {name.ljust(width)}  {sec:5.1f}s  {msg[:90]}")

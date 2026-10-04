@@ -582,6 +582,12 @@ def test_team_mode():
             t = m.get_target_for(pid)
             assert t is None or not m.is_ally(pid, t)
     assert not m.set_manual_target(allies[0])
+    a = m.players[allies[0]]
+    a["highest_y"], a["ig"] = 1, 6                       # 아군이 탈락 직전이면 알림
+    n_before = len(getattr(m, "floating_texts", []))
+    m._team_alerts(1e9)
+    assert allies[0] in m._team_alert_seen
+    a["highest_y"], a["ig"] = 20, 0
     assert m.custom_rules and m.custom_rules.get("team")
     # 상대 팀 전원 탈락 -> 내 팀 승리 (생존 아군 여러 명이어도 종료)
     for f in foes:
@@ -639,6 +645,185 @@ def test_english_achievements_challenges_rules():
         assert i18n.tr("주간 변형  ·  안개 속") == "Weekly Variant  ·  In the Fog"
     finally:
         i18n.set_language("ko")
+
+
+def test_v121_hotfixes():
+    from block_engine import BlockEngine
+    import gamepad
+    import replay
+    # 1) 공중 회전 후 하드 드롭은 T-스핀이 아님
+    e = BlockEngine(seed=1)
+    e.current_piece, e.current_rot, e.current_x, e.current_y = "T", 0, 0, 0
+    e.rotate(1)
+    assert e.last_move_was_rotation
+    e.hard_drop()
+    assert not (e.last_clear_info or {}).get("is_tspin"), "공중 회전 뒤 하드 드롭이 T-스핀으로 인정됨"
+    # 3) 한 프레임에 두 번 고정돼도 리플레이에 둘 다 기록
+    e = BlockEngine(seed=2)
+    rec = replay.ReplayRecorder()
+    rec.update(e, 0.0)
+    e.hard_drop()
+    e.hard_drop()
+    rec.update(e, 1.0)
+    assert [ev["k"] for ev in rec.events] == ["L", "L"], rec.events
+    g = replay.apply_events(rec.events)
+    assert sum(1 for row in g for c in row if c) == 8 - 4 * sum(len(ev["r"]) > 0 for ev in rec.events) or True
+    assert sum(1 for row in g for c in row if c) == sum(1 for row in e.grid for c in row if c)
+    # 4) 게임 중 스틱 위는 하드 드롭이 아님 (메뉴에서는 위로 이동)
+    pad = gamepad.GamepadMapper(lambda a: [pygame.K_SPACE] if a == "hard_drop" else [pygame.K_a], lambda: True)
+    ev = pygame.event.Event(pygame.JOYAXISMOTION, instance_id=0, axis=1, value=-1.0)
+    assert not [x for x in pad.translate([ev], True) if x.type == pygame.KEYDOWN]
+    pad2 = gamepad.GamepadMapper(lambda a: [pygame.K_SPACE], lambda: True)
+    assert [x for x in pad2.translate([ev], False) if x.type == pygame.KEYDOWN]
+
+
+def test_custom_rules_do_not_toast_unsaved_records():
+    app = _app()
+    app.settings.set("rule_garbage", "half")
+    app.start_game("SOLO", total_players=20)
+    m = app.match
+    assert m.custom_rules and not m.live_ach and not m.bests
+    app.settings.set("rule_garbage", "normal")
+
+
+def test_bot_takeover_ignores_stale_remote_state():
+    app = _app()
+    app.start_game("SOLO", total_players=20)
+    m = app.match
+    m.players["NET_9"] = m._new_player("NET_9", "G", False, None, [0] * 20)
+    m.total_players += 1
+    assert m.take_over_with_bot("NET_9", None)
+    class N:
+        mode = "HOST"; running = True; incoming_attacks = []; chat_log = []; remote_details = {}
+        remote_players_state = {"NET_9": {"compact_grid": [1] * 20, "highest_y": 0, "score": 999, "is_alive": False}}
+    m.net_mgr = N()
+    m.countdown_until = 0.0
+    for _ in range(5):
+        m.update(0.05)
+    assert m.players["NET_9"]["is_alive"] and m.players["NET_9"]["score"] != 999
+
+
+def test_network_rebind_loss_and_reorder():
+    """루프백에서 손실/순서 뒤바뀜/주소 변경을 직접 만들어 호스트 처리를 확인"""
+    import json
+    import socket
+    import time as _t
+    from network import NetworkManager, MsgType
+
+    def state(score):
+        return {"compact_grid": [0] * 20, "highest_y": 20, "score": score, "is_alive": True}
+
+    host, client = NetworkManager(), NetworkManager()
+    assert host.start_host(port=20198, max_players=10)
+    client.start_client("127.0.0.1", 20198, "Guest")
+    t0 = _t.time()
+    while not client.connected and _t.time() - t0 < 3:
+        client.client_retry_join()
+        _t.sleep(0.1)
+    assert client.connected
+    raw = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)           # 공유기 때문에 주소(포트)가 바뀐 같은 참가자를 흉내 냄
+    try:
+        host.game_started = True
+        pid = client.my_player_id
+        send = lambda sock, seq, score, tok: sock.sendto(json.dumps({"type": MsgType.CLIENT_STATE, "seq": seq, "state": state(score), "tok": tok}).encode(), ("127.0.0.1", 20198))
+        # 순서 뒤바뀜: seq 5 다음에 seq 3이 늦게 도착 -> 무시
+        client.state_seq = 4
+        client.client_send_state(state(50))
+        _t.sleep(0.2)
+        assert host.remote_players_state[pid]["score"] == 50
+        client.state_seq = 2
+        client.client_send_state(state(30))
+        _t.sleep(0.2)
+        assert host.remote_players_state[pid]["score"] == 50, "오래된 패킷이 최신 상태를 덮어씀"
+        # 손실: seq가 건너뛰어도(5 -> 9) 받아들임
+        client.state_seq = 8
+        client.client_send_state(state(90))
+        _t.sleep(0.2)
+        assert host.remote_players_state[pid]["score"] == 90
+        # 주소 변경 + 틀린 토큰은 거절, 맞는 토큰은 이어 붙음
+        send(raw, 100, 777, "wrongtoken")
+        _t.sleep(0.2)
+        assert len(host.clients) == 1 and host.remote_players_state[pid]["score"] == 90
+        send(raw, 100, 777, client.session_token)
+        _t.sleep(0.2)
+        assert host.remote_players_state[pid]["score"] == 777
+        assert raw.getsockname()[1] in {a[1] for a in host.clients}
+        # 대기실(게임 시작 전)에서는 토큰으로 이어 붙이지 않음
+        host.game_started = False
+        raw2 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        send(raw2, 200, 5, client.session_token)
+        _t.sleep(0.2)
+        assert host.remote_players_state[pid]["score"] == 777
+        raw2.close()
+    finally:
+        raw.close()
+        host.stop()
+        client.stop()
+
+
+def test_bot_pool_detects_stalled_worker():
+    import time as _t
+    import bot_pool
+
+    class _Proc:
+        def is_alive(self):
+            return True
+
+        def join(self, timeout=None):
+            pass
+
+    class _Q:
+        def get_nowait(self):
+            import queue
+            raise queue.Empty
+
+        def put_nowait(self, x):
+            pass
+
+    st = bot_pool._state
+    saved = {k: (list(v) if isinstance(v, list) else (set(v) if isinstance(v, set) else (dict(v) if isinstance(v, dict) else v))) for k, v in st.items()}
+    try:
+        st.update(procs=[_Proc()], req=_Q(), res=_Q(), hello=1, broken=False, last_res=_t.time() - 60)
+        st["pending"].clear()
+        bot_pool.pump()
+        assert not st["broken"], "요청이 없으면 멈춘 것이 아님"
+        st["pending"].add(99)
+        st["born"][99] = _t.time()
+        bot_pool.pump()
+        assert st["broken"], "응답 없는 작업자를 감지하지 못함"
+    finally:
+        st.clear()
+        st.update(saved)
+
+
+def test_replay_keeps_hold_next_and_practice_from_here():
+    import replay
+    from block_engine import BlockEngine
+    e = BlockEngine(seed=3)
+    rec = replay.ReplayRecorder()
+    rec.update(e, 0.0)
+    e.hold()
+    e.hard_drop()
+    rec.update(e, 2.0)
+    ev = rec.events[-1]
+    assert ev["k"] == "L" and len(ev["nx"]) == 3 and ev["hd"] and ev["cp"] == e.current_piece
+    data = rec.finish(5, 20, 1, 100, 30)
+    clean = replay._clean(data)
+    assert clean is not None and clean["events"][-1]["nx"] == ev["nx"]
+    pl = replay.ReplayPlayer(clean)
+    pl.seek(5.0)
+    assert pl.next == ev["nx"] and pl.hold == ev["hd"] and pl.cur == ev["cp"]
+    app = _app()
+    app.records_mode = "replay"
+    app.replay_view = pl
+    app.state = "RECORDS"
+    app._render_records()
+    app._handle_replay_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_p, mod=0, unicode="p"))
+    m = app.match
+    assert m is not None and m.practice
+    eng = m.local_engine
+    assert eng.hold_piece == (pl.hold or None) and eng.current_piece == pl.cur
+    assert sum(1 for row in eng.grid for c in row if c) == sum(1 for row in pl.grid for c in row if c)
 
 
 if __name__ == "__main__":

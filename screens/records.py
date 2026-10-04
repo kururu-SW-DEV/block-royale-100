@@ -126,6 +126,18 @@ class RecordsMixin:
         self.replay_list = list(reversed(load_replays()))
         self.replay_sel = 0
 
+    def _replay_practice_from_here(self, v):
+        """지금 보고 있는 순간의 보드(홀드·다음 블록 포함)로 연습 모드를 시작"""
+        grid = [list(row) for row in v.grid]
+        cur, nxt, hold = v.cur, v.next, v.hold
+        self.start_game(mode="SOLO", total_players=20, practice=True)
+        eng = self.match.local_engine
+        eng.grid = [[c if c else None for c in row] for row in grid]
+        eng.hold_piece = hold or None
+        eng.next_queue = list(cur + nxt)
+        eng.spawn_piece()
+        self.match.add_floating_text("리플레이의 그 순간에서 연습을 시작합니다", (150, 200, 255), duration=2.5, size=22, category="alert")
+
     def _handle_replay_event(self, event):
         """리플레이 탭 입력: 목록(↑↓ 선택, Enter/클릭 재생)과 재생(Space 일시정지, ←→ 이동, ↑↓ 속도, Home 처음, Esc 목록으로). 처리했으면 True"""
         from replay import ReplayPlayer
@@ -151,6 +163,9 @@ class RecordsMixin:
                 elif k == pygame.K_HOME:
                     v.seek(0.0)
                     v.paused = False
+                elif k == pygame.K_p:
+                    self._replay_practice_from_here(v)
+                    return True
                 else:
                     return True
                 self.sound_mgr.play('move')
@@ -498,8 +513,17 @@ class RecordsMixin:
         self._t(f"점수 {v.score:,}", self.font_mid, C_GOLD, lx, by + 130)
         self._t(f"{int(v.t) // 60}:{int(v.t) % 60:02d} / {int(v.duration) // 60}:{int(v.duration) % 60:02d}", self.font_mid, C_TEXT, lx, by + 170)
         self._t(("일시정지" if v.paused else ("재생 끝" if v.finished else f"재생 ×{v.speed:g}")), self.font_small, C_ACCENT, lx, by + 206)
+        if v.next or v.hold:                                                # 이 시점의 홀드 / 다음 블록 / 받을 쓰레기 (v1.2.1 이후 기록된 리플레이만)
+            self._t("HOLD", self.font_tiny, C_DIM, lx, by + 250)
+            if v.hold:
+                self.renderer._render_preview_piece(v.hold, lx + 60, by + 262, scale=14)
+            self._t("NEXT", self.font_tiny, C_DIM, lx, by + 296)
+            for i_, pc in enumerate(v.next):
+                self.renderer._render_preview_piece(pc, lx + 24 + i_ * 44, by + 332, scale=14, dim=i_ > 0)
+            if v.ig:
+                self._t(f"받을 공격 {v.ig}줄", self.font_small, (255, 130, 110), lx, by + 372)
         rx = bx + bw_ + 50
-        tips = [("Space", "재생 / 일시정지"), ("← →", "5초 이동 (Shift 20초)"), ("↑ ↓", "속도 ×2 / ÷2"), ("Home", "처음부터"), ("Esc", "목록으로")]
+        tips = [("Space", "재생 / 일시정지"), ("← →", "5초 이동 (Shift 20초)"), ("↑ ↓", "속도 ×2 / ÷2"), ("Home", "처음부터"), ("P", "이 순간에서 연습"), ("Esc", "목록으로")]
         for i, (k_, t_) in enumerate(tips):
             self._t(k_, self.font_small, C_GOLD, rx, by + 8 + i * 34)
             self._t(t_, self.font_small, C_DIM, rx + 70, by + 8 + i * 34)

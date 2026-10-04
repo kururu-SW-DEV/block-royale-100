@@ -1,7 +1,7 @@
 """
 Block Royale 100 - 게임패드 지원 (v1.1.14)
 패드 입력(십자키/스틱/버튼)을 '키 입력 이벤트'로 바꿔서 기존 키보드 처리(DAS/ARR/소프트드롭, 메뉴 이동, 키 재배정)를 그대로 쓴다.
-- 게임 중: 십자키/왼쪽 스틱 = 좌우 이동·소프트드롭, 위 = 하드 드롭, A = 시계 회전, B = 반시계 회전, X/LB = 홀드, Y = 180도 회전,
+- 게임 중: 십자키/왼쪽 스틱 = 좌우 이동·소프트드롭, 십자키 위 = 하드 드롭(스틱 위는 실수 방지로 게임 중 무시), A = 시계 회전, B = 반시계 회전, X/LB = 홀드, Y = 180도 회전,
   RB = 하드 드롭, Start = 일시정지, Back = 조준 대상 바꾸기. 동작에 배정된 첫 번째 키를 눌렀다 뗀 것처럼 처리하므로 설정의 키 배정을 따른다.
 - 메뉴/설정/결과 화면: 십자키/스틱 = 방향키, A/Start = Enter, B = Esc.
 버튼 번호는 SDL 조이스틱 기본(Xbox 계열: A0 B1 X2 Y3 LB4 RB5 Back6 Start7). 컨트롤러마다 다를 수 있어 문제가 있으면 설정의 '게임패드'를 끌 수 있다.
@@ -115,7 +115,10 @@ class GamepadMapper:
             if e.type == pygame.JOYHATMOTION:
                 made = self._set_dirs((inst, "hat"), self._hat_dirs(e.value), in_game)
             elif e.type == pygame.JOYAXISMOTION and e.axis in (0, 1):
-                made = self._set_dirs((inst, "stick"), self._axis_update(inst, e.axis, e.value), in_game)
+                sd = self._axis_update(inst, e.axis, e.value)
+                if in_game:
+                    sd.discard("up")                           # 게임 중 스틱 위 = 하드 드롭이면 대각선으로 밀 때 실수로 떨어짐: 하드 드롭은 십자키 위/버튼만
+                made = self._set_dirs((inst, "stick"), sd, in_game)
             elif e.type in (pygame.JOYBUTTONDOWN, pygame.JOYBUTTONUP):
                 token = (inst, "btn", e.button)
                 if e.type == pygame.JOYBUTTONUP:

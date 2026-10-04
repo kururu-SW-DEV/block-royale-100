@@ -142,6 +142,23 @@ EXACT = {
 }
 
 EXACT.update({
+    "이 순간에서 연습": "Practice from here", "리플레이의 그 순간에서 연습을 시작합니다": "Starting practice from that moment of the replay",
+    "주소를 입력하거나, LAN의 방을 찾는 중": "Type an address, or searching for LAN rooms",
+    "방장이 게임을 시작하면 자동으로 시작됩니다": "The game starts automatically when the host starts it",
+    "채팅": "Chat", "Tab / 클릭: 입력  ·  Enter: 전송": "Tab / click: type  ·  Enter: send", "내 이름": "My name",
+    "아직 메시지가 없습니다. 인사를 건네 보세요!": "No messages yet. Say hello!", "메시지를 입력하세요": "Type a message", "여기를 클릭하거나 Tab": "Click here or press Tab",
+    "대기실  ·  호스트": "Lobby  ·  Host", "대기실  ·  참가자": "Lobby  ·  Guest", "방 참가": "Join Room",
+    "화면의 글이 모두 바뀝니다 (저장된 데이터 속 이름 등 일부는 그대로)": "The whole UI switches language; a few names (e.g. in saved data) stay as they were",
+    "게임 화면 블록의 모양을 바꿉니다. 색은 위의 '블록 색상' 설정을 따르며, 로고와 미니 보드는 그대로입니다.": "Changes the look of blocks in the game. Color follows the 'Block color' setting above; the logo and mini boards are unchanged.",
+    "  잠긴 스킨: ": "  Locked skins: ",
+    "업적 3개 달성": "Earn 3 achievements",
+    "픽셀": "Pixel", "유리": "Glass", "별빛": "Starlight", "불씨": "Ember", "프리즘": "Prism",
+    # 팀전 / 커스텀 규칙
+    "팀 승리!": "Team Victory!", "팀 패배": "Team Defeat", "우리 팀이 끝까지 살아남았습니다": "Your team survived to the end",
+    " · 상대 팀 승리": " · The other team won", "★ 내 팀 승리! ★": "★ My team wins! ★", "상대 팀 승리": "The other team wins",
+    "★ 팀 승리! 우리 팀이 끝까지 살아남았습니다 ★": "★ Team victory! Your team survived to the end ★", "상대 팀이 승리했습니다": "The other team won",
+    "팀전 (2팀)": "Team Battle (2 teams)", "같은 편은 공격하지 않고 상대 팀을 모두 탈락시키면 승리": "Allies don't attack each other; eliminate the other team to win",
+    "팀전(2팀): 나와 같은 편 봇 절반은 서로 공격하지 않고, 상대 팀을 모두 탈락시키면 이깁니다. 같은 편은 초록 테두리로 표시됩니다. 혼자 하는 배틀로얄에서만 적용되고 기록되지 않습니다(4명 이상).": "Team Battle (2 teams): half the bots are on your side and never attack you or each other; eliminate the other team to win. Allies have a green border. Applies to solo Battle Royale only (4+ players) and isn't recorded.",
     "소수 정예": "Elite Few", "30인 · 모두 어려움 봇": "30 players · all Hard bots",
     "퍼펙트 폭격": "Perfect Barrage", "퍼펙트 클리어 공격 2배 (20줄)": "Perfect Clear attacks doubled (20 lines)",
     "안개 속": "In the Fog", "NEXT 블록이 1개만 보임": "Only 1 NEXT piece is visible",
@@ -151,6 +168,11 @@ EXACT.update({
 })
 
 TEMPLATES = {
+    "♥ 아군 위기!  {}": "♥ Ally in danger!  {}",
+    "받을 공격 {#}줄": "Incoming {} lines",
+    "{}의 방": "{}'s room",
+    "팀전 · 내 팀 {#}명 vs 상대 팀 {#}명 (같은 편은 공격하지 않아요)": "Team battle · my team {} vs other team {} (allies don't attack each other)",
+    " · 우리 팀 {#}명 / 상대 팀 {#}명 생존 (끝까지 지켜보세요)": " · Your team {} / other team {} alive (watch it through)",
     "주간 변형  ·  {}": "Weekly Variant  ·  {}", "{}  ·  이번 주만의 규칙": "{}  ·  this week's special rule",
     "바뀐 규칙:  {}": "Changed rule:  {}",
     "{#}월 {#}일  ·  100인 혼합 난이도  ·  모두에게 같은 블록 순서": "{}/{}  ·  100 players, mixed difficulty  ·  same piece order for everyone",

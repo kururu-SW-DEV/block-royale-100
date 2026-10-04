@@ -80,6 +80,7 @@ class BlockEngine:
         self.last_lock_cells = []       # 마지막으로 고정된 피스의 칸 좌표 (UI 이펙트용)
         self.cleared_row_cells = []     # 방금 지운 줄의 (행, 칸 값 목록) (UI 파쇄 연출용, 렌더러가 소비)
         self.settle_offsets = []        # 줄 제거 뒤 새 행마다 내려온 칸 수 (UI 내려앉기 연출용)
+        self.replay_log = None          # 리플레이 기록기가 켜 두면 고정/쓰레기 사건을 하나도 빠짐없이 쌓음 (한 프레임에 여러 번 고정돼도 손실 없음). None이면 기록 안 함
         self.push_holes = []            # 방금 올라온 쓰레기 줄의 구멍 열 (UI 상승 연출용, 렌더러가 소비)
         self.hard_drop_events = 0       # 하드 드롭 횟수 (UI 궤적 트리거)
         self.last_hard_drop = None      # {"cells": 떨어지기 전 칸, "dist": 낙하 거리}
@@ -253,8 +254,10 @@ class BlockEngine:
         cy = self.current_y + 1
 
         def occupied(x, y):
-            if x < 0 or x >= self.width or y >= self.height or y < 0:
-                return True
+            if x < 0 or x >= self.width or y >= self.height:
+                return True                                      # 벽/바닥은 막힌 칸
+            if y < 0:
+                return False                                     # 위쪽 숨김 구역은 비어 있음 (충돌 판정과 같은 규칙: 천장 근처에서 가짜 T-스핀이 나오지 않게)
             return self.grid[y][x] is not None
 
         tl = occupied(cx - 1, cy - 1)
@@ -309,6 +312,8 @@ class BlockEngine:
             self.current_y += 1
             drop_dist += 1
         self.score += drop_dist * 2
+        if drop_dist > 0:
+            self.last_move_was_rotation = False                # 떨어진 뒤에는 회전 직후가 아님 (중력 낙하와 같게): 공중 회전 후 하드 드롭이 T-스핀이 되지 않음
         self.hard_drop_events += 1
         self.last_hard_drop = {"cells": start_cells, "dist": drop_dist}
         return self.lock_down()
@@ -401,6 +406,9 @@ class BlockEngine:
             if is_tspin:
                 self.score += 100
 
+        if self.replay_log is not None:
+            self.replay_log.append({"k": "L", "p": self.current_piece, "c": [[int(x), int(y)] for x, y in self.last_lock_cells],
+                                    "r": [int(r) for r in self.cleared_row_indices] if cleared_lines else [], "s": int(self.score)})
         self.garbage_to_send += attack_lines         # 같은 프레임에 두 번 고정돼도 앞선 공격이 사라지지 않게 누적
         self.last_clear_info = {
             'cleared': cleared_lines,
@@ -458,11 +466,15 @@ class BlockEngine:
         """보드 하단에 구멍 1개가 뚫린 쓰레기 줄을 밀어 올림"""
         hole_x = self.garbage_rng.randint(0, self.width - 1)
         self.garbage_pushed_total += count
+        if self.replay_log is not None:
+            self.replay_log.append({"k": "G", "n": int(count), "h": []})
         for i in range(count):
             if i > 0 and self.garbage_rng.random() < GARBAGE_MESSINESS:      # 한 묶음 안에서도 가끔 구멍이 옮겨져 한 번에 복구되지 않음
                 hole_x = (hole_x + self.garbage_rng.randint(1, self.width - 1)) % self.width
             self.push_holes.append(hole_x)
             del self.push_holes[:-12]
+            if self.replay_log is not None:
+                self.replay_log[-1]["h"].append(int(hole_x))
             # 맨 위 줄이 비어있지 않으면 밀려 올라가면서 게임오버
             if any(self.grid[0]):
                 self.game_over = True

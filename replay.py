@@ -28,8 +28,6 @@ class ReplayRecorder:
     def __init__(self, meta=None):
         self.meta = dict(meta or {})
         self.events = []
-        self._locks = 0
-        self._garbage = 0
         self._engine = None
         self.finished = False
 
@@ -38,20 +36,22 @@ class ReplayRecorder:
             return
         if engine is not self._engine:                         # 엔진이 바뀌면(재시작 등) 기준만 다시 잡음
             self._engine = engine
-            self._locks, self._garbage = engine.lock_events, engine.garbage_pushed_total
+            engine.replay_log = []
+            return
+        log = engine.replay_log
+        if not log:
             return
         t = round(float(elapsed), 2)
-        if engine.lock_events != self._locks:
-            self._locks = engine.lock_events
-            cells = [[int(x), int(y)] for x, y in (engine.last_lock_cells or [])]
-            info = getattr(engine, "last_clear_info", None) or {}
-            rows = [int(r) for r in (info.get("cleared_rows") or [])]
-            self.events.append({"k": "L", "t": t, "p": engine.last_locked_piece, "c": cells, "r": rows, "s": int(engine.score)})
-        if engine.garbage_pushed_total != self._garbage:
-            n = int(engine.garbage_pushed_total - self._garbage)
-            self._garbage = engine.garbage_pushed_total
-            holes = [int(h) for h in (engine.push_holes[-n:] if n > 0 else [])]
-            self.events.append({"k": "G", "t": t, "n": n, "h": holes})
+        for ev in log:                                         # 엔진이 쌓은 사건을 순서대로 옮김 (한 프레임에 여러 번 고정돼도 모두 기록)
+            ev["t"] = t
+            self.events.append(ev)
+        last = log[-1]
+        if last["k"] == "L":                                   # 지금 시점의 조작 중 블록 / 다음 3개 / 홀드 / 받을 쓰레기 (재생 화면 표시와 '여기서부터 연습'용)
+            last["cp"] = engine.current_piece or ""
+            last["nx"] = "".join(engine.next_queue[:3])
+            last["hd"] = engine.hold_piece or ""
+            last["ig"] = int(engine.incoming_garbage)
+        engine.replay_log = []
 
     def finish(self, rank, total, kos, score, secs):
         """기록을 마무리해 저장용 dict로 돌려줌"""
@@ -105,6 +105,7 @@ class ReplayPlayer:
         self.grid = [[None] * BOARD_W for _ in range(BOARD_H)]
         self.idx = 0
         self.score = 0
+        self.cur, self.next, self.hold, self.ig = "", "", "", 0      # 가장 최근 고정 시점의 조작 중 블록 / 다음 블록 / 홀드 / 받을 쓰레기
         self.last = None            # 가장 최근에 적용한 사건 (고정된 칸 강조용)
         self.last_t = -9.0
 
@@ -121,6 +122,8 @@ class ReplayPlayer:
             apply_one(self.grid, ev)
             if ev["k"] == "L":
                 self.score = ev.get("s", self.score)
+                if "nx" in ev:
+                    self.cur, self.next, self.hold, self.ig = ev.get("cp", ""), ev["nx"], ev.get("hd", ""), ev.get("ig", 0)
             self.last, self.last_t = ev, ev["t"]
             self.idx += 1
 
@@ -140,7 +143,9 @@ def _valid_event(ev):
     if ev["k"] == "L":
         return (isinstance(ev.get("p"), str) and len(ev["p"]) == 1 and isinstance(ev.get("c"), list) and len(ev["c"]) <= 8
                 and all(isinstance(c, list) and len(c) == 2 and all(isinstance(v, int) for v in c) for c in ev["c"])
-                and isinstance(ev.get("r"), list) and all(isinstance(r, int) and 0 <= r < BOARD_H for r in ev["r"]))
+                and isinstance(ev.get("r"), list) and all(isinstance(r, int) and 0 <= r < BOARD_H for r in ev["r"])
+                and all(isinstance(ev.get(k, ""), str) and len(ev.get(k, "")) <= n and set(ev.get(k, "")) <= set("IJLOSTZ") for k, n in (("cp", 1), ("nx", 3), ("hd", 1)))
+                and isinstance(ev.get("ig", 0), int) and not isinstance(ev.get("ig", 0), bool) and 0 <= ev.get("ig", 0) <= 400)
     return isinstance(ev.get("n"), int) and 0 < ev["n"] <= 24 and isinstance(ev.get("h"), list) and all(isinstance(h, int) for h in ev["h"])
 
 

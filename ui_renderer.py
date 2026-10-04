@@ -3638,13 +3638,19 @@ class UIRenderer:
         self._draw_grade_stamp(match, bx + pad + 36, by + 20 + 36, r_age - 0.9)
         stamp = _ease_out((r_age - 0.35) / 0.25)                                          # 제목은 1.25배에서 1.0배로 도장처럼 찍힘
         ttxt, tcol = ("로열 빅토리!", C_GOLD) if won else ("K.O.  경기 탈락", C_DANGER)
+        team = bool(getattr(match, "teams", None))
+        if team and match.team_won is not None:                                           # 팀전: 팀 승패가 정해졌으면 제목도 팀 결과로
+            ttxt, tcol = ("팀 승리!", C_GOLD) if match.team_won else ("팀 패배", C_DANGER)
+            accent = C_GOLD if match.team_won else C_DANGER
         if stamp < 1.0 and r_age > 0.3:
             tsurf = self._scaled_hi(self.font_title.render(ttxt, True, tcol), 1.0 + 0.25 * (1.0 - stamp))
             self.screen.blit(tsurf, tsurf.get_rect(midtop=(int(bx + box_w // 2), int(by + 24 - 4 * (1.0 - stamp)))))
         elif stamp >= 1.0:
             self._draw_text(ttxt, self.font_title, tcol, bx + box_w // 2, by + 24, "midtop", shadow=True)
-        if won:
+        if won and not team:
             self._draw_text("최후의 1인으로 살아남았습니다", self.font_mid, C_GREEN, bx + box_w // 2, by + 100, "midtop")
+        elif team and (won or match.team_won):
+            self._draw_text("우리 팀이 끝까지 살아남았습니다", self.font_mid, C_GREEN, bx + box_w // 2, by + 100, "midtop")
         else:
             self._draw_timeline_graph(match, pygame.Rect(bx + box_w - pad - 208, by + 20, 208, 72))
             killer = getattr(match, "local_killer_id", None)
@@ -3652,6 +3658,9 @@ class UIRenderer:
             if killer and killer in match.players:
                 kp = match.players[killer]
                 tail = f" · {kp.get('name', '?')[:12]}" + (f"({kp['trait']})" if kp.get("trait") else "") + "에게 탈락"       # 나를 K.O.한 상대
+            if team:                                                                      # 팀전: 팀 상황이 더 중요하므로 탈락시킨 상대 대신 팀 생존자 수
+                mine, foes = match.team_alive_counts()
+                tail = (" · 상대 팀 승리" if match.team_won is False else f" · 우리 팀 {mine}명 / 상대 팀 {foes}명 생존 (끝까지 지켜보세요)")
             head = f"최종 순위 {match.local_rank}위 / {match.total_players}명"
             wh, wt = self.font_mid.size(head)[0], self.font_mid.size(tail)[0]
             x0 = bx + (box_w - wh - wt) // 2

@@ -2,7 +2,7 @@
 Block Royale 100 - Configuration & Constants
 """
 
-APP_VERSION = "1.2.0"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
+APP_VERSION = "1.2.1"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
 
 # 화면 해상도 설정
 SCREEN_WIDTH = 1366
@@ -230,20 +230,30 @@ BOT_NAME_ADJ = ("번개", "새벽", "노을", "폭풍", "안개", "달빛", "별
 BOT_NAME_NOUN = ("여우", "늑대", "고래", "까치", "수달", "사자", "거북", "참새", "매미", "토끼")
 
 
+BOT_NAME_ADJ_EN = ("Bolt", "Dawn", "Dusk", "Storm", "Mist", "Moon", "Star", "Wind", "Ice", "Flame")      # 영어 UI용 (한국어 목록과 같은 순서)
+BOT_NAME_NOUN_EN = ("Fox", "Wolf", "Whale", "Magpie", "Otter", "Lion", "Turtle", "Sparrow", "Cicada", "Rabbit")
+
+
 def _build_bot_names():
     import random as _r
-    names = [a + n for a in BOT_NAME_ADJ for n in BOT_NAME_NOUN]
-    _r.Random(2026).shuffle(names)
-    return tuple(names)
+    pairs = [(i, j) for i in range(len(BOT_NAME_ADJ)) for j in range(len(BOT_NAME_NOUN))]
+    _r.Random(2026).shuffle(pairs)
+    return (tuple(BOT_NAME_ADJ[i] + BOT_NAME_NOUN[j] for i, j in pairs),
+            tuple(BOT_NAME_ADJ_EN[i] + BOT_NAME_NOUN_EN[j] for i, j in pairs))
 
 
-BOT_NAMES = _build_bot_names()
+BOT_NAMES, BOT_NAMES_EN = _build_bot_names()      # 같은 번호는 언어가 달라도 같은 조합 (경기를 만들 때의 언어로 이름이 정해짐)
 
 
 def bot_display_name(idx):
-    """봇 번호(1부터)에 대응하는 표시 이름. 100개가 넘어가면 번호를 덧붙여 중복을 막음"""
-    n = len(BOT_NAMES)
-    base = BOT_NAMES[(idx - 1) % n]
+    """봇 번호(1부터)에 대응하는 표시 이름 (영어 UI면 영어 이름). 100개가 넘어가면 번호를 덧붙여 중복을 막음"""
+    try:
+        import i18n
+        names = BOT_NAMES_EN if i18n.language() == "en" else BOT_NAMES
+    except Exception:
+        names = BOT_NAMES
+    n = len(names)
+    base = names[(idx - 1) % n]
     return base if idx <= n else f"{base}{(idx - 1) // n + 1}"
 
 

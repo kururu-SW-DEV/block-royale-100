@@ -4,6 +4,7 @@ BlockRoyaleApp(main.py)이 상속하는 믹스인. 모든 탭이 같은 '행' �
 키보드 탐색은 TAB_NAV 표 하나로 정의됨 (마우스 hit rect는 settings_buttons에 id로 등록)
 """
 
+from i18n import tr as _tr
 from app_common import (
     ACTION_NAMES,
     BGM_STAGE_SET_DESCS,
@@ -632,7 +633,7 @@ class SettingsMixin:
     def _render_tab_match(self):
         y = TOP
         lang = self.settings.get("language", "ko")
-        self._s_row("language", y, 52, "언어 / Language", "English UI covers menus, settings, HUD and results (rest stays Korean)" if lang == "en" else "English UI는 메뉴·설정·HUD·결과 창 위주 (나머지는 한국어)")
+        self._s_row("language", y, 52, "언어 / Language", "The whole UI switches language; a few names (e.g. in saved data) stay as they were" if lang == "en" else "화면의 글이 모두 바뀝니다 (저장된 데이터 속 이름 등 일부는 그대로)")
         self._s_seg([("lang=ko", "한국어"), ("lang=en", "English")], "lang=" + lang, RIGHT, y + 26)
         y += 52
         # 참가 인원
@@ -756,7 +757,7 @@ class SettingsMixin:
         if skin not in _sm.unlocked_skin_ids(self.stats_mgr.data):
             skin = "classic"                                                 # 저장된 스킨이 (전적 초기화 등으로) 잠겼다면 기본으로 표시
         locked = _sm.locked_skin_hints(self.stats_mgr.data)
-        HELP["block_skin"] = HELP_SKIN_BASE + ("  잠긴 스킨: " + ", ".join(f"{BLOCK_SKIN_LABELS[s].split(' (')[0]}({d})" for s, d in locked) if locked else "")
+        HELP["block_skin"] = _tr(HELP_SKIN_BASE) + (_tr("  잠긴 스킨: ") + ", ".join(f"{_tr(BLOCK_SKIN_LABELS[s].split(' (')[0])}({_tr(d)})" for s, d in locked) if locked else "")
         self._s_row("block_skin", y, 52, "블록 스킨", BLOCK_SKIN_DESCS.get(skin, ""))
         self._s_cycler("skin_prev", "skin_next", BLOCK_SKIN_LABELS.get(skin, "클래식"), RIGHT, y + 26, color=C_GOLD)
         px = RIGHT - 328 - 16 - 7 * 22                            # 현재 스킨으로 그린 7종 블록 미리보기 (설명과 선택기 사이)

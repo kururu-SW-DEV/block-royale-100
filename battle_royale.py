@@ -461,15 +461,33 @@ class BattleRoyaleMatch:
         """팀전: 나는 0팀, 나머지는 1, 0, 1, 0… 순서로 번갈아 나눔 (인원 차이가 1명 이하)"""
         if not self.team_mode:
             return
-        n = 1
+        others = [pid for pid in self.players if pid != self.local_player_id]
+        random.shuffle(others)                           # 매 판 같은 봇끼리 같은 편이 되지 않도록 섞음 (나는 항상 0팀)
         self.teams = {self.local_player_id: 0}
-        for pid in self.players:
-            if pid == self.local_player_id:
-                continue
+        for n, pid in enumerate(others, 1):
             self.teams[pid] = n % 2
-            n += 1
         mine = sum(1 for t in self.teams.values() if t == 0)
         self.add_commentary(f"팀전 · 내 팀 {mine}명 vs 상대 팀 {len(self.teams) - mine}명 (같은 편은 공격하지 않아요)", (110, 235, 255), prio=1)
+
+    def _team_alerts(self, now):
+        """팀전: 같은 편이 탈락 직전(쌓인 높이 + 받을 공격이 판 높이에 가까움)이면 알려 줌. 한 명당 12초에 한 번"""
+        if now < getattr(self, "_team_alert_check", 0.0) or self.match_finished or not self.local_is_alive:
+            return
+        self._team_alert_check = now + 0.5
+        seen = self.__dict__.setdefault("_team_alert_seen", {})
+        for pid, p in self.players.items():
+            if not p["is_alive"] or not self.is_ally(self.local_player_id, pid) or now < seen.get(pid, 0.0):
+                continue
+            if self._danger(p) >= BOARD_HEIGHT - 3:
+                seen[pid] = now + 12.0
+                self.add_floating_text(f"♥ 아군 위기!  {self._short_name(pid)}", (120, 235, 170), duration=2.2, size=24, category="alert")
+                return
+
+    def team_alive_counts(self):
+        """팀전: (우리 팀 생존자 수, 상대 팀 생존자 수)"""
+        mine = sum(1 for pid, p in self.players.items() if p["is_alive"] and self.teams.get(pid) == 0)
+        foes = sum(1 for pid, p in self.players.items() if p["is_alive"] and self.teams.get(pid) == 1)
+        return mine, foes
 
     def is_ally(self, a, b):
         """팀전에서 두 플레이어가 같은 편인가 (팀전이 아니면 항상 False)"""
@@ -1791,7 +1809,7 @@ class BattleRoyaleMatch:
         # 7. 네트워크 플레이어들의 상태 반영
         if self.net_mgr and self.net_mgr.remote_players_state:
             for r_id, r_state in list(self.net_mgr.remote_players_state.items()):
-                if r_id in self.players:
+                if r_id in self.players and not self.players[r_id].get("bot"):       # 봇이 이어받은 자리는 늦게 도착한 원격 상태로 덮어쓰지 않음
                     self.players[r_id]["compact_grid"] = r_state.get("compact_grid", self.players[r_id]["compact_grid"])
                     self.players[r_id]["highest_y"] = r_state.get("highest_y", 20)
                     for key, src in (("score", "score"), ("lines", "lines"), ("attacks", "atk")):   # 호스트/클라이언트가 보낸 성적
@@ -1843,6 +1861,8 @@ class BattleRoyaleMatch:
                 self.players[self.local_player_id]["rank"] = hr
 
         self._check_spectate_target(now)
+        if self.teams:
+            self._team_alerts(now)
 
         # 8. 이펙트 수명 정리
         self.attack_effects = [e for e in self.attack_effects if now - e["start_time"] < e["duration"]]
