@@ -139,7 +139,9 @@ DEFAULT_SETTINGS = {
     "recent_hosts": [],          # 최근 접속한 주소 목록 (최신순, 최대 6개)
     "das_ms": 135,               # 좌우 이동 자동 반복 시작까지의 지연 (DAS, ms)
     "arr_ms": 33,                # 자동 반복 간격 (ARR, ms)
-    "sdf_ms": 35,                # 소프트 드롭 낙하 간격 (ms, 작을수록 빠름)
+    "sdf_ms": 35,                # 소프트 드롭 낙하 간격 (ms, 작을수록 빠름, 0 = 즉시 바닥까지)
+    "dcd_ms": 0,                 # DAS 충전 지연 (DCD, ms): 새 블록이 나온 뒤 이 시간 동안은 누르고 있던 방향키의 DAS가 다시 충전되지 않음 (0 = 끔)
+    "das_cancel": False,         # 방향을 바꿀 때(한쪽 키를 떼고 반대쪽이 눌려 있을 때) DAS 충전을 취소할지
     "color_mode": "normal",      # 블록 색상: "normal"(기본) / "colorblind"(색약 보정)
     "text_size": "normal",       # 글자 크기: "normal"(보통) / "large"(크게) - 게임 화면과 메뉴/설정/로비의 작은 글씨에 적용
     "key_hints": "always",       # 게임 화면 아래 조작 안내 바: "always"(항상) / "novice"(처음 10판만) / "off"(끔)
@@ -160,11 +162,29 @@ DEFAULT_SETTINGS = {
     "custom_keys": None
 }
 
-HANDLING_LIMITS = {"das_ms": (40, 300, 10), "arr_ms": (0, 100, 5), "sdf_ms": (5, 100, 5)}    # (최소, 최대, 큰 단계). ARR 0 = 끝까지 즉시 이동
+HANDLING_LIMITS = {"das_ms": (17, 300, 10), "arr_ms": (0, 100, 5), "sdf_ms": (0, 100, 5), "dcd_ms": (0, 200, 10)}    # (최소, 최대, 큰 단계). ARR 0 = 끝까지 즉시 이동, 소프트드롭 0 = 바닥까지 즉시
+
+# 반응 속도 프리셋: (이름, DAS, ARR, 소프트드롭, DCD, 방향 전환 시 DAS 취소). 설정 화면에서 한 번에 바꿈
+HANDLING_PRESETS = [
+    ("느긋", 167, 50, 60, 0, False),
+    ("기본", 135, 33, 35, 0, False),
+    ("빠름", 100, 17, 10, 0, True),
+    ("프로", 83, 0, 0, 0, True),
+]
+
+
+def handling_preset_name(das, arr, sdf, dcd, cancel):
+    """현재 값이 프리셋과 똑같으면 그 이름, 아니면 '사용자 지정'"""
+    for name, d, a, s, c, x in HANDLING_PRESETS:
+        if (d, a, s, c, x) == (das, arr, sdf, dcd, cancel):
+            return name
+    return "사용자 지정"
 
 
 def handling_step(key, value, down):
     """DAS/ARR/소프트드롭을 한 번에 바꾸는 크기: 정밀하게 조절하는 구간은 잘게 (DAS 200ms 이하는 5, ARR/소프트드롭 10ms 이하는 1), 그 밖은 크게"""
+    if key == "dcd_ms":
+        return 10
     if key == "das_ms":
         return 5 if (value < 200 or (value == 200 and down)) else 10
     return 1 if (value < 10 or (value == 10 and down)) else 5
@@ -340,6 +360,22 @@ class SettingsManager:
         self.set("sfx_volume", new_val)
         return new_val
 
+    def apply_handling_preset(self, index):
+        """HANDLING_PRESETS[index]의 값을 한꺼번에 적용"""
+        _name, das, arr, sdf, dcd, cancel = HANDLING_PRESETS[index % len(HANDLING_PRESETS)]
+        self.set("das_ms", das)
+        self.set("arr_ms", arr)
+        self.set("sdf_ms", sdf)
+        self.set("dcd_ms", dcd)
+        self.set("das_cancel", cancel)
+
+    def cycle_handling_preset(self, direction):
+        """현재 값에 맞는 프리셋 다음/이전으로 이동 (사용자 지정이면 기본에서 시작)"""
+        cur = handling_preset_name(self.get("das_ms"), self.get("arr_ms"), self.get("sdf_ms"), self.get("dcd_ms"), self.get("das_cancel"))
+        names = [p[0] for p in HANDLING_PRESETS]
+        i = names.index(cur) if cur in names else 1
+        self.apply_handling_preset(i + (1 if direction > 0 else -1))
+
     def reset_values(self, keys):
         """지정한 설정 키들만 기본값으로 되돌림 (설정 화면의 '이 탭 기본값으로')"""
         for k in keys:
@@ -351,6 +387,10 @@ class SettingsManager:
         """DAS/ARR/소프트드롭 값(ms)을 한 단계 올리거나(+1) 내림(-1). 허용 범위 안으로 제한"""
         lo, hi, _big = HANDLING_LIMITS[key]
         cur = int(self.get(key))
+        if key == "sdf_ms" and ((direction < 0 and cur <= 5) or (direction > 0 and cur == 0)):
+            new_val = 0 if direction < 0 else 5               # 소프트드롭은 5ms 아래로 내리면 '즉시'(0)
+            self.set(key, new_val)
+            return new_val
         st = handling_step(key, cur, direction < 0)
         if direction > 0:
             nxt = (cur // st + 1) * st                    # 단계 눈금에 맞춰 올림 (예: 33 -> 35)

@@ -40,6 +40,9 @@ class CoreMixin:
         self.ARR_INSTANT = self.settings.get("arr_ms") <= 0                            # ARR 0: 자동 반복이 시작되면 벽/블록에 닿을 때까지 한 번에 이동
         self.ARR_INTERVAL = max(0.005, self.settings.get("arr_ms") / 1000.0)          # 0으로 나누지 않도록 반복 루프용 값은 최소 5ms
         self.SOFT_DROP_INTERVAL = max(0.005, self.settings.get("sdf_ms") / 1000.0)
+        self.SOFT_DROP_INSTANT = self.settings.get("sdf_ms") <= 0                      # 소프트드롭 0: 키를 누르는 동안 바닥까지 즉시 내림 (고정은 락 딜레이를 따름)
+        self.DCD_DELAY = self.settings.get("dcd_ms") / 1000.0
+        self.DAS_CANCEL = bool(self.settings.get("das_cancel"))
 
     def adjust_player_count(self, delta):
         self.target_player_count = max(MIN_PLAYERS, min(MAX_PLAYERS, self.target_player_count + delta))

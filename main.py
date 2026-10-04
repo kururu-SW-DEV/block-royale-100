@@ -93,6 +93,12 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         self.das_timer = 0.0
         self.arr_timer = 0.0
         self.soft_drop_timer = 0.0
+        self.das_fired = False          # DAS가 끝나 자동 반복이 시작됐는지 (첫 자동 이동은 DAS가 끝나는 순간에 바로 일어남)
+        self.dcd_left = 0.0             # 새 블록이 나온 뒤 DAS 충전이 막히는 남은 시간
+        self._dcd_lock_seen = 0
+        self.SOFT_DROP_INSTANT = False
+        self.DCD_DELAY = 0.0
+        self.DAS_CANCEL = False
         self.ARR_INSTANT = False        # ARR 0(즉시 이동) 여부 (apply_handling이 설정)
         self.DAS_DELAY = 0.135          # 초기 지연 (설정의 조작키 탭에서 조절: apply_handling)
         self.ARR_INTERVAL = 0.033       # 연속 반복 간격

@@ -67,9 +67,9 @@ TAB_NAV = {
               ("sfx", "sfx_toggle", "sfx_dec", "sfx_inc"), ("warn", "warn_next", "warn_prev", "warn_next"),
               ("sfx_test", "sfx_test", None, None)],
 }
-KEY_CARDS = len(ACTION_NAMES)                 # 조작 탭: 0~8 = 키 카드, 9~11 = DAS/ARR/SDF, 12 = 프리셋
-HANDLING_ROWS = ("das", "arr", "sdf")
-PRESET_FOCUS = KEY_CARDS + 3
+KEY_CARDS = len(ACTION_NAMES)                 # 조작 탭: 0~8 = 키 카드, 9~14 = DAS/ARR/SDF/DCD/DAS 취소/반응 프리셋, 15 = 키 프리셋
+HANDLING_ROWS = ("das", "arr", "sdf", "dcd", "dcancel", "hpre")
+PRESET_FOCUS = KEY_CARDS + len(HANDLING_ROWS)
 
 HELP_SKIN_BASE = "게임 화면 블록의 모양을 바꿉니다. 색은 위의 '블록 색상' 설정을 따르며, 로고와 미니 보드는 그대로입니다."
 
@@ -98,7 +98,7 @@ HELP = {
     "sfx_test": "현재 효과음 음량으로 대표 소리를 들어봅니다.",
     "preset": "조작키 묶음을 한 번에 바꿉니다. 아래 카드를 하나라도 바꾸면 '사용자 지정'이 됩니다.",
     "cards": "카드를 클릭하거나 Enter를 누른 뒤 새 키를 누르세요. 다른 동작이 쓰던 키면 자동으로 옮겨집니다. 고정 키: ESC 일시정지/메뉴 · F11 전체화면 · M 음소거 · T 설정",
-    "handling": "DAS: 키를 누른 뒤 자동 반복이 시작되기까지의 지연 · ARR: 반복 간격 (0 = 끝까지 즉시 이동) · 소프트드롭: 낙하 간격 (숫자가 작을수록 빠름)",
+    "handling": "DAS: 누른 뒤 자동 반복이 시작되기까지(60fps 프레임 환산) · ARR: 반복 간격(0=즉시) · 소프트드롭 0=바닥까지 즉시 · DCD: 새 블록 뒤 DAS 재충전을 막아 오버슈트 방지 · DAS 취소: 방향 전환 시 새로 충전",
     "rebinding": "새 키를 누르세요  ·  ESC 취소",
 }
 
@@ -108,7 +108,7 @@ TAB_DEFAULT_KEYS = {
     "help": ["match_log"],
     "general": ["resolution", "mini_detail", "color_mode", "text_size", "block_skin", "key_hints"],
     "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume", "warn_volume"],
-    "keys": ["das_ms", "arr_ms", "sdf_ms"],
+    "keys": ["das_ms", "arr_ms", "sdf_ms", "dcd_ms", "das_cancel"],
 }
 
 
@@ -200,7 +200,7 @@ class SettingsMixin:
             if f == PRESET_FOCUS:
                 return "preset"
             if f >= KEY_CARDS:
-                return "hf_" + HANDLING_ROWS[min(2, f - KEY_CARDS)]
+                return "hf_" + HANDLING_ROWS[min(len(HANDLING_ROWS) - 1, f - KEY_CARDS)]
             return "bind_" + ACTION_NAMES[f % KEY_CARDS][0]
         rows = TAB_NAV[tab]
         return rows[f % len(rows)][0]
@@ -231,7 +231,7 @@ class SettingsMixin:
     def _settings_key_nav_keys(self, key, enter):
         """조작 탭: 카드 3x3 + 반응 속도 3줄 + 프리셋 줄"""
         n = KEY_CARDS
-        f = self.settings_focus.get("keys", 0) % (n + 4)
+        f = self.settings_focus.get("keys", 0) % (n + len(HANDLING_ROWS) + 1)
         moved = True
         if f == PRESET_FOCUS:                                     # 프리셋 줄: ←→로 고르고 ↓로 카드로
             if key in (pygame.K_LEFT, pygame.K_RIGHT) or enter:
@@ -241,13 +241,13 @@ class SettingsMixin:
             elif key == pygame.K_DOWN:
                 f = 0
             elif key == pygame.K_UP:
-                f = n + 2
+                f = n + len(HANDLING_ROWS) - 1
         elif f >= n:                                              # 핸들링 행: ↑↓ 이동, ←→ 값 조절
             which = HANDLING_ROWS[f - n]
             if key == pygame.K_UP:
                 f = f - 1 if f > n else n - 3
             elif key == pygame.K_DOWN:
-                f = f + 1 if f < n + 2 else PRESET_FOCUS
+                f = f + 1 if f < n + len(HANDLING_ROWS) - 1 else PRESET_FOCUS
             elif key in (pygame.K_LEFT, pygame.K_RIGHT):
                 self._settings_activate(which + ("_dec" if key == pygame.K_LEFT else "_inc"))
                 moved = False
@@ -289,9 +289,17 @@ class SettingsMixin:
         elif btn_id.startswith("bind_"):
             self.sound_mgr.play('move')
             self.rebinding_action = btn_id[5:]
-        elif btn_id in ("das_dec", "das_inc", "arr_dec", "arr_inc", "sdf_dec", "sdf_inc"):
+        elif btn_id in ("das_dec", "das_inc", "arr_dec", "arr_inc", "sdf_dec", "sdf_inc", "dcd_dec", "dcd_inc"):
             self.sound_mgr.play('rotate')
-            self.settings.adjust_handling(btn_id[:3] + "_ms", -1 if btn_id.endswith("dec") else 1)
+            self.settings.adjust_handling(btn_id[:-4] + "_ms", -1 if btn_id.endswith("dec") else 1)
+            self.apply_handling()
+        elif btn_id in ("dcancel_dec", "dcancel_inc"):
+            self.sound_mgr.play('rotate')
+            self.settings.set("das_cancel", not self.settings.get("das_cancel"))
+            self.apply_handling()
+        elif btn_id in ("hpre_dec", "hpre_inc"):
+            self.sound_mgr.play('rotate')
+            self.settings.cycle_handling_preset(-1 if btn_id.endswith("dec") else 1)
             self.apply_handling()
         # 화면 탭
         elif btn_id in ("toggle_fs", "fs=window", "fs=full"):
@@ -696,11 +704,11 @@ class SettingsMixin:
         y = TOP
         cur_preset = self.settings.get("key_preset", "arcade")
         p_label = {"arcade": "아케이드 표준", "wasd": "WASD 게이머"}.get(cur_preset, "사용자 지정")
-        self._s_row("preset", y, 48, "프리셋")
+        self._s_row("preset", y, 40, "프리셋")
         self._s_seg([("preset_arcade", "아케이드 표준"), ("preset_wasd", "WASD 게이머")],
-                    "preset_" + cur_preset if cur_preset in ("arcade", "wasd") else None, RIGHT - 210, y + 24)
-        self._t(f"현재: {p_label}", self.font_val, C_GREEN if cur_preset in ("arcade", "wasd") else C_GOLD, RIGHT, y + 24, "midright")
-        y += 48 + 8
+                    "preset_" + cur_preset if cur_preset in ("arcade", "wasd") else None, RIGHT - 210, y + 20)
+        self._t(f"현재: {p_label}", self.font_val, C_GREEN if cur_preset in ("arcade", "wasd") else C_GOLD, RIGHT, y + 20, "midright")
+        y += 40 + 6
 
         used = {}
         for act_id, _n in ACTION_NAMES:
@@ -708,7 +716,7 @@ class SettingsMixin:
                 used.setdefault(k, []).append(act_id)
         conflicts = {a for acts in used.values() if len(acts) > 1 for a in acts}
 
-        card_w, card_h, gap = 282, 54, 7
+        card_w, card_h, gap = 282, 46, 5
         n_rows = (len(ACTION_NAMES) + 2) // 3
         self._row_rects["cards"] = pygame.Rect(IX, y, IW, n_rows * card_h + (n_rows - 1) * gap)
         focus_card = self._focus_key if self._kb_nav and self._focus_key.startswith("bind_") else None
@@ -724,38 +732,43 @@ class SettingsMixin:
             edge = C_GOLD if rebinding else (C_DANGER if is_conflict else (C_ACCENT if (hover or focused) else (52, 66, 104)))
             pygame.draw.rect(self.screen, bg, rect, border_radius=12)
             pygame.draw.rect(self.screen, edge, rect, 2 if (hover or rebinding or focused) else 1, border_radius=12)
-            self._t(act_name.split(" (")[0], self.font_val, COL_TEXT, rect.x + 16, rect.y + 6)
+            self._t(act_name.split(" (")[0], self.font_val, COL_TEXT, rect.x + 16, rect.y + 3)
             if rebinding:
-                self._t("새 키를 누르세요…", self.font_val, C_GOLD, rect.x + 16, rect.y + 28)
-                self._t("ESC 취소", self.font_tiny, COL_SUB, rect.right - 12, rect.y + 12, "topright")
+                self._t("새 키를 누르세요…", self.font_val, C_GOLD, rect.x + 16, rect.y + 23)
+                self._t("ESC 취소", self.font_tiny, COL_SUB, rect.right - 12, rect.y + 10, "topright")
             else:
                 kx = rect.x + 16
                 if not self.settings.get_action_keys(act_id):
-                    self._t("지정 안 됨 (클릭해서 지정)", self.font_tiny, COL_OFF, rect.x + 16, rect.y + 39, "midleft")
+                    self._t("지정 안 됨 (클릭해서 지정)", self.font_tiny, COL_OFF, rect.x + 16, rect.y + 33, "midleft")
                 for kc in self.settings.get_action_keys(act_id)[:3]:
                     ks = self.renderer._text(short_key_name(kc), self.font_val, (225, 232, 248))
-                    kr = pygame.Rect(kx, rect.y + 28, max(32, ks.get_width() + 18), 22)
+                    kr = pygame.Rect(kx, rect.y + 22, max(32, ks.get_width() + 18), 20)
                     pygame.draw.rect(self.screen, (44, 54, 86), kr, border_radius=7)
                     pygame.draw.rect(self.screen, (92, 108, 150), kr, 1, border_radius=7)
                     self.screen.blit(ks, (kr.centerx - ks.get_width() // 2, kr.centery - ks.get_height() // 2))
                     kx = kr.right + 6
                 if is_conflict:
-                    self._t("중복", self.font_tiny, C_DANGER, rect.right - 12, rect.y + 12, "topright")
-        y += n_rows * card_h + (n_rows - 1) * gap + 6
+                    self._t("중복", self.font_tiny, C_DANGER, rect.right - 12, rect.y + 10, "topright")
+        y += n_rows * card_h + (n_rows - 1) * gap + 4
         # 키를 옮겼다는 알림 (몇 초간)
         notice = getattr(self, "rebind_notice", None)
         if notice and time.time() < notice[1]:
             self._t(notice[0], self.font_help, C_GOLD, IX + IW // 2, y + 8, "midtop")
         elif conflicts:
             self._t("같은 키가 여러 동작에 배정되어 있습니다. 빨간 카드를 다시 지정하세요.", self.font_help, C_DANGER, IX + IW // 2, y + 8, "midtop")
-        y += 22
+        y += 16
         self._s_section("반응 속도", y)
-        y += 26
+        y += 24
         hrow = self._s_row("handling", y, 44, "")
         group_w = IW // 3
         for gi, (key, label) in enumerate([("das", "DAS 지연"), ("arr", "ARR 반복"), ("sdf", "소프트드롭")]):
             gx = IX + gi * group_w + 12
-            self._t(label, self.font_val, COL_SUB, gx + 10, y + 22, "midleft")
+            v_now = self.settings.get(key + '_ms')
+            sub = {"das": f"약 {v_now * 0.06:.1f}프레임", "arr": ("즉시 이동" if v_now == 0 else f"약 {v_now * 0.06:.1f}프레임"),
+                   "sdf": ("바닥까지 즉시" if v_now == 0 else "")}[key]
+            self._t(label, self.font_val, COL_SUB, gx + 10, y + (15 if sub else 22), "midleft")
+            if sub:
+                self._t(sub, self.font_tiny, COL_OFF, gx + 10, y + 32, "midleft")
             dec = pygame.Rect(gx + 100, y + 6, 32, 32)
             val = pygame.Rect(dec.right + 4, y + 6, 76, 32)
             inc = pygame.Rect(val.right + 4, y + 6, 32, 32)
@@ -765,7 +778,27 @@ class SettingsMixin:
             pygame.draw.rect(self.screen, COL_CTL_BG, val, border_radius=8)
             pygame.draw.rect(self.screen, C_ACCENT, val, 1, border_radius=8)
             v_ms = self.settings.get(key + '_ms')
-            self._t("즉시" if (key == "arr" and v_ms == 0) else f"{v_ms}ms", self.font_val, C_ACCENT, val.centerx, val.centery, "center")
+            self._t("즉시" if (key in ("arr", "sdf") and v_ms == 0) else f"{v_ms}ms", self.font_val, C_ACCENT, val.centerx, val.centery, "center")
+        y += 44 + 6
+        self._s_row("handling2", y, 44, "")
+        from settings_manager import handling_preset_name
+        cur_name = handling_preset_name(self.settings.get("das_ms"), self.settings.get("arr_ms"), self.settings.get("sdf_ms"),
+                                        self.settings.get("dcd_ms"), self.settings.get("das_cancel"))
+        dcd_v = self.settings.get("dcd_ms")
+        for gi, (key, label, text) in enumerate([("dcd", "DCD 지연", "끔" if dcd_v == 0 else f"{dcd_v}ms"),
+                                                 ("dcancel", "DAS 취소", "켬" if self.settings.get("das_cancel") else "끔"),
+                                                 ("hpre", "반응 프리셋", "사용자" if cur_name == "사용자 지정" else cur_name)]):
+            gx = IX + gi * group_w + 12
+            self._t(label, self.font_val, COL_SUB, gx + 10, y + 22, "midleft")
+            dec = pygame.Rect(gx + 100, y + 6, 32, 32)
+            val = pygame.Rect(dec.right + 4, y + 6, 76, 32)
+            inc = pygame.Rect(val.right + 4, y + 6, 32, 32)
+            self.settings_buttons["hf_" + key] = val
+            self._s_btn(key + "_dec", dec, "-" if key != "dcancel" else "<")
+            self._s_btn(key + "_inc", inc, "+" if key != "dcancel" else ">")
+            pygame.draw.rect(self.screen, COL_CTL_BG, val, border_radius=8)
+            pygame.draw.rect(self.screen, C_ACCENT if text not in ("끔", "사용자") else COL_OFF, val, 1, border_radius=8)
+            self._t(text, self.font_val, C_ACCENT if text not in ("끔", "사용자") else COL_SUB, val.centerx, val.centery, "center")
 
     # ------------------------------------------------------------------ 전체 화면
     def _render_settings(self):
