@@ -59,6 +59,7 @@ TAB_NAV = {
     "help": [("title", None, "title_prev", "title_next"), ("rules", "open_rules", None, None), ("tips_replay", "tips_replay", None, None),
              ("matchlog", "matchlog_toggle", "matchlog=off", "matchlog=on"),
              ("gamepad", "gamepad_toggle", "gamepad=off", "gamepad=on"),
+             ("ghost", "ghost_toggle", "ghost=off", "ghost=on"),
              ("update", "update_toggle", "update=off", "update=on"), ("errlog", "open_errlog", None, None)],
     "general": [("fs", "toggle_fs", "fs=window", "fs=full"), ("res", "res_next", "res_prev", "res_next"),
                 ("mini", "mini_detail", "mini_detail=detailed", "mini_detail=simple"),
@@ -89,6 +90,7 @@ HELP = {
     "tips_replay": "처음 일어나는 일(받은 공격, 역습 보너스, 첫 K.O., 후반전)에 한 번씩 뜨는 도움말 팁과 첫 판 설명 말풍선을 다음 경기부터 다시 보여 줍니다.",
     "title": "달성한 업적의 이름을 칭호로 달 수 있습니다. 메인 메뉴의 프로필에 표시됩니다. 업적은 전적 기록실의 '업적' 탭에서 확인하세요.",
     "rules": "게임의 공격표, K.O. 배지, 역습 보너스, 조준 모드, 경기 흐름을 한 화면으로 보여 줍니다. 게임 중에도 F1 키로 열 수 있습니다.",
+    "ghost": "켜면 혼자 하는 경기에서 저장된 내 리플레이 중 점수가 가장 높은 판의 보드가 왼쪽 상태 칸 아래에 작게 함께 달립니다. 같은 경기 시각의 그 판 점수와의 차이도 보여 줍니다. 리플레이가 없으면 아무것도 표시되지 않습니다.",
     "gamepad": "게임패드의 십자키/왼쪽 스틱으로 이동, A 시계 회전, B 반시계 회전, X·LB 홀드, Y 180도 회전, RB 하드 드롭, Start 일시정지, Back 조준 변경. 메뉴에서는 십자키/스틱 = 방향키, A·Start = Enter, B = Esc입니다. 동작에 배정된 키를 따르며, 컨트롤러가 이상하게 동작하면 끄세요.",
     "update": "켜면 게임을 시작할 때 GitHub에서 새 버전이 있는지 한 번만 확인하고, 있으면 메인 화면에 알려 줍니다. 자동으로 내려받거나 설치하지 않으며 개인 정보는 보내지 않습니다. 기본은 꺼짐입니다.",
     "errlog": "예기치 않은 오류가 났을 때 원인을 적어 두는 error.log가 있는 폴더를 엽니다. 문제를 알릴 때 이 파일을 함께 보내 주세요.",
@@ -125,7 +127,7 @@ HELP = {
 # 탭별 '기본값으로' 대상 설정 키
 TAB_DEFAULT_KEYS = {
     "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake", "language"],
-    "help": ["match_log", "update_check", "gamepad"],
+    "help": ["match_log", "update_check", "gamepad", "ghost_race"],
     "general": ["resolution", "mini_detail", "color_mode", "text_size", "block_skin", "key_hints"],
     "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume", "warn_volume", "announcer"],
     "keys": [],
@@ -430,6 +432,12 @@ class SettingsMixin:
             if new != cur:
                 self.sound_mgr.play('rotate')
                 self.settings.set("gamepad", new)
+        elif btn_id in ("ghost=on", "ghost=off", "ghost_toggle"):
+            cur = bool(self.settings.get("ghost_race", False))
+            new = (btn_id.endswith("=on")) if "=" in btn_id else (not cur)
+            if new != cur:
+                self.sound_mgr.play('rotate')
+                self.settings.set("ghost_race", new)
         elif btn_id in ("update=on", "update=off", "update_toggle"):
             cur = bool(self.settings.get("update_check", False))
             new = (btn_id.endswith("=on")) if "=" in btn_id else (not cur)
@@ -721,9 +729,15 @@ class SettingsMixin:
         self._s_seg([("matchlog=off", "끔"), ("matchlog=on", "켜기")], "matchlog=on" if log_on else "matchlog=off", RIGHT, y + 25)
         y += 50
         pad_on = bool(self.settings.get("gamepad", True))
-        npad = len(self.gamepad.joys)
+        npad = len(self.gamepad.joys) + len(self.gamepad.ctrls)
         self._s_row("gamepad", y, 50, "게임패드", f"연결된 컨트롤러 {npad}개  ·  십자키/스틱 이동, A·B 회전" if npad else "연결된 컨트롤러 없음  ·  연결하면 바로 사용할 수 있습니다")
         self._s_seg([("gamepad=off", "끔"), ("gamepad=on", "켜기")], "gamepad=on" if pad_on else "gamepad=off", RIGHT, y + 25)
+        y += 50
+        gh_on = bool(self.settings.get("ghost_race", False))
+        from replay import load_replays, best_replay
+        _b = best_replay(load_replays())
+        self._s_row("ghost", y, 50, "고스트 레이스", (f"내 최고 판({_b['score']:,}점)이 경기 옆에 함께 달립니다 (혼자 하는 경기)" if _b else "내 최고 판이 경기 옆에 함께 달립니다 (아직 저장된 리플레이 없음)"))
+        self._s_seg([("ghost=off", "끔"), ("ghost=on", "켜기")], "ghost=on" if gh_on else "ghost=off", RIGHT, y + 25)
         y += 50
         up_on = bool(self.settings.get("update_check", False))
         upd = self.update_info()

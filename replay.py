@@ -164,6 +164,12 @@ def _clean(entry):
     return out
 
 
+def best_replay(replays):
+    """고스트로 쓸 '내 최고 판': 점수가 가장 높은 판 (같으면 더 오래 버틴 판). 사건이 있는 판만. 없으면 None"""
+    ok = [r for r in replays if r.get("events")]
+    return max(ok, key=lambda r: (r.get("score", 0), r.get("secs", 0))) if ok else None
+
+
 def load_replays(path=None):
     path = path or replay_path()
     try:

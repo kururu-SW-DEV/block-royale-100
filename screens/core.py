@@ -74,7 +74,9 @@ class CoreMixin:
             players_summary.append({"id": bid, "name": bname, "is_ai": True})
             bot_num += 1
             
-        self.net_mgr.host_send_start_game(players_summary, attacks_enabled=self.settings.get("game_mode") != "survival")
+        battle = self.settings.get("game_mode") != "survival"
+        self.net_mgr.host_send_start_game(players_summary, attacks_enabled=battle,
+                                          team=bool(self.settings.get("rule_team", False)) and battle and self.target_player_count >= 4)
         self.start_game(mode="HOST", total_players=self.target_player_count, initial_players=players_summary)
 
     @staticmethod
@@ -286,9 +288,20 @@ class CoreMixin:
             # 게임 모드: 참가자는 호스트가 정한 값을 따르고, 그 외에는 내 설정을 씀 (오늘의 도전은 항상 배틀로얄)
             attacks_enabled=True if (daily or weekly) else (self.net_mgr.match_attacks if mode == "CLIENT" else self.settings.get("game_mode") != "survival"),
             practice=practice, seed=seed, daily=daily, weekly=weekly, mutator=mutator, rival_id=rival, ghost=ghost, challenge=tracker,
-            team_mode=bool(self.settings.get("rule_team", False)) and mode == "SOLO" and not practice and not daily and not weekly
+            team_mode=(self.net_mgr.match_team if mode == "CLIENT" else
+                       bool(self.settings.get("rule_team", False)) and mode in ("SOLO", "HOST") and not practice and not daily and not weekly
+                       and (mode == "SOLO" or self.settings.get("game_mode") != "survival"))
         )
         self.match.challenge_kind = kind
+        self.match.race_ghost = None
+        if mode == "SOLO" and self.settings.get("ghost_race", False):                # 고스트 레이스: 저장된 내 리플레이 중 최고 점수 판
+            from replay import load_replays, best_replay, ReplayPlayer
+            best = best_replay(load_replays())
+            if best is not None:
+                self.match.race_ghost = ReplayPlayer(best)
+                self.match.race_ghost.paused = True                                  # 재생 시각은 경기 시간(elapsed)에 맞춰 직접 이동
+        if mode in ("HOST", "CLIENT") and self.match.team_mode:                    # LAN 팀전: 쓰레기량/중력은 기본 규칙 (참가자마다 설정이 다르면 어긋남), 기록하지 않음
+            self.match.custom_rules = {"garbage": "normal", "gravity": "normal", "badges": True, "team": True}
         if mode == "SOLO" and not practice and not daily and not weekly:           # 커스텀 규칙: 혼자 하는 배틀로얄에만 적용, 기본값이 아닐 때만 켜짐
             rg, rv, rb = self.settings.get("rule_garbage", "normal"), self.settings.get("rule_gravity", "normal"), bool(self.settings.get("rule_badges", True))
             if (rg, rv, rb) != ("normal", "normal", True) or self.match.team_mode:

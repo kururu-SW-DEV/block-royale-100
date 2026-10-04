@@ -18,6 +18,9 @@ def _mode_label(mode):
     return "서바이벌" if mode == "survival" else "배틀로얄"
 
 
+from i18n import tr as _tr
+
+
 class LobbyMixin:
     def _handle_host_lobby_event(self, event):
         """방장 대기실 입력 처리 (키보드/마우스)"""
@@ -30,6 +33,8 @@ class LobbyMixin:
                 self._lobby_cycle_difficulty(1)
             elif event.key == pygame.K_g:
                 self._lobby_toggle_mode()
+            elif event.key == pygame.K_t:
+                self._lobby_toggle_team()
             elif event.key == pygame.K_c and (event.mod & pygame.KMOD_CTRL):
                 self._copy_room_address()
             elif event.key in [pygame.K_LEFT, pygame.K_DOWN]:
@@ -53,6 +58,8 @@ class LobbyMixin:
                         self._lobby_cycle_difficulty(-1 if btn_id == "diff_prev" else 1)
                     elif btn_id in ("mode_prev", "mode_next"):
                         self._lobby_toggle_mode()
+                    elif btn_id == "team_toggle":
+                        self._lobby_toggle_team()
                     elif btn_id == "dec_10":
                         self.adjust_player_count(-10)
                     elif btn_id == "dec_1":
@@ -81,6 +88,10 @@ class LobbyMixin:
     def _lobby_toggle_mode(self):
         new = "battle" if self.settings.get("game_mode") == "survival" else "survival"
         self.settings.set("game_mode", new)
+        self.sound_mgr.play('move')
+
+    def _lobby_toggle_team(self):
+        self.settings.set("rule_team", not bool(self.settings.get("rule_team", False)))
         self.sound_mgr.play('move')
 
     def _copy_room_address(self):
@@ -155,8 +166,9 @@ class LobbyMixin:
         rs = self.net_mgr.room_settings
         if self.net_mgr.mode == "HOST":
             diff, mode = self.settings.get("bot_difficulty", "mixed"), self.settings.get("game_mode", "battle")
-            if rs.get("target") != self.target_player_count or rs.get("diff") != diff or rs.get("mode") != mode:
-                rs["target"], rs["diff"], rs["mode"] = self.target_player_count, diff, mode
+            team = bool(self.settings.get("rule_team", False)) and mode != "survival"
+            if rs.get("target") != self.target_player_count or rs.get("diff") != diff or rs.get("mode") != mode or rs.get("team") != team:
+                rs["target"], rs["diff"], rs["mode"], rs["team"] = self.target_player_count, diff, mode, team
                 self.net_mgr.host_broadcast_roster()           # 인원/난이도/모드가 바뀌면 참가자 대기실에도 바로 알림
 
     def _update_join_menu(self, dt):
@@ -308,7 +320,7 @@ class LobbyMixin:
         copied = time.time() < getattr(self, "_copy_notice_until", 0.0)
         self._t("복사됨!" if copied else "클릭해서 복사", self.font_tiny, C_GREEN if copied else C_DIM, chip.right + 12, chip.centery, "midleft")
 
-        box_w, box_h = 720, 556
+        box_w, box_h = 720, 604
         box_x = 133
         box_y = 156
         self._glass((box_x, box_y, box_w, box_h), accent=(50, 150, 105), radius=18)
@@ -365,6 +377,14 @@ class LobbyMixin:
         self._stepper(self.lobby_buttons, "", box_y + 444, box_x + 180, _mode_label(cur_mode), C_GREEN,
                       [("mode_prev", "◀", 48)], [("mode_next", "▶", 48)])
         self._t("G", self.font_tiny, C_DIM, box_x + box_w - 36, box_y + 461, "midright")
+        team_on = bool(self.settings.get("rule_team", False)) and cur_mode != "survival"
+        self._t("팀전 (2팀)", self.font_mid, C_TEXT, box_x + 32, box_y + 498)
+        trect = pygame.Rect(box_x + 180, box_y + 492, 214, 34)
+        self.lobby_buttons["team_toggle"] = trect
+        pygame.draw.rect(self.screen, (24, 52, 46) if team_on else (14, 17, 30), trect, border_radius=8)
+        pygame.draw.rect(self.screen, (90, 225, 150) if team_on else (70, 82, 112), trect, 2 if trect.collidepoint(mx, my) else 1, border_radius=8)
+        self._t("켜짐 · 같은 편은 공격 안 함" if team_on else "꺼짐", self.font_small, (120, 235, 170) if team_on else C_DIM, trect.centerx, trect.centery, "center")
+        self._t("T", self.font_tiny, C_DIM, box_x + box_w - 36, box_y + 509, "midright")
 
         start = pygame.Rect(box_x + 28, box_y + box_h - 74, 440, 52)
         back = pygame.Rect(start.right + 14, start.y, box_w - 56 - 440 - 14, 52)
@@ -482,7 +502,7 @@ class LobbyMixin:
         if connected:
             rules = self.net_mgr.room_rules or {}
             tg = self.net_mgr.roster_target or self.net_mgr.room_settings.get("max_players", 0)
-            parts = ([f"{tg}인"] if tg else []) + [_mode_label(rules.get("mode", "battle")), f"{_diff_short(rules.get('diff', 'mixed'))} 봇"]
-            self._t("경기 규칙   " + " · ".join(parts), self.font_mid, C_GOLD, box_x + 32, box_y + box_h - 120)
+            parts = ([f"{tg}인"] if tg else []) + [_mode_label(rules.get("mode", "battle")), f"{_diff_short(rules.get('diff', 'mixed'))} 봇"] + (["팀전"] if rules.get("team") else [])
+            self._t(_tr("경기 규칙") + "   " + " · ".join(_tr(x) for x in parts), self.font_mid, C_GOLD, box_x + 32, box_y + box_h - 120)
         self.client_leave_btn = pygame.Rect(pcx - 140, box_y + box_h - 74, 280, 50)
         self.renderer._button(self.client_leave_btn, "방 나가기", "red", self.client_leave_btn.collidepoint(mx, my), "ESC")

@@ -142,6 +142,11 @@ EXACT = {
 }
 
 EXACT.update({
+    "고스트 레이스": "Ghost Race", "끝": "End",
+    "켜면 혼자 하는 경기에서 저장된 내 리플레이 중 점수가 가장 높은 판의 보드가 왼쪽 상태 칸 아래에 작게 함께 달립니다. 같은 경기 시각의 그 판 점수와의 차이도 보여 줍니다. 리플레이가 없으면 아무것도 표시되지 않습니다.": "When on, in solo matches the board of your highest-scoring saved replay runs in a small panel under the left status box, with the score difference at the same match time. Nothing shows if you have no replays.",
+    "내 최고 판이 경기 옆에 함께 달립니다 (아직 저장된 리플레이 없음)": "Your best run races alongside the match (no saved replays yet)",
+    "경기 규칙": "Match rules", "팀전": "Team battle", "켜짐 · 같은 편은 공격 안 함": "On · allies don't attack", "꺼짐": "Off",
+    "명단을 불러오는 중...": "Loading the roster...",
     "이 순간에서 연습": "Practice from here", "리플레이의 그 순간에서 연습을 시작합니다": "Starting practice from that moment of the replay",
     "주소를 입력하거나, LAN의 방을 찾는 중": "Type an address, or searching for LAN rooms",
     "방장이 게임을 시작하면 자동으로 시작됩니다": "The game starts automatically when the host starts it",
@@ -168,6 +173,8 @@ EXACT.update({
 })
 
 TEMPLATES = {
+    "내 최고 판({}점)이 경기 옆에 함께 달립니다 (혼자 하는 경기)": "Your best run ({} pts) races alongside the match (solo matches)",
+    "{#}인": "{} players",
     "♥ 아군 위기!  {}": "♥ Ally in danger!  {}",
     "받을 공격 {#}줄": "Incoming {} lines",
     "{}의 방": "{}'s room",

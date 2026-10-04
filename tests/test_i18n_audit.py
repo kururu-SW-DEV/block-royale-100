@@ -66,9 +66,18 @@ def main():
         app._open_rules()
         app._render_rules()
         app._close_rules()
+        app.settings.set("rule_team", True)
         for st, fn in (("HOST_LOBBY", "_render_host_lobby"), ("JOIN_MENU", "_render_join_menu"), ("CLIENT_LOBBY", "_render_client_lobby")):
             app.state = st
             getattr(app, fn)()
+        app.settings.set("rule_team", False)
+        for team_on in (False, True):                                       # 참가자 대기실의 경기 규칙 줄 (연결된 상태)
+            app.net_mgr.connected, app.net_mgr.mode = True, "CLIENT"
+            app.net_mgr.room_rules = {"mode": "battle", "diff": "hard", "team": team_on}
+            app.net_mgr.roster_target = 20
+            app.state = "CLIENT_LOBBY"
+            app._render_client_lobby()
+        app.net_mgr.connected, app.net_mgr.mode = False, None
         # 오늘의 도전 / 주간 변형 / 연습 / 팀전 경기
         for kw in (dict(daily=datetime.date.today().strftime("%Y%m%d")), dict(weekly=week_key()), dict(practice=True)):
             app.start_game(mode="SOLO", total_players=40, **kw)

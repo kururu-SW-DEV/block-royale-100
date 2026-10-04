@@ -690,6 +690,8 @@ class GameMixin:
             self.match.update(dt)
             if self.match.match_finished:
                 break
+        if getattr(self.match, "race_ghost", None) is not None:
+            self.match.race_ghost.seek(self.match.elapsed)                               # 고스트는 지금 경기 시간에 맞춰 같은 순간의 보드를 보여 줌
         if self.replay_rec is not None and not self.replay_rec.finished:
             self.replay_rec.update(self.match.local_engine, self.match.elapsed)          # 고정/쓰레기 사건만 기록 (프레임당 비용 거의 없음)
         if self.match.match_finished or self.match.local_is_alive:

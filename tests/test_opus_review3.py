@@ -125,7 +125,7 @@ def test_lobby_rules_propagate_and_client_difficulty():
         t0 = time.time()
         while client.room_rules.get("diff") != "master" and time.time() - t0 < 3:
             time.sleep(0.05)
-        assert client.room_rules == {"diff": "master", "mode": "survival"} and client.roster_target == 7, client.room_rules
+        assert client.room_rules == {"diff": "master", "mode": "survival", "team": False} and client.roster_target == 7, client.room_rules
         host.room_settings["diff"] = "bogus"
         host.host_broadcast_roster()
         time.sleep(0.3)

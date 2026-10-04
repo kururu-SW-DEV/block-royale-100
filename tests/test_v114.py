@@ -826,6 +826,143 @@ def test_replay_keeps_hold_next_and_practice_from_here():
     assert sum(1 for row in eng.grid for c in row if c) == sum(1 for row in pl.grid for c in row if c)
 
 
+def test_gamepad_game_controller_mapping():
+    """PS/Switch/Xbox 등 표준 컨트롤러(GameController 이벤트): 버튼 위치가 같은 동작으로 매핑되고 십자키/스틱이 이동 키가 됨"""
+    import gamepad as G
+    keys = {"rotate_cw": [pygame.K_UP], "hard_drop": [pygame.K_SPACE], "hold": [pygame.K_c], "move_left": [pygame.K_LEFT], "soft_drop": [pygame.K_DOWN], "rotate_180": [pygame.K_a]}
+    gm = G.GamepadMapper(lambda a: keys.get(a, []), lambda: True)
+    E = pygame.event.Event
+
+    def run(evs, in_game=True):
+        return [(e.type, e.key) for e in gm.translate(evs, in_game)]
+    down = lambda b: E(pygame.CONTROLLERBUTTONDOWN, instance_id=7, button=b)
+    up = lambda b: E(pygame.CONTROLLERBUTTONUP, instance_id=7, button=b)
+    assert run([down(pygame.CONTROLLER_BUTTON_A)]) == [(pygame.KEYDOWN, pygame.K_UP)]
+    assert run([up(pygame.CONTROLLER_BUTTON_A)]) == [(pygame.KEYUP, pygame.K_UP)]
+    assert run([down(pygame.CONTROLLER_BUTTON_RIGHTSHOULDER)]) == [(pygame.KEYDOWN, pygame.K_SPACE)]
+    assert run([down(pygame.CONTROLLER_BUTTON_DPAD_LEFT)]) == [(pygame.KEYDOWN, pygame.K_LEFT)]
+    assert run([up(pygame.CONTROLLER_BUTTON_DPAD_LEFT)]) == [(pygame.KEYUP, pygame.K_LEFT)]
+    assert run([down(pygame.CONTROLLER_BUTTON_DPAD_UP)]) == [(pygame.KEYDOWN, pygame.K_SPACE)]      # 십자키 위 = 하드 드롭
+    run([up(pygame.CONTROLLER_BUTTON_DPAD_UP)])
+    stick = lambda ax, v: E(pygame.CONTROLLERAXISMOTION, instance_id=7, axis=ax, value=v)
+    assert run([stick(pygame.CONTROLLER_AXIS_LEFTX, -30000)]) == [(pygame.KEYDOWN, pygame.K_LEFT)]       # 정수 축 값(-32768..32767)도 처리
+    assert run([stick(pygame.CONTROLLER_AXIS_LEFTX, 0)]) == [(pygame.KEYUP, pygame.K_LEFT)]
+    assert run([stick(pygame.CONTROLLER_AXIS_LEFTY, -32000)]) == []                                       # 게임 중 스틱 위는 무시
+    assert run([down(pygame.CONTROLLER_BUTTON_A)], in_game=False) == [(pygame.KEYDOWN, pygame.K_RETURN)]
+    gm2 = G.GamepadMapper(lambda a: [], lambda: False)
+    assert gm2.translate([down(pygame.CONTROLLER_BUTTON_A)], True) == []                                  # 꺼져 있으면 버림
+
+
+def test_lan_team_mode_is_identical_on_every_machine():
+    import time as _t
+    from network import NetworkManager, PROTOCOL_VERSION
+    from battle_royale import BattleRoyaleMatch
+    assert PROTOCOL_VERSION >= 3
+    plist = [{"id": "HOST_P1", "name": "H", "is_ai": False}, {"id": "NET_P1", "name": "G1", "is_ai": False}, {"id": "NET_P2", "name": "G2", "is_ai": False}] +             [{"id": f"BOT_{i:02d}", "name": f"b{i}", "is_ai": True} for i in range(1, 18)]
+
+    class FakeNet:
+        mode = "CLIENT"; running = True; incoming_attacks = []; chat_log = []; remote_details = {}; remote_players_state = {}; host_view_of_me = None
+
+    ms = {}
+    for me in ("HOST_P1", "NET_P1", "NET_P2"):
+        fn = FakeNet()
+        fn.mode = "HOST" if me == "HOST_P1" else "CLIENT"
+        ms[me] = BattleRoyaleMatch(total_players=20, local_player_id=me, net_mgr=fn, initial_players=plist, team_mode=True)
+    base = ms["HOST_P1"].teams
+    assert base and all(m.teams == base for m in ms.values()), "컴퓨터마다 팀 배정이 다름"
+    assert abs(sum(1 for t in base.values() if t == 0) - sum(1 for t in base.values() if t == 1)) <= 1
+    assert base["HOST_P1"] != base["NET_P1"] and base["NET_P1"] != base["NET_P2"] or base["HOST_P1"] != base["NET_P2"]
+    for me, m in ms.items():
+        mine, foes = m.team_alive_counts()
+        assert mine + foes == 20 and abs(mine - foes) <= 1
+        allies = [p for p in m.players if m.is_ally(me, p)]
+        assert allies and all(base[p] == base[me] for p in allies)
+        for _ in range(10):
+            t = m.get_target_for(me)
+            assert t is None or not m.is_ally(me, t)
+    # 호스트 -> 참가자: 팀전 여부가 시작/명단 메시지로 전달됨
+    host, client = NetworkManager(), NetworkManager()
+    assert host.start_host(port=20199, max_players=10)
+    client.start_client("127.0.0.1", 20199, "Guest")
+    t0 = _t.time()
+    while not client.connected and _t.time() - t0 < 3:
+        client.client_retry_join()
+        _t.sleep(0.1)
+    assert client.connected
+    try:
+        host.room_settings["team"] = True
+        host.host_broadcast_roster()
+        _t.sleep(0.3)
+        assert client.room_rules.get("team") is True
+        host.host_send_start_game(plist, attacks_enabled=True, team=True)
+        _t.sleep(0.3)
+        assert client.game_started and client.match_team is True
+    finally:
+        host.stop(); client.stop()
+    # 생존(공격 없음)이면 팀전이 아님
+    c2 = NetworkManager()
+    c2.match_attacks = False
+    assert c2.match_team is False
+
+
+def test_lan_team_lobby_renders_and_toggles():
+    app = _app()
+    app.settings.set("rule_team", False)
+    app.state = "HOST_LOBBY"
+    assert app.net_mgr.start_host(port=20200, max_players=10) if hasattr(app.net_mgr, "start_host") else True
+    try:
+        app._render_host_lobby()
+        assert "team_toggle" in app.lobby_buttons
+        app._handle_host_lobby_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_t, mod=0, unicode="t"))
+        assert app.settings.get("rule_team") is True
+        app._update_host_lobby(0.1)
+        assert app.net_mgr.room_settings.get("team") is True
+        app._render_host_lobby()
+    finally:
+        app.net_mgr.stop()
+        app.settings.set("rule_team", False)
+
+
+def test_ghost_race_follows_match_time():
+    import replay
+    from block_engine import BlockEngine
+    from ai_bot import AIBot
+    # 가짜 '최고 판' 두 개: 점수가 높은 쪽이 고스트
+    e = BlockEngine(seed=11)
+    rec = replay.ReplayRecorder()
+    rec.update(e, 0.0)
+    for i in range(6):
+        e.hard_drop()
+        rec.update(e, 1.0 + i)
+    hi = rec.finish(3, 20, 2, 5000, 30)
+    lo = dict(hi, score=100, secs=10)
+    assert replay.best_replay([lo, hi])["score"] == 5000 and replay.best_replay([]) is None
+    saved = replay.load_replays()
+    tmp_path = os.path.join(tempfile.mkdtemp(), "replays.json")
+    replay.save_replay(lo, tmp_path)
+    replay.save_replay(hi, tmp_path)
+    old_path = replay.replay_path
+    replay.replay_path = lambda: tmp_path
+    app = _app()
+    try:
+        app.settings.set("ghost_race", True)
+        app.start_game("SOLO", total_players=20)
+        m = app.match
+        assert m.race_ghost is not None and m.race_ghost.data["score"] == 5000
+        m.countdown_until = 0.0
+        for _ in range(60):
+            app._tick_game(1 / 30)
+        assert m.race_ghost.t == min(m.race_ghost.duration, m.elapsed) or abs(m.race_ghost.t - m.elapsed) < 0.2
+        app.renderer.render(m, app.sound_mgr)
+        app.start_game("SOLO", total_players=20, practice=True)
+        app.settings.set("ghost_race", False)
+        app.start_game("SOLO", total_players=20)
+        assert app.match.race_ghost is None
+    finally:
+        replay.replay_path = old_path
+        app.settings.set("ghost_race", False)
+
+
 if __name__ == "__main__":
     pygame.init()
     from settings_manager import SETTINGS_FILE

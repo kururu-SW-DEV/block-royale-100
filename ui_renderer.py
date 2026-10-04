@@ -1710,6 +1710,7 @@ class UIRenderer:
         self._render_hold_box(engine, ox, oy)
         self._render_stats_box(match, ox, oy)
         self._render_status_box(engine, ox, oy)
+        self._render_ghost_box(match, ox, oy)
         self._render_next_box(engine, ox, oy)
         if getattr(match, "attacks_enabled", True):
             self._render_incoming_box(engine, ox, oy)               # 서바이벌: 받을 공격 칸 없음
@@ -1829,6 +1830,31 @@ class UIRenderer:
         else:
             pygame.draw.rect(self.screen, (26, 31, 50), chip, border_radius=8)
             self._draw_text("B2B", self.font_small, C_DIM, chip.centerx, chip.centery, "center")
+
+    def _render_ghost_box(self, match, ox=0, oy=0):
+        """고스트 레이스: 상태 칸 아래에 내 최고 판의 같은 시각 보드를 작게 보여 주고, 지금 점수와의 차이를 표시"""
+        g = getattr(match, "race_ghost", None)
+        if g is None or getattr(match, "is_spectating", False):
+            return
+        top = self.main_board_y + 114 + getattr(self, '_stats_h', 148) + 10 + 96 + 10 + oy
+        rect = pygame.Rect(self._left_x(ox), top, 108, 114)
+        self._panel(rect, border=(90, 130, 190))
+        self._draw_text("GHOST", self.font_tiny, (150, 200, 255), rect.x + 10, rect.y + 7)
+        cs = 4
+        bx, by = rect.x + 8, rect.y + 26
+        pygame.draw.rect(self.screen, (10, 12, 22), (bx - 2, by - 2, cs * 10 + 4, cs * 20 + 4), border_radius=3)
+        for y, row in enumerate(g.grid):
+            for x, piece in enumerate(row):
+                if piece:
+                    pygame.draw.rect(self.screen, PIECE_COLORS.get(piece, (150, 150, 150)), (bx + x * cs, by + y * cs, cs - 1, cs - 1))
+        me = int(match.local_engine.score)
+        diff = me - int(g.score)
+        tx = bx + cs * 10 + 10
+        self._draw_text(f"{g.score:,}" if g.score < 100000 else f"{g.score // 1000}k", self.font_tiny, C_TEXT, rect.right - 8, rect.y + 28, "topright")
+        self._draw_text(("+" if diff >= 0 else "-") + (f"{abs(diff):,}" if abs(diff) < 100000 else f"{abs(diff) // 1000}k"), self.font_small,
+                        C_GREEN if diff >= 0 else C_DANGER, rect.right - 8, rect.y + 48, "topright")
+        sec = int(g.t)
+        self._draw_text("끝" if g.finished else f"{sec // 60}:{sec % 60:02d}", self.font_tiny, C_DIM, rect.right - 8, rect.y + 72, "topright")
 
     def _render_next_box(self, engine, ox=0, oy=0):
         rect = pygame.Rect(self._right_x(ox), self.main_board_y + oy, 108, 266)

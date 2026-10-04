@@ -44,6 +44,7 @@ BOT_SEARCH_BUDGET = 0.008      # 프레임당 봇 전원의 탐색 시간 상한
 class BattleRoyaleMatch:
     def __init__(self, total_players=100, local_player_id="P1", local_player_name="Player", net_mgr=None, initial_players=None, sound_mgr=None, bot_difficulty="mixed", attacks_enabled=True,
                  practice=False, seed=None, daily=None, weekly=None, mutator=None, rival_id=None, ghost=None, challenge=None, team_mode=False):
+        self.race_ghost = None                         # 고스트 레이스: 내 최고 판을 재생하는 ReplayPlayer (앱이 지정, 없으면 None)
         self.team_mode = bool(team_mode) and not practice and total_players >= 4      # 팀전(2팀, 혼자 하는 배틀로얄만)
         self.teams = {}                                # 팀전일 때 플레이어 id -> 0/1 (나는 0)
         self.team_won = None                           # 팀전 결과: 내 팀이 이겼는지 (끝나기 전에는 None)
@@ -461,13 +462,20 @@ class BattleRoyaleMatch:
         """팀전: 나는 0팀, 나머지는 1, 0, 1, 0… 순서로 번갈아 나눔 (인원 차이가 1명 이하)"""
         if not self.team_mode:
             return
-        others = [pid for pid in self.players if pid != self.local_player_id]
-        random.shuffle(others)                           # 매 판 같은 봇끼리 같은 편이 되지 않도록 섞음 (나는 항상 0팀)
-        self.teams = {self.local_player_id: 0}
-        for n, pid in enumerate(others, 1):
-            self.teams[pid] = n % 2
-        mine = sum(1 for t in self.teams.values() if t == 0)
-        self.add_commentary(f"팀전 · 내 팀 {mine}명 vs 상대 팀 {len(self.teams) - mine}명 (같은 편은 공격하지 않아요)", (110, 235, 255), prio=1)
+        if self.net_mgr is not None:
+            # LAN: 모든 컴퓨터가 같은 팀 배정을 가져야 하므로 id 순서만으로 정함 (난수 없음). 사람끼리 번갈아, 봇은 이어서 번갈아 -> 인원 차이 1명 이하
+            humans = sorted(pid for pid, p in self.players.items() if not p["is_ai"])
+            bots = sorted(pid for pid, p in self.players.items() if p["is_ai"])
+            self.teams = {pid: i % 2 for i, pid in enumerate(humans)}
+            self.teams.update({pid: (len(humans) + j) % 2 for j, pid in enumerate(bots)})
+        else:
+            others = [pid for pid in self.players if pid != self.local_player_id]
+            random.shuffle(others)                       # 혼자 하기: 매 판 같은 봇끼리 같은 편이 되지 않도록 섞음 (나는 항상 0팀)
+            self.teams = {self.local_player_id: 0}
+            for n, pid in enumerate(others, 1):
+                self.teams[pid] = n % 2
+        mine, foes = self.team_alive_counts()
+        self.add_commentary(f"팀전 · 내 팀 {mine}명 vs 상대 팀 {foes}명 (같은 편은 공격하지 않아요)", (110, 235, 255), prio=1)
 
     def _team_alerts(self, now):
         """팀전: 같은 편이 탈락 직전(쌓인 높이 + 받을 공격이 판 높이에 가까움)이면 알려 줌. 한 명당 12초에 한 번"""
@@ -485,8 +493,9 @@ class BattleRoyaleMatch:
 
     def team_alive_counts(self):
         """팀전: (우리 팀 생존자 수, 상대 팀 생존자 수)"""
-        mine = sum(1 for pid, p in self.players.items() if p["is_alive"] and self.teams.get(pid) == 0)
-        foes = sum(1 for pid, p in self.players.items() if p["is_alive"] and self.teams.get(pid) == 1)
+        my = self.teams.get(self.local_player_id)
+        mine = sum(1 for pid, p in self.players.items() if p["is_alive"] and self.teams.get(pid) == my)
+        foes = sum(1 for pid, p in self.players.items() if p["is_alive"] and self.teams.get(pid) != my)
         return mine, foes
 
     def is_ally(self, a, b):

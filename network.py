@@ -23,7 +23,7 @@ def _sanitize_token(tok):
     return ""
 
 
-PROTOCOL_VERSION = 2         # 호환되지 않는 패킷 변경 때 올림. JOIN_REQ의 proto와 다르면 호스트가 거절
+PROTOCOL_VERSION = 3         # 호환되지 않는 패킷 변경 때 올림. JOIN_REQ의 proto와 다르면 호스트가 거절
 
 _DIFFS = ("mixed", "easy", "normal", "hard", "master")     # settings_manager.BOT_DIFFICULTY_OPTIONS와 같아야 함 (테스트로 확인)
 MAX_CHAT_LEN = 120            # 채팅 한 줄 최대 글자 수
@@ -245,6 +245,7 @@ class NetworkManager:
         self.initial_players = []
         self.join_rejected = None      # (클라이언트) 호스트가 입장을 거절한 이유 ("full" / "started" / "version")
         self.host_view_of_me = None    # (클라이언트) 호스트가 보낸 '나'의 상태 (순위 등 호스트 기준 값)
+        self.match_team = False        # (클라이언트) 호스트가 정한 팀전 여부
         self.match_attacks = True      # (클라이언트) 호스트가 정한 게임 모드 (False = 서바이벌: 공격 없음)
         self.lobby_return = False      # (클라이언트) 호스트가 경기를 마치고 대기실로 돌아왔다는 통보를 받음
         self.roster = []               # (클라이언트) 호스트가 알려준 참가자 명단 [{id, name, color, host}]
@@ -525,7 +526,7 @@ class NetworkManager:
                 except Exception:
                     pass
 
-    def host_send_start_game(self, players_summary_list, attacks_enabled=True):
+    def host_send_start_game(self, players_summary_list, attacks_enabled=True, team=False):
         """호스트가 게임 시작 패킷을 모든 클라이언트에게 신뢰성 있게 반복 전송"""
         self.game_started = True
         now0 = time.time()
@@ -535,6 +536,7 @@ class NetworkManager:
             "type": MsgType.GAME_START,
             "players_list": players_summary_list,
             "attacks": bool(attacks_enabled),
+            "team": bool(team),
             "diff": self.room_settings.get("diff"),
             "start_time": time.time()
         }
@@ -608,7 +610,7 @@ class NetworkManager:
         if not self.running or self.mode != "HOST" or not self.clients:
             return
         self._host_broadcast({"type": MsgType.ROSTER, "players": self.roster_list(), "target": self.room_settings.get("target", 0),
-                              "diff": self.room_settings.get("diff"), "mode": self.room_settings.get("mode")})
+                              "diff": self.room_settings.get("diff"), "mode": self.room_settings.get("mode"), "team": bool(self.room_settings.get("team"))})
 
     def unique_name(self, base, exclude_addr=None, exclude_host=False):
         """(호스트) 다른 참가자/호스트와 겹치지 않는 이름 (겹치면 #번호를 붙임). exclude_*: 이름을 바꾸는 본인은 제외"""
@@ -862,6 +864,7 @@ class NetworkManager:
                         rules["diff"] = msg["diff"]
                     if msg.get("mode") in ("battle", "survival"):
                         rules["mode"] = msg["mode"]
+                    rules["team"] = bool(msg.get("team", False))
                     self.room_rules = rules
 
                 elif mtype == MsgType.PROFILE_ACK:
@@ -902,6 +905,7 @@ class NetworkManager:
                         self.initial_players = [
                             {"id": e["id"][:32], "name": _sanitize_name(e.get("name"), "?"), "is_ai": bool(e.get("is_ai"))} for e in plist]
                         self.match_attacks = bool(msg.get("attacks", True))
+                        self.match_team = bool(msg.get("team", False)) and self.match_attacks
                         self.match_difficulty = msg["diff"] if msg.get("diff") in _DIFFS else None
                         self.game_started = True
                         print(f"[Network] Game start received from host! Total players: {len(self.initial_players)}")
