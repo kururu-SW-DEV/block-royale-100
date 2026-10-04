@@ -596,6 +596,95 @@ def test_glow_particles():
     print("  OK 발광 파티클")
 
 
+# ---------------------------------------------------------------- v1.1.8 연출 2차
+def test_countdown_punch_and_go_glow():
+    app, m, e, r = _react_setup()
+    m.countdown_until = time.time() + 2.5
+    r.render(m)
+    assert r._cd_seen == 3 and r.particles.rings, "숫자가 나오는 순간 링"
+    n_rings = len(r.particles.rings)
+    m.countdown_until = time.time() + 1.5
+    r.render(m)
+    assert r._cd_seen == 2 and len(r.particles.rings) > n_rings or r._cd_seen == 2
+    m.countdown_until = time.time() - 0.1
+    r.render(m)
+    assert r._cd_seen == 0, "GO"
+    m.shake_scale = 0.0
+    r.render(m)                                           # 흔들림 끔에서도 예외 없이
+    print("  OK 카운트다운 펀치")
+
+
+def test_survivor_tick_tier_up_and_phase_band():
+    app, m, e, r = _react_setup(40)
+    r.render(m)
+    ids = [pid for pid in m.players if pid != m.local_player_id and m.players[pid]["is_alive"]]
+    m._eliminate_player(ids[0], m.local_player_id)
+    r.render(m)
+    assert r._alive_prev == 40 and time.time() - r._alive_t0 < 0.3, "생존자 숫자 틱 시작"
+    t0 = r._alive_t0
+    m._eliminate_player(ids[1], ids[2])
+    r.render(m)
+    assert r._alive_t0 == t0, "1초에 3번까지만 (0.33초 안의 연속 K.O.는 합쳐짐)"
+    tier0 = r._tier_seen
+    m.local_ko_count = 12
+    r.render(m)
+    assert r._tier_seen is not None
+    m.phase = 2
+    r.render(m)
+    assert r._phase_fx and r._phase_fx["phase"] == 2, "단계가 오르면 띠"
+    r.render(m)
+    r._phase_fx["t0"] -= 5
+    r.render(m)
+    assert r._phase_fx is None, "띠는 1초 남짓 뒤 사라짐"
+    print("  OK 생존자 틱/배지/단계 띠")
+
+
+def test_next_hold_ghost_pattern_and_motion_off():
+    app, m, e, r = _react_setup()
+    m.phase = 3
+    r.render(m)
+    e.hold()
+    r.render(m)
+    assert r._hold_seen and r._hold_seen[1] == e.hold_piece
+    e.current_y = 0
+    r.render(m)                                           # 고스트 맥박 + 세로 가이드 + 3단계 바탕 무늬
+    m.shake_scale = 0.0
+    for _ in range(2):
+        r.render(m)
+    print("  OK 다음/홀드/고스트/무늬")
+
+
+def test_result_entry_and_transition():
+    app, m, e, r = _react_setup(20)
+    ids = [pid for pid in m.players if pid != m.local_player_id and m.players[pid]["is_alive"]]
+    m._eliminate_player(m.local_player_id, ids[0])
+    r.render(m)
+    assert r._res_for is m
+    r._res_t0 -= 5
+    r.render(m)
+    # 화면 전환 와이프
+    app.state = "MENU"
+    r._tr_state = "GAME"
+    app._transition_check()
+    assert r._tr is not None and not r._tr["reduced"]
+    for _ in range(3):
+        app._render_menu()
+        r.draw_transition()
+    r._tr["t0"] -= 5
+    r.draw_transition()
+    assert r._tr is None, "와이프는 끝나면 사라짐"
+    app.settings.set("screen_shake", "off", autosave=False)
+    app.state, r._tr_state = "GAME", "MENU"
+    app._transition_check()
+    assert r._tr["reduced"], "흔들림 끔: 단순 페이드"
+    app._transition_check()
+    app.state, r._tr_state = "SETTINGS", "GAME"
+    r._tr = None
+    app._transition_check()
+    assert r._tr is None, "게임 위에 설정을 여는 전환은 와이프 없음"
+    print("  OK 결과 창/화면 전환")
+
+
 if __name__ == "__main__":
     pygame.init()
     from settings_manager import SETTINGS_FILE

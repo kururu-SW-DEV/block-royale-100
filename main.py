@@ -218,6 +218,16 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
             self.renderer.pause_focus = 0
             self.sound_mgr.pause_bgm()
 
+    def _transition_check(self):
+        """state가 바뀌면 화면 전환 와이프를 시작. 게임과 그 위에 겹쳐 여는 설정 사이, 시작 직후의 첫 화면은 제외. 흔들림 '끔'이면 짧은 페이드"""
+        prev, cur = getattr(self.renderer, "_tr_state", None), self.state
+        self.renderer._tr_state = cur
+        if prev is None or prev == cur:
+            return
+        if {prev, cur} == {"GAME", "SETTINGS"}:
+            return
+        self.renderer.begin_transition(reduced=self.settings.get("screen_shake") == "off")
+
     def run(self):
         self.use_bot_pool = True                 # 실제 실행에서만 봇 계산 작업 프로세스를 사용 (테스트/시뮬레이션은 직접 계산)
         running = True
@@ -268,6 +278,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
             if self.state != "MENU":
                 self._menu_active = False               # 다음에 메뉴로 돌아오면 등장 연출을 다시 재생
 
+            self._transition_check()                    # 화면이 바뀌었으면 직전 프레임을 붙잡아 와이프 시작 (아직 직전 프레임이 화면에 남아 있음)
+
             # 상태별 업데이트 및 렌더링
             if self.state == "MENU":
                 self.sound_mgr.play_bgm('menu')
@@ -303,6 +315,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                 self._render_rules()
             if self.state == "GAME" and self.match is not None and getattr(self.match, "brief_open", False):
                 self._render_brief()
+            self.renderer.draw_transition()
             pygame.display.flip()
             
         self.settings.save()

@@ -67,6 +67,7 @@ TARGET_MODE_LABELS = {
 
 _orig_rect = CANVAS._orig["rect"]          # 좌표 변환을 거치지 않는 원래 pygame.draw.rect
 _orig_circle = CANVAS._orig["circle"]
+_orig_line = CANVAS._orig["line"]
 
 
 _GLOW_CACHE = {}
@@ -253,6 +254,25 @@ class UIRenderer:
         self._vic_t0 = None              # 우승 세리머니 시작 시각
         self._vic_row = BOARD_HEIGHT
         self.confetti = []
+        # v1.1.8 연출 2차
+        self._motion = 1.0               # 흔들림 설정 배율 (0이면 위치가 움직이는 연출 생략)
+        self._cd_seen = None             # 카운트다운 숫자 바뀜
+        self._cd_t0 = -9.0
+        self._alive_seen = None          # 생존자 숫자 틱
+        self._alive_prev = 0
+        self._alive_t0 = -9.0
+        self._alive_gate = -9.0
+        self._tier_seen = None           # 배지 단계 상승
+        self._tier_t0 = -9.0
+        self._phase_fx = None            # 단계 전환 띠 {t0, phase}
+        self._next_seen = None           # 다음 블록 슬라이드
+        self._next_t0 = -9.0
+        self._hold_seen = None           # 홀드 교체 팝
+        self._hold_t0 = -9.0
+        self._res_for = None             # 결과 창 진입
+        self._res_t0 = 0.0
+        self._tr = None                  # 화면 전환 {snap, t0, reduced}
+        self._tr_state = None
         self.result_return_btn = None
         self.result_restart_btn = None
         self.result_spectate_btn = None
@@ -392,6 +412,9 @@ class UIRenderer:
             self._theme_t0 = -10.0
         elif phase != self._theme_to:
             self._theme_from, self._theme_to, self._theme_t0 = self._theme_to, phase, now
+            if phase > self._theme_from and not getattr(match, "practice", False):
+                self._phase_fx = {"t0": now, "phase": phase}
+                self._add_bg_pulse(self.width // 2, self.height // 2, STAGE_THEMES[phase]["border"])
         t = min(1.0, (now - self._theme_t0) / 1.4)
         if t >= 1.0:
             self.screen.blit(self._bg(self._theme_to), (0, 0))
@@ -574,6 +597,7 @@ class UIRenderer:
             pygame.draw.rect(self.screen, C_GOLD, br, 1, border_radius=10)
             self.screen.blit(ts, (br.x + 16, br.centery - ts.get_height() // 2))
         self._draw_coach_marks(match)
+        self._render_phase_fx(match)
         self._render_countdown(match, ox, oy)
         if getattr(match, 'is_paused', False):
             self._render_pause_overlay()
@@ -1037,13 +1061,29 @@ class UIRenderer:
             text, col = str(n), (255, 226, 130)
             alpha = int(255 * min(1.0, 0.35 + frac))
         elif left > -0.6:
+            n = 0
             text, col = "GO!", (140, 255, 170)
             alpha = int(255 * (1.0 - (-left) / 0.6))
         else:
             return
         cx = self.main_board_x + self.main_board_w // 2 + ox
         cy = self.main_board_y + self.main_board_h // 2 - 20 + oy
+        now = time.time()
+        if n != self._cd_seen:                               # 숫자가 바뀐 순간: 퍼지는 링 (GO는 더 크게)
+            self._cd_seen, self._cd_t0 = n, now
+            self.particles.add_shockwave(cx, cy + 30, col, max_radius=170 if n == 0 else 110)
+        age = now - self._cd_t0
+        if n == 0:                                           # GO!: 커지며 사라지고 보드 테두리에 초록 광채가 한 번
+            factor = 1.0 + 0.45 * _ease_out(age / 0.35)
+            draw_glow(self.screen, cx, cy, 170, col, max(0.0, 1.0 - age / 0.5))
+            if age < 0.45 and self._motion > 0:
+                CANVAS.alpha_rect((self.main_board_x + ox, self.main_board_y + oy, self.main_board_w, self.main_board_h),
+                                  (*col, int(210 * (1.0 - age / 0.45))), width=5, radius=6)
+        else:                                                # 3-2-1: 1.6배에서 1.0배로 쾅
+            factor = 1.0 + 0.6 * (1.0 - _ease_out(age / 0.28))
         surf = self.font_countdown.render(text, True, col)
+        if abs(factor - 1.0) > 0.02:
+            surf = self._scaled_hi(surf, factor)
         surf.set_alpha(max(0, min(255, alpha)))
         self.screen.blit(surf, (cx - surf.get_width() // 2, cy - surf.get_height() // 2))
         if left > 0:
@@ -1136,7 +1176,28 @@ class UIRenderer:
         self._panel(r1, border=C_GOLD)
         practice = getattr(match, "practice", False)
         self._draw_text(self._survivor_title(match), self.font_tiny, C_GOLD, r1.centerx, r1.y + 5, "midtop")
-        self._draw_text("연습 중" if practice else f"{match.alive_count} / {match.total_players}", self.font_num, C_TEXT, r1.centerx, r1.y + 16, "midtop")
+        now_b = time.time()
+        alive_now = match.alive_count
+        if self._alive_seen is None or practice:
+            self._alive_seen = alive_now
+        elif alive_now != self._alive_seen:                              # 숫자가 줄어든 순간: 옛 숫자는 아래로 떨어지고 새 숫자가 커지며 금색으로 (1초에 최대 3번)
+            if alive_now < self._alive_seen and now_b - self._alive_gate > 0.33:
+                self._alive_prev, self._alive_t0, self._alive_gate = self._alive_seen, now_b, now_b
+            self._alive_seen = alive_now
+        a_age = now_b - self._alive_t0
+        if practice:
+            self._draw_text("연습 중", self.font_num, C_TEXT, r1.centerx, r1.y + 16, "midtop")
+        elif 0.0 <= a_age < 0.3:
+            txt_old, txt_new = f"{self._alive_prev} / {match.total_players}", f"{alive_now} / {match.total_players}"
+            k = _ease_out(a_age / 0.3)
+            self._fade_text(txt_old, self.font_num, C_DIM, r1.centerx, r1.y + 16 + 18 * k, 255 * (1.0 - k), "midtop")
+            ns = self._scaled_hi(self.font_num.render(txt_new, True, _mix(C_GOLD, C_TEXT, k)), 1.0 + 0.3 * (1.0 - k))
+            ns.set_alpha(int(255 * min(1.0, 0.3 + k)))
+            self.screen.blit(ns, ns.get_rect(midtop=(int(r1.centerx), int(r1.y + 16 - 3 * (1.0 - k)))))
+        else:
+            self._draw_text(f"{alive_now} / {match.total_players}", self.font_num, C_TEXT, r1.centerx, r1.y + 16, "midtop")
+        if not practice and alive_now % 10 == 0 and alive_now >= 10 and 0.0 <= a_age < 0.6 and alive_now < self._alive_prev:
+            CANVAS.alpha_rect(r1.inflate(8, 8), (*C_GOLD, int(220 * (1.0 - a_age / 0.6))), width=3, radius=12)        # 90·80·70… 구간 통과: 칸 테두리가 한 번 번짐
         ratio = match.alive_count / max(1, match.total_players)
         self._draw_bar((r1.x + 14, r1.bottom - 9, w1 - 28, 3), ratio, C_GOLD)
 
@@ -1222,6 +1283,16 @@ class UIRenderer:
         # 0킬일 때는 위험 신호처럼 보이지 않도록 차분한 색, 처치가 생기면 붉은색, 배지가 있으면 금색
         border3 = C_GOLD if tier > 0 else ((255, 120, 120) if match.local_ko_count > 0 else (74, 88, 128))
         self._panel(r3, border=border3)
+        if self._tier_seen is None:
+            self._tier_seen = tier
+        elif tier != self._tier_seen:                                   # 배지 단계가 오른 순간: 금빛 광채와 테두리 팝
+            if tier > self._tier_seen:
+                self._tier_t0 = time.time()
+            self._tier_seen = tier
+        t_age = time.time() - self._tier_t0
+        if 0.0 <= t_age < 0.7:
+            draw_glow(self.screen, r3.centerx, r3.centery, 90, C_GOLD, 1.0 - t_age / 0.7)
+            CANVAS.alpha_rect(r3.inflate(int(10 * (1.0 - t_age / 0.7)) + 2, int(10 * (1.0 - t_age / 0.7)) + 2), (*C_GOLD, int(230 * (1.0 - t_age / 0.7))), width=3, radius=12)
         title = f"배지 Lv.{tier}  +{pct}" if tier > 0 else "K.O. 처치"
         self._draw_text(title, self.font_tiny, border3 if tier > 0 or match.local_ko_count > 0 else C_DIM, r3.centerx, r3.y + 5, "midtop")
         self._draw_text(f"{match.local_ko_count} K.O.", self.font_num, C_TEXT, r3.centerx, r3.y + 16, "midtop")
@@ -1443,6 +1514,15 @@ class UIRenderer:
             pygame.draw.line(self.screen, (22, 27, 44), (bx + x * cs, by + 2), (bx + x * cs, by + bh - 2))
         for y in range(1, BOARD_HEIGHT):
             pygame.draw.line(self.screen, (22, 27, 44), (bx + 2, by + y * cs), (bx + bw - 2, by + y * cs))
+        ph = min(3, max(1, getattr(match, "phase", 1)))
+        if ph >= 2:                                                    # 단계별 아주 옅은 바탕 무늬 (2단계 사선, 3단계 붉은 격자 사선)
+            def _build_pat(ps, ph=ph):
+                col = (200, 140, 235, 16) if ph == 2 else (255, 80, 90, 20)
+                for k in range(-bh, bw + bh, 22):
+                    _orig_line(ps, col, (k, 0), (k + bh, bh), 2)
+                    if ph == 3:
+                        _orig_line(ps, col, (k + bh, 0), (k, bh), 2)
+            self._blit_overlay(("board_pat", ph, bw, bh), (bw, bh), _build_pat, (bx, by))
         # 스폰 구역 표시 (상단 2줄)
         self._blit_overlay(("spawn", bw, cs), (bw, cs * 2), lambda surf: surf.fill((255, 255, 255, 8)), (bx, by))
 
@@ -1553,6 +1633,17 @@ class UIRenderer:
         if not engine.game_over and engine.current_piece and vic_row >= BOARD_HEIGHT:
             ghost_y = engine.get_ghost_y()
             gsurf = self._ghost_surface(engine.current_piece, cs)
+            gsurf.set_alpha(int(215 + 40 * math.sin(time.time() * 4.5)))         # 고스트가 숨 쉬듯 미세하게 맥박
+            if ghost_y - engine.current_y >= 3 and not spectating:               # 떨어질 열에 아주 옅은 세로 가이드
+                gcols = {}
+                for gx, gy in engine._get_blocks(engine.current_piece, engine.current_rot, engine.current_x, engine.current_y):
+                    gcols[gx] = max(gcols.get(gx, -9), gy)
+                for gx, gy in gcols.items():
+                    y0 = max(0, gy + 1)
+                    gh = (ghost_y + (gy - engine.current_y) - y0) * cs
+                    if gh > 0:
+                        gw_ = max(2, int(cs * 0.4))
+                        self._blit_overlay(("gguide", gw_, gh), (gw_, gh), lambda ds: ds.fill((255, 255, 255, 12)), (bx + gx * cs + int(cs * 0.3), by + y0 * cs))
             if ghost_y != engine.current_y:
                 for gx, gy in engine._get_blocks(engine.current_piece, engine.current_rot, engine.current_x, ghost_y):
                     if 0 <= gy < BOARD_HEIGHT:
@@ -1595,7 +1686,14 @@ class UIRenderer:
         self._draw_text("홀드", self.font_tiny, C_GOLD, rect.centerx, rect.y + 8, "midtop")
         if engine.hold_piece:
             # 이번 턴 홀드 불가 상태면 흐리게 표시하여 시인성 확보
-            self._render_preview_piece(engine.hold_piece, rect.centerx, rect.y + 64, scale=20, dim=not engine.can_hold)
+            if self._hold_seen != (id(engine), engine.hold_piece):
+                self._hold_seen = (id(engine), engine.hold_piece)
+                self._hold_t0 = time.time()
+            h_age = time.time() - self._hold_t0
+            pop = (1.0 - _ease_out(h_age / 0.16)) if (0.0 <= h_age < 0.16 and self._motion > 0) else 0.0      # 홀드가 바뀌면 블록이 커졌다 돌아옴
+            self._render_preview_piece(engine.hold_piece, rect.centerx, rect.y + 64, scale=20 + int(round(8 * pop)), dim=not engine.can_hold)
+        else:
+            self._hold_seen = None
 
     def _render_stats_box(self, match, ox=0, oy=0):
         battle = not getattr(match, 'is_spectating', False) and match.attacks_enabled
@@ -1653,6 +1751,10 @@ class UIRenderer:
                 self._combo_pop_t = now
             self._combo_seen = raw
         ccol = (255, 120, 220) if combo >= 8 else ((255, 170, 70) if combo >= 4 else C_ORANGE)       # 콤보가 쌓일수록 주황 -> 분홍
+        if combo >= 4 and self._motion > 0:                                                          # 콤보 불씨: 상태 칸에서 위로 천천히 떠오르는 빛 (최대 6개, 깜빡임 없음)
+            for i in range(6 if combo >= 8 else 4):
+                ph_ = (now * 0.5 + i / 6.0) % 1.0
+                draw_glow(self.screen, rect.x + 12 + (i * 37 % (rect.w - 24)), rect.bottom - ph_ * (rect.h + 30), 9, ccol, 1.0 - ph_)
         if combo >= 8:
             CANVAS.alpha_rect(rect, (255, 120, 220, int(120 + 90 * math.sin(now * 8.0))), width=2, radius=10)
         self._draw_text("콤보", self.font_tiny, C_DIM, rect.x + 12, rect.y + 10)
@@ -1681,10 +1783,15 @@ class UIRenderer:
         rect = pygame.Rect(self._right_x(ox), self.main_board_y + oy, 108, 266)
         self._panel(rect)
         self._draw_text("다음 블록", self.font_tiny, C_ACCENT, rect.centerx, rect.y + 8, "midtop")
+        nk = (id(engine), engine.lock_events, engine.hold_piece)
+        if nk != self._next_seen:                                       # 블록이 나올 때마다 큐가 한 칸 위로 올라옴
+            self._next_seen, self._next_t0 = nk, time.time()
+        n_age = time.time() - self._next_t0
+        slide = int(round(18 * (1.0 - _ease_out(n_age / 0.12)))) if (0.0 <= n_age < 0.12 and self._motion > 0) else 0
         for i in range(min(getattr(self, "next_visible", 5), len(engine.next_queue))):
             scale = 22 if i == 0 else 15
             cy = rect.y + 56 if i == 0 else rect.y + 108 + (i - 1) * 40
-            self._render_preview_piece(engine.next_queue[i], rect.centerx, cy, scale=scale, dim=(i > 0))
+            self._render_preview_piece(engine.next_queue[i], rect.centerx, cy + slide, scale=scale, dim=(i > 0))
 
     @staticmethod
     def _fmt_goal_value(metric, v):
@@ -2373,6 +2480,7 @@ class UIRenderer:
         """엔진이 남긴 사건(줄 제거 · 쓰레기 줄 · 하드 드롭 · 탑아웃)을 보고 파쇄/내려앉기/상승/궤적/붕괴/세리머니를 시작하고 조각을 갱신"""
         now = time.time()
         m = getattr(match, 'shake_scale', 1.0)          # 흔들림 설정: 끔(0)이면 위치가 움직이는 연출은 하지 않음
+        self._motion = m
         cs = self.cell_size
         bx, by = self.main_board_x, self.main_board_y
         if self._react_eng is not engine:
@@ -2541,6 +2649,89 @@ class UIRenderer:
         for gx, gcol in ((-0.5, (255, 120, 150)), (0.0, (120, 230, 255)), (0.5, (170, 255, 150))):
             pygame.draw.circle(self.screen, gcol, (int(cx + gx * w), int(cy + (-0.1 if gx else -0.5) * h)), max(2, int(8 * grow)))
         draw_glow(self.screen, cx, cy, int(110 * grow), (255, 210, 90), 0.7)
+
+    PHASE_NAMES = {2: ("PHASE 2", "후반전 · 공격이 거세집니다"), 3: ("FINAL PHASE", "최후의 접전 · 한 방이 승부를 가릅니다")}
+
+    def _render_phase_fx(self, match):
+        """단계가 오르면 화면을 가로지르는 띠가 1.1초 동안 나타났다 사라짐 (색에만 기대지 않게 글자와 화살표 포함)"""
+        fx = self._phase_fx
+        if fx is None:
+            return
+        age = time.time() - fx["t0"]
+        total = 1.1
+        if age >= total or getattr(match, "match_finished", False):
+            self._phase_fx = None
+            return
+        ph = fx["phase"]
+        k_in = _ease_out(age / 0.22)
+        k_out = _ease_out((total - age) / 0.25)
+        k = min(k_in, k_out)
+        base = STAGE_THEMES[ph]["border"]
+        h = int(78 * k)
+        y = int(self.height * 0.30)
+        w = self.width
+        if h > 2:
+            band_col = _mix((10, 12, 22), base, 0.38)
+            self._blit_overlay(("phase_band", ph, w), (w, 78), lambda ds: (ds.fill((*band_col, 205)), _orig_line(ds, (*base, 255), (0, 1), (w, 1), 3), _orig_line(ds, (*base, 255), (0, 76), (w, 76), 3)),
+                               (0, y - 39 + (78 - h) // 2), alpha=int(255 * min(1.0, k * 1.5)))
+            tx = int(w // 2 + (1.0 - k_in) * 160)
+            title, sub = self.PHASE_NAMES.get(ph, ("PHASE", ""))
+            tcol = C_DANGER if ph == 3 else (230, 190, 255)
+            self._fade_text(title, self.font_title, tcol, tx, y - 6, 255 * k, "center")
+            self._fade_text(sub, self.font_small, C_TEXT, tx, y + 24, 230 * k, "center")
+            for side in (-1, 1):                                                   # 양쪽 화살표 (>>> / <<<)
+                for i in range(3):
+                    ax = int(w // 2 + side * (300 + i * 22) - (1.0 - k_in) * side * 60)
+                    _orig_line(CANVAS.display, tuple(int(c * k) for c in base), (CANVAS.X(ax - side * 8), CANVAS.Y(y - 12)), (CANVAS.X(ax), CANVAS.Y(y)), max(1, CANVAS.length(3)))
+                    _orig_line(CANVAS.display, tuple(int(c * k) for c in base), (CANVAS.X(ax), CANVAS.Y(y)), (CANVAS.X(ax - side * 8), CANVAS.Y(y + 12)), max(1, CANVAS.length(3)))
+
+    # ---------------------------------------------------------------- 화면 전환 와이프
+    TR_SECS = 0.42
+    TR_CELL = 48
+
+    def begin_transition(self, reduced=False):
+        """화면(state)이 바뀌는 순간 직전 프레임을 붙잡아 두고 와이프를 시작 (직전 프레임이 아직 화면에 남아 있는 때에 호출)"""
+        try:
+            snap = CANVAS.display.copy()
+        except Exception:
+            return
+        self._tr = {"snap": snap, "t0": time.time(), "reduced": reduced}
+
+    def draw_transition(self):
+        """새 화면 위에 옛 화면이 블록 칸으로 대각선으로 흩어지며 걷힘 (모션을 줄이면 단순 페이드)"""
+        tr = self._tr
+        if tr is None:
+            return
+        p = (time.time() - tr["t0"]) / (0.25 if tr["reduced"] else self.TR_SECS)
+        if p >= 1.0:
+            self._tr = None
+            return
+        disp, snap = CANVAS.display, tr["snap"]
+        if tr["snap"].get_size() != disp.get_size():
+            self._tr = None
+            return
+        if tr["reduced"]:
+            snap.set_alpha(int(255 * (1.0 - p)))
+            disp.blit(snap, (0, 0))
+            return
+        cs = self.TR_CELL
+        cols, rows = self.width // cs + 1, self.height // cs + 1
+        palette = list(PIECE_COLORS.values())
+        span = 0.65
+        for cy in range(rows):
+            for cx in range(cols):
+                t_c = (cx + cy) / float(cols + rows) * span
+                local = (p - t_c) / (1.0 - span)
+                if local >= 1.0:
+                    continue
+                r = CANVAS.rect_f(cx * cs, cy * cs, cs, cs)
+                if local < 0.0:
+                    disp.blit(snap, r.topleft, r)
+                else:                                                              # 칸이 색 블록으로 바뀌며 줄어들어 사라짐
+                    sz = max(0, int(r.w * (1.0 - local)))
+                    if sz > 1:
+                        col = palette[(cx * 7 + cy * 3) % len(palette)]
+                        _orig_rect(disp, col, (r.centerx - sz // 2, r.centery - sz // 2, sz, sz))
 
     def _render_bg_pulses(self, match, ox, oy):
         """큰 기술/K.O. 때 보드 중심에서 배경으로 퍼지는 얇은 링 (카드 뒤에 그려짐)"""
@@ -3085,7 +3276,10 @@ class UIRenderer:
         self._draw_text("━ 생존자 비율", self.font_tiny, (90, 170, 255), legend_right, legend_y + 16, "topright")
 
     def _render_result_overlay(self, match):
-        CANVAS.overlay((4, 6, 12, 200))
+        if self._res_for is not match:
+            self._res_for, self._res_t0 = match, time.time()
+        r_age = time.time() - self._res_t0
+        CANVAS.overlay((4, 6, 12, int(200 * min(1.0, r_age / 0.3))))                       # 배경이 서서히 어두워지고
 
         won = match.local_rank == 1
         accent = C_GOLD if won else C_DANGER
@@ -3104,14 +3298,23 @@ class UIRenderer:
         box_w, box_h = 660, 346 + extra
         bx = (self.width - box_w) // 2
         by = (self.height - box_h) // 2
+        if self._motion > 0:
+            by += int(70 * (1.0 - _ease_out((r_age - 0.1) / 0.35)))                       # 패널이 아래에서 튀어 올라옴
         self._panel((bx, by, box_w, box_h), border=accent, bg=(15, 19, 34), radius=18, alpha=248, border_w=2)
+        stamp = _ease_out((r_age - 0.35) / 0.25)                                          # 제목은 1.4배에서 1.0배로 도장처럼 찍힘
+        if stamp < 1.0 and r_age > 0.3:
+            ttxt, tcol = ("로열 빅토리!", C_GOLD) if won else ("K.O.  경기 탈락", C_DANGER)
+            tsurf = self._scaled_hi(self.font_title.render(ttxt, True, tcol), 1.0 + 0.4 * (1.0 - stamp))
+            self.screen.blit(tsurf, tsurf.get_rect(midtop=(int(bx + box_w // 2), int(by + 22 - 6 * (1.0 - stamp)))))
 
         if won:
-            self._draw_text("로열 빅토리!", self.font_title, C_GOLD, bx + box_w // 2, by + 22, "midtop", shadow=True)
+            if stamp >= 1.0:
+                self._draw_text("로열 빅토리!", self.font_title, C_GOLD, bx + box_w // 2, by + 22, "midtop", shadow=True)
             self._draw_text("최후의 1인으로 살아남았습니다", self.font_mid, C_GREEN, bx + box_w // 2, by + 66, "midtop")
             rank_txt = "#1"
         else:
-            self._draw_text("K.O.  경기 탈락", self.font_title, C_DANGER, bx + box_w // 2, by + 22, "midtop", shadow=True)
+            if stamp >= 1.0:
+                self._draw_text("K.O.  경기 탈락", self.font_title, C_DANGER, bx + box_w // 2, by + 22, "midtop", shadow=True)
             killer = getattr(match, "local_killer_id", None)
             killer_txt = ""
             if killer and killer in match.players:
