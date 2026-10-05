@@ -81,12 +81,10 @@ class WidgetsMixin:
         r = self.renderer
         self._glass(rect, accent=(70, 100, 160), radius=16)
         self._t("채팅", self.font_menu, C_TEXT, rect.x + 20, rect.y + 14)
-        self._t("Tab / 클릭: 입력  ·  Enter: 전송", self.font_tiny, C_DIM, rect.right - 18, rect.y + 22, "topright")
 
-        # 내 프로필: 이름 입력칸 + 이름 색 선택
-        prof_y = rect.y + 50
-        self._t("내 이름", self.font_tiny, C_DIM, rect.x + 18, prof_y + 2)
-        nbox = pygame.Rect(rect.x + 72, prof_y - 6, rect.w - 72 - 16, 32)
+        # 내 프로필: 이름 입력칸 + 이름 색 선택 (라벨 없이 두 줄만)
+        prof_y = rect.y + 56
+        nbox = pygame.Rect(rect.x + 16, prof_y - 6, rect.w - 32, 32)
         self.text_rects["player_name"] = nbox
         editing = (self.text_focus == "player_name")
         pygame.draw.rect(self.screen, (11, 13, 24), nbox, border_radius=8)
@@ -95,10 +93,9 @@ class WidgetsMixin:
         tr = self._t(shown, self.font_small, NAME_COLORS[self.name_color][1], nbox.x + 10, nbox.centery, "midleft")
         if editing and int(time.time() * 2) % 2 == 0:
             pygame.draw.rect(self.screen, C_ACCENT, (tr.right + 3, nbox.y + 7, 2, nbox.h - 14))
-        if not editing:
+        if not editing and nbox.collidepoint(pygame.mouse.get_pos()):
             self._t("클릭해서 수정", self.font_tiny, C_DIM, nbox.right - 8, nbox.centery, "midright")
-        self._t("이름 색", self.font_tiny, C_DIM, rect.x + 18, prof_y + 42)
-        self.color_rects = self._draw_color_swatches(rect.x + 72, prof_y + 36, size=20, gap=5)
+        self.color_rects = self._draw_color_swatches(rect.x + 18, prof_y + 38, size=20, gap=6)
 
         area = pygame.Rect(rect.x + 16, rect.y + 132, rect.w - 32, rect.h - 132 - 70)
         line_h = 20

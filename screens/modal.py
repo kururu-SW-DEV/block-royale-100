@@ -55,6 +55,9 @@ class ModalMixin:
         elif bid == "reset_stats_ok":
             self.sound_mgr.play('clear')
             self.stats_mgr.reset_stats()
+        elif bid == "reset_practice_ok":
+            self.sound_mgr.play('clear')
+            self.stats_mgr.reset_practice()
         elif bid == "reset_defaults_ok":
             self._do_reset_defaults()
         if self.modal is None and self._pending_quit:

@@ -779,6 +779,13 @@ class StatsManager:
         self.data["survival"] = copy.deepcopy(DEFAULT_STATS)
         self.save()
 
+    def reset_practice(self):
+        """연습 기록 초기화: 연습 과제 완료/타임어택 최고 기록/연습 별만 지움 (경기 전적, 오늘의 도전·주간 기록, 이미 얻은 업적은 그대로)"""
+        c = self.ch()
+        c["practice"] = {"done": [], "ta": {}}
+        c["stars"]["practice"] = 0
+        self.save()
+
     def get_summary(self, mode="battle", size=None, difficulty=None):
         """화면 표시용 요약 통계 문자열 및 계산값 반환.
         size(규모 이름)나 difficulty(난이도 이름)를 주면 전체 누적이 아니라 '최근 100경기' 중 그 조건에 맞는 경기만으로 다시 계산 (filtered=True)"""

@@ -26,6 +26,14 @@ Thumbs.db
 desktop.ini
 .DS_Store
 /sound_cache.bin
-/sound_cache.bin.tmp
 /replays.json
-/replays.json.tmp
+
+# 실행 중 생성되는 로컬 파일 (소스로 실행하면 프로젝트 폴더에 생김)
+/error.log
+/match_logs/
+*.tmp
+
+# 도구/편집기 설정
+.claude/
+.vscode/
+.idea/

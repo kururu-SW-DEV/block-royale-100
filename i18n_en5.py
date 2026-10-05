@@ -122,6 +122,7 @@ EXACT = {
     "NEXT 1개만 보고 줄 30개 지우기": "Clear 30 lines seeing only 1 NEXT", "30줄 삭제": "30 lines",
     "NEXT 1개만 보고 쿼드 2회": "2 Quads seeing only 1 NEXT",
     "7분 생존": "Survive 7:00", "생존 7:00": "Survive 7:00",
+    "증폭 30초": "Boost 30s",
     "공격력 증폭(×1.2↑) 상태로 30초 생존": "Survive 30s with boosted attack (×1.2+)",
     "10위 안에 들기": "Finish in the top 10", "10위 안": "Top 10",
     # ---------------------------------------------------------------- 규칙 카드

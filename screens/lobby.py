@@ -319,7 +319,8 @@ class LobbyMixin:
         self.screen.blit(addr, (chip.x + 16, chip.centery - addr.get_height() // 2))
         self.addr_chip_rect = chip                           # 클릭하면 복사
         copied = time.time() < getattr(self, "_copy_notice_until", 0.0)
-        self._t("복사됨!" if copied else "클릭해서 복사", self.font_tiny, C_GREEN if copied else C_DIM, chip.right + 12, chip.centery, "midleft")
+        if copied or chip.collidepoint(mx, my):                  # 평소에는 숨기고 올렸을 때만 안내 (화면이 덜 산만하게)
+            self._t("복사됨!" if copied else "클릭해서 복사", self.font_tiny, C_GREEN if copied else C_DIM, chip.right + 12, chip.centery, "midleft")
 
         box_w, box_h = 720, 604
         box_x = 133
@@ -327,65 +328,68 @@ class LobbyMixin:
         self._glass((box_x, box_y, box_w, box_h), accent=(50, 150, 105), radius=18)
         self._draw_chat_panel(pygame.Rect(box_x + box_w + 20, box_y, 360, box_h))
 
-        # 방 제목 (클릭해서 수정)
-        self._t("방 제목", self.font_mid, C_TEXT, box_x + 32, box_y + 28)
-        name_box = pygame.Rect(box_x + 118, box_y + 18, box_w - 150, 40)
+        # 방 제목 (클릭해서 수정): 라벨은 입력칸 안쪽에 작게
+        name_box = pygame.Rect(box_x + 28, box_y + 18, box_w - 56, 42)
         self.text_rects["room_name"] = name_box
         editing = (self.text_focus == "room_name")
         pygame.draw.rect(self.screen, (11, 13, 24), name_box, border_radius=10)
         pygame.draw.rect(self.screen, C_ACCENT if editing else (60, 74, 110), name_box, 2 if editing else 1, border_radius=10)
+        self._t("방 제목", self.font_small, C_DIM, name_box.x + 16, name_box.centery, "midleft")
         shown_name = self.room_name_input + (self.chat_comp if editing else "")
         if not editing and not shown_name.strip():
             shown_name = self._default_room_name()
-        t = self._t(shown_name, self.font_mid, C_TEXT, name_box.x + 14, name_box.centery, "midleft")
+        t = self._t(shown_name, self.font_mid, C_TEXT, name_box.x + 92, name_box.centery, "midleft")
         if editing and int(time.time() * 2) % 2 == 0:
-            pygame.draw.rect(self.screen, C_ACCENT, (t.right + 3, name_box.y + 8, 2, name_box.h - 16))
-        if not editing:
-            self._t("클릭해서 수정", self.font_tiny, C_DIM, name_box.right - 12, name_box.centery, "midright")
+            pygame.draw.rect(self.screen, C_ACCENT, (t.right + 3, name_box.y + 9, 2, name_box.h - 18))
 
+        # 참가자: 제목 한 줄(인원 + 봇 충원) + 목록
         clients = list(self.net_mgr.clients.values())
         human_count = 1 + len(clients)
-        self._t("접속한 플레이어", self.font_menu, C_TEXT, box_x + 32, box_y + 76)
-        self._t(f"{human_count} / {self.target_player_count} 명", self.font_menu, C_GOLD, box_x + box_w - 32, box_y + 76, "topright")
+        bot_fill = max(0, self.target_player_count - human_count)
+        self._t("참가자", self.font_menu, C_TEXT, box_x + 32, box_y + 80)
+        self._t(f"{human_count} / {self.target_player_count} 명", self.font_menu, C_GOLD, box_x + 120, box_y + 80)
+        self._t(f"나머지 {bot_fill}명은 AI 봇", self.font_small, C_DIM, box_x + box_w - 32, box_y + 86, "topright")
 
-        rows = [(f"{self.player_name}", "방장 (나)", NAME_COLORS[self.name_color][1])]
+        rows = [(f"{self.player_name}", "방장", NAME_COLORS[self.name_color][1])]
         rows += [(c["name"], c["id"], NAME_COLORS[c.get("color", 0)][1]) for c in clients]
-        shown = rows[:5]
+        shown = rows[:4]
         for i, (name, tag, col) in enumerate(shown):
-            row = pygame.Rect(box_x + 28, box_y + 116 + i * 36, box_w - 56, 32)
+            row = pygame.Rect(box_x + 28, box_y + 118 + i * 34, box_w - 56, 30)
             pygame.draw.rect(self.screen, (24, 32, 54) if i else (22, 48, 44), row, border_radius=8)
             pygame.draw.circle(self.screen, col, (row.x + 16, row.centery), 5)
             self._t(name, self.font_info, col, row.x + 32, row.centery, "midleft")
             self._t(tag, self.font_small, C_DIM, row.right - 14, row.centery, "midright")
         if len(rows) > len(shown):
-            self._t(f"외 {len(rows) - len(shown)}명 더 접속 중", self.font_small, C_DIM, box_x + 32, box_y + 116 + 5 * 36 + 2)
+            self._t(f"외 {len(rows) - len(shown)}명 더 접속 중", self.font_small, C_DIM, box_x + 34, box_y + 118 + 4 * 34 + 2)
 
-        bot_fill = max(0, self.target_player_count - human_count)
-        self._t(f"부족한 {bot_fill}명은 AI 봇으로 자동 충원됩니다", self.font_small, C_ORANGE, box_x + box_w // 2, box_y + 322, "midtop")
-
-        self._t("대전 인원", self.font_mid, C_TEXT, box_x + 32, box_y + 354)
-        self._stepper(self.lobby_buttons, "", box_y + 348, box_x + 180, f"{self.target_player_count} 명", C_GOLD,
-                      [("dec_10", "-10", 48), ("dec_1", "-1", 42)], [("inc_1", "+1", 42), ("inc_10", "+10", 48)])
-
-        # 경기 규칙: 방을 닫지 않고 여기서 바로 바꿈 (참가자 대기실에도 표시됨)
+        # 경기 설정: 한 장의 카드 안에 같은 간격의 4행 (방을 닫지 않고 여기서 바로 바꿈, 참가자 대기실에도 표시됨)
+        card = pygame.Rect(box_x + 28, box_y + 272, box_w - 56, 242)
+        pygame.draw.rect(self.screen, (13, 17, 31), card, border_radius=12)
+        pygame.draw.rect(self.screen, (40, 52, 82), card, 1, border_radius=12)
+        self._t("경기 설정", self.font_small, C_DIM, card.x + 18, card.y + 12)
         cur_diff = self.settings.get("bot_difficulty", "mixed")
         cur_mode = "survival" if self.settings.get("game_mode") == "survival" else "battle"
-        self._t("봇 난이도", self.font_mid, C_TEXT, box_x + 32, box_y + 402)
-        self._stepper(self.lobby_buttons, "", box_y + 396, box_x + 180, _diff_short(cur_diff), C_ORANGE,
-                      [("diff_prev", "◀", 48)], [("diff_next", "▶", 48)])
-        self._t("D", self.font_tiny, C_DIM, box_x + box_w - 36, box_y + 413, "midright")
-        self._t("게임 모드", self.font_mid, C_TEXT, box_x + 32, box_y + 450)
-        self._stepper(self.lobby_buttons, "", box_y + 444, box_x + 180, _mode_label(cur_mode), C_GREEN,
-                      [("mode_prev", "◀", 48)], [("mode_next", "▶", 48)])
-        self._t("G", self.font_tiny, C_DIM, box_x + box_w - 36, box_y + 461, "midright")
         team_on = bool(self.settings.get("rule_team", False)) and cur_mode != "survival"
-        self._t("팀전 (2팀)", self.font_mid, C_TEXT, box_x + 32, box_y + 498)
-        trect = pygame.Rect(box_x + 180, box_y + 492, 214, 34)
+        ry = card.y + 40
+        cx0 = card.x + 170
+        self._t("대전 인원", self.font_mid, C_TEXT, card.x + 18, ry + 17, "midleft")
+        self._stepper(self.lobby_buttons, "", ry, cx0, f"{self.target_player_count} 명", C_GOLD,
+                      [("dec_10", "-10", 48), ("dec_1", "-1", 42)], [("inc_1", "+1", 42), ("inc_10", "+10", 48)])
+        self._t("봇 난이도", self.font_mid, C_TEXT, card.x + 18, ry + 44 + 17, "midleft")
+        self._stepper(self.lobby_buttons, "", ry + 44, cx0, _diff_short(cur_diff), C_ORANGE,
+                      [("diff_prev", "◀", 48)], [("diff_next", "▶", 48)])
+        self._t("게임 모드", self.font_mid, C_TEXT, card.x + 18, ry + 88 + 17, "midleft")
+        self._stepper(self.lobby_buttons, "", ry + 88, cx0, _mode_label(cur_mode), C_GREEN,
+                      [("mode_prev", "◀", 48)], [("mode_next", "▶", 48)])
+        self._t("팀전 (2팀)", self.font_mid, C_TEXT, card.x + 18, ry + 132 + 17, "midleft")
+        trect = pygame.Rect(cx0, ry + 132, 214, 34)
         self.lobby_buttons["team_toggle"] = trect
         pygame.draw.rect(self.screen, (24, 52, 46) if team_on else (14, 17, 30), trect, border_radius=8)
         pygame.draw.rect(self.screen, (90, 225, 150) if team_on else (70, 82, 112), trect, 2 if trect.collidepoint(mx, my) else 1, border_radius=8)
-        self._t("켜짐 · 같은 편은 공격 안 함" if team_on else "꺼짐", self.font_small, (120, 235, 170) if team_on else C_DIM, trect.centerx, trect.centery, "center")
-        self._t("T", self.font_tiny, C_DIM, box_x + box_w - 36, box_y + 509, "midright")
+        self._t("켜짐" if team_on else "꺼짐", self.font_small, (120, 235, 170) if team_on else C_DIM, trect.centerx, trect.centery, "center")
+        if team_on:
+            self._t("같은 편은 공격 안 함", self.font_small, C_DIM, trect.right + 14, trect.centery, "midleft")
+        self._t("단축키   D 난이도  ·  G 모드  ·  T 팀전  ·  ← → 인원", self.font_tiny, C_DIM, card.centerx, card.bottom - 15, "center")
 
         start = pygame.Rect(box_x + 28, box_y + box_h - 74, 440, 52)
         back = pygame.Rect(start.right + 14, start.y, box_w - 56 - 440 - 14, 52)

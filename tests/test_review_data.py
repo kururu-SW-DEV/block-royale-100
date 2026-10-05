@@ -208,6 +208,111 @@ def test_achievements():
     assert order == ["survival", "trend", "score", "replay", "achv", "battle"], order
 
 
+def test_reset_practice_button_and_lobby_render():
+    """연습 기록 초기화(연습 완료/타임어택/연습 별만 삭제, 전적·오늘의 도전은 유지), 버튼 → 확인 창 → 실행, 대기실 정리 화면 렌더"""
+    import tempfile
+    import challenges as CH
+    import main as M
+    from stats_manager import StatsManager
+    from gfx import CANVAS
+    st = StatsManager(os.path.join(tempfile.mkdtemp(), "stats.json"))
+    st.record_match(5, 100, 2, 10, 3, 200)
+    st.mark_challenges("practice", "", list(CH.PRACTICE_IDS)[:2])
+    st.mark_challenges("daily", "20261003", [CH.pick_daily("20261003")[0]])
+    assert st.ch()["stars"]["practice"] == 2
+    st.reset_practice()
+    c = st.ch()
+    assert c["practice"]["done"] == [] and c["practice"]["ta"] == {} and c["stars"]["practice"] == 0
+    assert c["daily"] and st.get_summary("battle")["total_games"] == 1, "경기 전적/오늘의 도전은 그대로"
+
+    app = M.BlockRoyaleApp()
+    CANVAS.attach(pygame.Surface((1366, 768)))
+    app.screen = CANVAS
+    app.renderer.screen = CANVAS
+    app.stats_mgr.mark_challenges("practice", "", list(CH.PRACTICE_IDS)[:1])
+    app.state = "RECORDS"
+    for mode in ("battle", "replay", "achv"):
+        app.records_mode = mode
+        app._render_records()
+        assert "reset_practice" in app.records_buttons
+    r = app.records_buttons["reset_practice"]
+    app._handle_records_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=r.center))
+    assert app.modal and any(b[0] == "reset_practice_ok" for b in app.modal["buttons"])
+    app._modal_choose("reset_practice_ok")
+    assert app.stats_mgr.ch()["practice"]["done"] == []
+
+    # 방 만들기 대기실: 참가자가 많아도 오류 없이 그려지고, 버튼 id는 그대로
+    app.state = "HOST_LOBBY"
+    app.net_mgr.clients = {(f"192.168.0.{i}", 19999): {"name": f"P{i}", "id": f"P{i}", "color": i % 10} for i in range(21, 28)}
+    for _ in range(3):
+        app._render_host_lobby()
+    for bid in ("start_game", "back_menu", "dec_10", "inc_10", "diff_prev", "mode_next", "team_toggle"):
+        assert bid in app.lobby_buttons, bid
+    app.net_mgr.clients = {}
+
+
+def test_replay_ui_mouse_controls():
+    """리플레이 화면: 목록의 재생 버튼/행 클릭, 재생 화면의 마우스 버튼(처음·±5초·재생·속도·연습·목록으로)과 진행 바 이동"""
+    import main as M
+    from gfx import CANVAS
+    app = M.BlockRoyaleApp()
+    CANVAS.attach(pygame.Surface((1366, 768)))
+    app.screen = CANVAS
+    app.renderer.screen = CANVAS
+    evs = []
+    t = 0.0
+    for i in range(12):
+        t += 2.0
+        evs.append({"k": "L", "t": t, "p": "O", "c": [(4, 19 - 2 * i % 18), (5, 19 - 2 * i % 18), (4, 18 - 2 * i % 18), (5, 18 - 2 * i % 18)], "r": [], "s": 100 * i, "cp": "T", "nx": "IOT", "hd": "S", "ig": 0})
+    evs.append({"k": "G", "t": 20.0, "n": 2, "h": [3, 4]})
+    data = {"date": "10-05 13:26", "rank": 3, "total": 100, "kos": 2, "score": 1100, "secs": 26, "events": evs, "mode": "battle"}
+    app.state = "RECORDS"
+    app.records_mode = "replay"
+    app.replay_list = [dict(data, rank=r) for r in (1, 3)]
+    app.replay_sel = 0
+    app.replay_view = None
+    app._render_records()
+    assert set(app.replay_play_btns) == {0, 1}
+    down = lambda pos: app._handle_records_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=pos))
+    down(app.replay_play_btns[1].center)
+    assert app.replay_view is not None and app.replay_sel == 1
+    app._render_records()
+    for bid in ("back", "first", "b5", "f5", "play", "practice", "spd_0.5", "spd_1", "spd_2", "spd_4", "spd_8"):
+        assert bid in app.replay_btns, bid
+    v = app.replay_view
+    assert app.replay_bar is not None
+    # 진행 바 클릭 이동 + 드래그 + 놓기
+    bar = app.replay_bar
+    down((bar.x + bar.w // 2, bar.centery))
+    assert abs(v.t - v.duration / 2) < 1.0 and app._replay_scrub
+    app._handle_records_event(pygame.event.Event(pygame.MOUSEMOTION, pos=(bar.right, bar.centery), rel=(0, 0), buttons=(1, 0, 0)))
+    assert v.t >= v.duration - 0.01
+    app._handle_records_event(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=(bar.right, bar.centery)))
+    assert not app._replay_scrub
+    # 버튼들
+    app._render_records()
+    down(app.replay_btns["first"].center)
+    assert v.t == 0.0
+    app._render_records()
+    down(app.replay_btns["f5"].center)
+    assert abs(v.t - 5.0) < 1e-6
+    app._render_records()
+    down(app.replay_btns["b5"].center)
+    assert v.t == 0.0
+    app._render_records()
+    down(app.replay_btns["spd_4"].center)
+    assert v.speed == 4.0
+    down(app.replay_btns["play"].center)
+    assert v.paused
+    app._render_records()
+    assert [m[1] for m in app._replay_marks(v)] == ["G"]
+    down(app.replay_btns["back"].center)
+    assert app.replay_view is None
+    # 비어 있는 목록도 오류 없이
+    app.replay_list = []
+    app._render_records()
+
+
 if __name__ == "__main__":
     pygame.init()
     keep = {}
