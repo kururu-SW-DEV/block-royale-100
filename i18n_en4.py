@@ -113,7 +113,7 @@ TEMPLATES = {
     "접속 주소  {}:{}": "Address  {}:{}",
     "부족한 {}명은 AI 봇으로 자동 충원됩니다": "{} empty seats will be filled by AI bots",
     "나머지 {}명은 AI 봇": "{} more seats are AI bots",
-    "{}위": "#{}", "재생 ×{}": "Playing ×{}",
+    "{#}위": "#{}", "재생 ×{}": "Playing ×{}",
     "저장 {}판  ·  최고 {}위": "{} saved  ·  best #{}",
     "저장 {}판  ·  최고 {}위  ·  우승 {}회": "{} saved  ·  best #{}  ·  {} wins",
     "접속 대상  {}:{}   (포트를 생략하면 {})": "Connecting to  {}:{}   (default port {} if omitted)",

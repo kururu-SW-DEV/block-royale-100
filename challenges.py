@@ -13,7 +13,6 @@ pygame을 쓰지 않는 순수 파이썬 모듈이라 단위 테스트가 쉽다
 import random
 from collections import deque
 
-POOL_VERSION = 1
 TOP_INIT = 10 ** 6           # "top" 지표의 초기값 (내가 살아 있는 동안 본 가장 적은 생존자 수)
 
 
@@ -142,10 +141,6 @@ WEEKLY_BY_ID = {g["id"]: g for rule in WEEKLY_GOALS.values() for g in rule}
 ALL_GOALS = {g["id"]: g for g in PRACTICE_GOALS + DAILY_POOL + list(WEEKLY_BY_ID.values())}
 
 
-def known_ids():
-    return set(ALL_GOALS)
-
-
 def pick_daily(date_key):
     """날짜 키('YYYYMMDD')로 정해지는 오늘의 목표 id 3개 [★1, ★2, ★3]. 같은 날은 항상 같은 결과.
     범주(cat)가 겹치지 않게 뽑고 순위 목표는 하루 최대 1개. 전용 Random 인스턴스를 쓰므로 전역 random(봇 구성)은 건드리지 않는다."""
@@ -157,10 +152,6 @@ def pick_daily(date_key):
         if len(set(cats)) == 3:
             return [p["id"] for p in picks]
     return [by_tier[t][0]["id"] for t in (1, 2, 3)]      # (사실상 도달하지 않음) 안전한 기본값
-
-
-def weekly_goal_ids(rule_id):
-    return [g["id"] for g in WEEKLY_GOALS.get(rule_id, [])]
 
 
 class ChallengeTracker:

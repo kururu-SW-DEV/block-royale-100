@@ -14,7 +14,7 @@ LANGS = ("ko", "en")
 _lang = "ko"
 _cache = {}
 _exact = {}
-_templates = []                 # [(컴파일된 정규식, 영어 틀)]
+_templates = []                 # [(컴파일된 정규식, 영어 틀, 고정 글자 수, 자리표시자 수)]
 _loaded = False
 
 _SEPARATORS = ("  ·  ", " · ", "  /  ", " / ", ", ")
@@ -35,8 +35,11 @@ def _load():
     _exact.update(exact)
     for ko, en in templates.items():                                    # '{}' = 아무 글자, '{#}' = 숫자(쉼표 포함)만
         rx = "".join("(.+?)" if tok == "{}" else (r"(\d[\d,]*)" if tok == "{#}" else re.escape(tok)) for tok in re.split(r"(\{\}|\{#\})", ko))
-        _templates.append((re.compile("^" + rx + "$", re.S), en))
-    _templates.sort(key=lambda t: -len(t[0].pattern))                 # 더 구체적인(긴) 틀을 먼저
+        literal = len(re.sub(r"\{\}|\{#\}", "", ko))                     # 틀 안의 고정 글자 수
+        _templates.append((re.compile("^" + rx + "$", re.S), en, literal, ko.count("{")))
+    # 더 구체적인 틀을 먼저: 고정 글자가 많은 순 (정규식 문자열 길이로 정하면 '{#}'가 길게 변환돼 "{} {#}초"가 "최고 {}초"보다 앞서 "최고 120초"가 "최고 120s"로 반쯤만 번역됨),
+    # 같으면 자리표시자가 적은 순
+    _templates.sort(key=lambda t: (-t[2], t[3]))
 
 
 def set_language(lang):
@@ -60,7 +63,7 @@ def _translate(text):
         lead = text[:len(text) - len(text.lstrip())]
         tail = text[len(text.rstrip()):]
         return lead + _exact[stripped] + tail
-    for rx, en in _templates:
+    for rx, en, _lit, _n in _templates:
         m = rx.match(text)
         if m:
             groups = [translate_piece(g) for g in m.groups()]

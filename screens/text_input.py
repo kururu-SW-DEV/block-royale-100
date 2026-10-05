@@ -23,6 +23,8 @@ class TextInputMixin:
 
     def _begin_text(self, field):
         self.text_focus = field
+        self._text_backup = {"room_name": getattr(self, "room_name_input", ""), "player_name": getattr(self, "player_name", ""),
+                             "initials": getattr(self, "initials_input", "")}.get(field)      # ESC로 취소할 때 되돌릴 값
         if field == "player_name":
             self.player_name_input = self.player_name
         elif field == "initials":
@@ -40,20 +42,31 @@ class TextInputMixin:
             pass
 
     def _end_text(self, commit=True):
+        """입력 끝내기. commit=False(ESC 취소 / 화면 이동 / 초기화)면 입력한 내용을 저장하지 않고 입력 전 값으로 되돌림"""
         if self.text_focus is None:
             return
-        if self.text_focus == "room_name":
+        if not commit:
+            back = getattr(self, "_text_backup", None)
+            if self.text_focus == "room_name" and back is not None:
+                self.room_name_input = back
+                if self.net_mgr.mode == "HOST":
+                    self.net_mgr.room_settings["room_name"] = back.strip() or self._default_room_name()
+            elif self.text_focus == "player_name" and back is not None:
+                self.player_name_input = back
+            elif self.text_focus == "initials" and back is not None:
+                self.initials_input = back
+        elif self.text_focus == "room_name":
             name = (self.room_name_input or "").strip()[:self.TEXT_LIMITS["room_name"]] or self._default_room_name()
             self.room_name_input = name
             if self.net_mgr.mode == "HOST":
                 self.net_mgr.room_settings["room_name"] = name
             self.settings.set("room_name", name)
-        if self.text_focus == "player_name":
+        elif self.text_focus == "player_name":
             name = "".join(ch for ch in (self.player_name_input or "") if ch.isprintable()).strip()[:16] or "Player_1"
             self.player_name = name
             self.settings.set("player_name", "" if name == "Player_1" else name)
             self._sync_profile()
-        if self.text_focus == "initials":
+        elif self.text_focus == "initials":
             ini = "".join(ch for ch in (getattr(self, "initials_input", "") or "") if ch.isalnum()).upper()[:3]
             if ini:
                 self.settings.set("initials", "" if ini == self._auto_initials() else ini)
@@ -117,7 +130,7 @@ class TextInputMixin:
                     else:
                         self._end_text()
                 elif event.key == pygame.K_ESCAPE:
-                    self._end_text()
+                    self._end_text(commit=False)
                 elif event.key == pygame.K_BACKSPACE and not self.chat_comp:
                     self._text_set(field, self._text_get(field)[:-1])
                 return True

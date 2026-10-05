@@ -6,7 +6,7 @@ Block Royale 100 - Humanlike AI Bot Engine
 import random
 import time
 from block_engine import BlockEngine
-from config import BOARD_WIDTH, BOARD_HEIGHT, TETROMINOES
+from config import BOARD_WIDTH, BOARD_HEIGHT, SPAWN_Y, TETROMINOES
 import bot_brain
 import bot_pool
 
@@ -106,8 +106,6 @@ class AIBot:
                 return None                                   # 이번 프레임 예산이 없으면 잠깐 기다림
             depth = 1                                         # 너무 오래 기다린 봇은 예산과 상관없이 가볍게(깊이 1) 계산: 멈춰 있지 않게
             left = 1e9
-        if depth > self.depth:
-            depth = self.depth
         while depth > 1 and _avg_cost[depth] * 0.6 > left:
             depth -= 1                                    # 이번 프레임 예산이 모자라면 얕게 (보드가 위험하면 아래에서 다시 깊게)
         e = self.engine
@@ -240,10 +238,10 @@ class AIBot:
             max_px = max(x for x, y in shape)
             
             for px in range(-min_px, BOARD_WIDTH - max_px):
-                if self.engine._check_collision(px, 0, rot):
+                if self.engine._check_collision(px, SPAWN_Y, rot):         # 실제 스폰 높이(-1)에서 시작: 0에서 시작하면 스택이 위쪽 두 줄에 닿았을 때 놓을 수 있는 자리를 모두 버려 바로 탈락함
                     continue
                     
-                py = 0
+                py = SPAWN_Y
                 while not self.engine._check_collision(px, py + 1, rot):
                     py += 1
                     

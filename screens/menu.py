@@ -272,15 +272,6 @@ class MenuMixin:
             text = text[:-1]
         return text + "..."
 
-    def _menu_glow(self, rect, accent, t):
-        """포커스 카드 바깥의 은은한 빛: 크기/색별로 한 번만 만든 오버레이의 투명도만 조절"""
-        if t <= 0.03:
-            return
-        w, h = rect.w, rect.h
-
-        def build(surf):
-            pygame.draw.rect(surf, (*accent, 255), (0, 0, w + 16, h + 16), border_radius=16)
-        self.renderer._blit_overlay(("mcglow", w, h, accent), (w + 16, h + 16), build, (rect.x - 8, rect.y - 8), alpha=int(70 * t))
 
     def _menu_focus_ring(self, rect, accent, bg, radius):
         """(쓰지 않음) 예전에는 키보드로 이동했을 때 카드 바깥에 링을 그렸으나, 카드 테두리와 겹쳐 이중 테두리로 보였다. 포커스는 카드/항목 자체의 색과 강조선·밑줄로 표시한다"""

@@ -5,7 +5,6 @@ BlockRoyaleApp(main.py)이 상속하는 믹스인: 메서드 본문은 원래 ma
 
 from app_common import C_ACCENT, C_DIM, C_PANEL_BORDER, C_TEXT, NAME_COLORS, SCREEN_WIDTH, _mix, pygame, time
 from gfx import HiFont
-from i18n import tr as _tr
 
 
 class WidgetsMixin:
@@ -56,11 +55,6 @@ class WidgetsMixin:
             self.screen.blit(ls, (kr.right + 6, kr.centery - ls.get_height() // 2))
             x += w + gap
 
-    def _pill_btn(self, rect, label, hover, accent=C_ACCENT):
-        rect = pygame.Rect(rect)
-        pygame.draw.rect(self.screen, (32, 40, 66) if hover else (22, 28, 48), rect, border_radius=rect.h // 2)
-        pygame.draw.rect(self.screen, accent if hover else (56, 70, 108), rect, 1, border_radius=rect.h // 2)
-        self._t(label, self.font_small, C_TEXT if hover else (190, 202, 228), rect.centerx, rect.centery, "center")
 
     def _draw_color_swatches(self, x, y, size=22, gap=6):
         """이름 색 선택 칸: 동그란 색 견본 (선택된 색은 흰 테두리)"""
@@ -99,7 +93,6 @@ class WidgetsMixin:
 
         area = pygame.Rect(rect.x + 16, rect.y + 132, rect.w - 32, rect.h - 132 - 70)
         line_h = 20
-        my_id = self.net_mgr.my_player_id or ""
         lines = r.chat_lines(self.net_mgr.chat_log[-40:], self.font_small, area.w - 4)
         lines = lines[-max(1, area.h // line_h):]
         if not lines:
@@ -123,22 +116,6 @@ class WidgetsMixin:
             if focused and int(time.time() * 2) % 2 == 0:
                 pygame.draw.rect(self.screen, C_ACCENT, (box.x + 12, box.y + 9, 2, box.h - 18))
 
-    def _mode_card(self, btn_id, rect, title, desc, key, accent, mx, my):
-        rect = pygame.Rect(rect)
-        self.menu_buttons[btn_id] = rect
-        hover = rect.collidepoint(mx, my) or (self.MENU_FOCUS_ORDER[self.menu_focus] == btn_id)
-        if hover:
-            glow = pygame.Surface((rect.w + 16, rect.h + 16), pygame.SRCALPHA)
-            pygame.draw.rect(glow, (*accent, 40), glow.get_rect(), border_radius=16)
-            self.screen.blit(glow, (rect.x - 8, rect.y - 8))
-        pygame.draw.rect(self.screen, _mix((22, 28, 48), accent, 0.16 if hover else 0.05), rect, border_radius=12)
-        pygame.draw.rect(self.screen, accent if hover else _mix(accent, (22, 28, 48), 0.6), rect, 2 if hover else 1, border_radius=12)
-        pygame.draw.rect(self.screen, accent, (rect.x + 14, rect.y + 16, 5, rect.h - 32), border_radius=3)
-        self._t(title, self.font_menu, C_TEXT, rect.centerx, rect.y + 13, "midtop")
-        self._t(desc, self.font_small, C_DIM, rect.centerx, rect.y + 44, "midtop")
-        kr = pygame.Rect(rect.right - 54, rect.centery - 13, 34, 26)
-        pygame.draw.rect(self.screen, accent, kr, border_radius=7)
-        self._t(key, self.font_mid, (12, 16, 28), kr.centerx, kr.centery, "center")
 
     def _stepper(self, buttons, prefix, y, x0, value_text, value_color, minus, plus):
         """[-10][-1] (값) [+1][+10] 형태의 증감 컨트롤. minus/plus: (id, 라벨, 폭) 리스트"""

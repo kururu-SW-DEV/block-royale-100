@@ -3,7 +3,7 @@ Block Royale 100 - 전적 기록실 화면
 BlockRoyaleApp(main.py)이 상속하는 믹스인: 메서드 본문은 원래 main.py에 있던 그대로이며 self로 앱 상태를 공유함
 """
 
-from stats_manager import SIZE_BUCKETS, SIZE_BUCKET_IDS, ACHIEVEMENTS, ACH_CATEGORIES, ACH_CATEGORY
+from stats_manager import SIZE_BUCKETS, ACHIEVEMENTS, ACH_CATEGORIES, ACH_CATEGORY
 from app_common import CANVAS, BOT_DIFFICULTY_LABELS, C_ACCENT, C_DIM, C_GOLD, C_GREEN, C_ORANGE, C_TEXT, SCREEN_WIDTH, _mix, pygame
 
 

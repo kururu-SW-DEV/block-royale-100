@@ -427,6 +427,7 @@ class BlockEngine:
         # (한 번에 올라오는 줄 수는 제한하고, 초과분은 다음 락다운까지 대기열에 유지)
         # (차징이 끝난 묶음만 올라옴. 묶음마다 구멍 위치가 따로 정해짐)
         if cleared_lines == 0 and self._garbage and not self.game_over:
+            self.current_piece = None                            # 방금 고정한 블록은 이미 보드에 있음: 남겨 두면 _push_garbage가 그 자리를 '조작 중 블록'으로 보고 충돌 보정을 해 억울하게 탈락시킴
             for group in self._take_garbage(MAX_GARBAGE_PER_LOCK, ready_only=True):
                 self._push_garbage(group)
                 if self.game_over:

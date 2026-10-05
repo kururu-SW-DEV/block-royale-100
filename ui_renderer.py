@@ -1849,7 +1849,6 @@ class UIRenderer:
                     pygame.draw.rect(self.screen, PIECE_COLORS.get(piece, (150, 150, 150)), (bx + x * cs, by + y * cs, cs - 1, cs - 1))
         me = int(match.local_engine.score)
         diff = me - int(g.score)
-        tx = bx + cs * 10 + 10
         self._draw_text(f"{g.score:,}" if g.score < 100000 else f"{g.score // 1000}k", self.font_tiny, C_TEXT, rect.right - 8, rect.y + 28, "topright")
         self._draw_text(("+" if diff >= 0 else "-") + (f"{abs(diff):,}" if abs(diff) < 100000 else f"{abs(diff) // 1000}k"), self.font_small,
                         C_GREEN if diff >= 0 else C_DANGER, rect.right - 8, rect.y + 48, "topright")
@@ -2243,7 +2242,6 @@ class UIRenderer:
         slot_w = total_w / cols
         slot_h = total_h / max(1, rows)
         bh = bw * 2
-        cell_pixel = bw / 10.0
         show_names = bw >= 46
 
         spectating = bool(getattr(match, 'is_spectating', False))
@@ -3193,7 +3191,7 @@ class UIRenderer:
         for vi, r in enumerate(shown):
             # 아래쪽 행부터 차례로 등장 (1위가 마지막으로 나타나 강조됨)
             delay = 0.35 + (len(shown) - 1 - vi) * 0.06
-            k = 1.0 if intro_done and self._standings_scroll_seen(start) else self._ease_out((t - delay) / 0.4)
+            k = 1.0 if intro_done else self._ease_out((t - delay) / 0.4)
             if k <= 0:
                 continue
             y = top + vi * row_h
@@ -3217,11 +3215,10 @@ class UIRenderer:
             if frac > 0:
                 CANVAS.alpha_rect((rr.x + 10, rr.bottom - 5, int((rr.w - 20) * frac * 0.999) + 1, 3), (*(C_GOLD if is_win else C_ACCENT), int(150 * k)), radius=2)
             col = C_GOLD if is_win else (C_ACCENT if is_me else C_TEXT)
-            cy = rr.centery - 9 + 0
             rank_txt = f"{r['rank']}" if r["rank"] > 0 else "-"
             self._fade_text(rank_txt, self.font_hud, C_GOLD if is_win else col, bx + 46 + xo, rr.centery, a, "center")
-            nm = r["name"] + ("  (나)" if is_me else "")
-            self._fade_text(nm[:22], self.font_mid, col, bx + 96 + xo, rr.centery, a, "midleft")
+            nm = (r["name"][:16] + "  (나)") if is_me else r["name"][:22]
+            self._fade_text(nm, self.font_mid, col, bx + 96 + xo, rr.centery, a, "midleft")
             self._fade_text(str(int(r["ko"] * count)), self.font_mid, col, bx + 520 + xo, rr.centery, a, "midright")
             self._fade_text(str(int(r["lines"] * count)), self.font_mid, col, bx + 610 + xo, rr.centery, a, "midright")
             self._fade_text(f"{r['apm'] * count:.1f}", self.font_mid, C_GOLD if not is_win else col, bx + 706 + xo, rr.centery, a, "midright")
@@ -3244,7 +3241,7 @@ class UIRenderer:
             CANVAS.alpha_rect(rr, (22, 50, 66, 240), radius=9)
             CANVAS.alpha_rect(rr, (100, 220, 255, 220), width=1, radius=9)
             self._draw_text(f"{me['rank']}", self.font_hud, C_ACCENT, bx + 46, rr.centery, "center")
-            self._draw_text(f"{me['name']}  (나)"[:22], self.font_mid, C_ACCENT, bx + 96, rr.centery, "midleft")
+            self._draw_text(f"{me['name'][:16]}  (나)", self.font_mid, C_ACCENT, bx + 96, rr.centery, "midleft")
             for val, cx_ in ((str(me["ko"]), 520), (str(me["lines"]), 610), (f"{me['apm']:.1f}", 706), (f"{me['lpm']:.1f}", 800),
                              (f"{me['score']:,}", 920), (f"{int(me['time']) // 60}:{int(me['time']) % 60:02d}", 1030)):
                 self._draw_text(val, self.font_mid, C_ACCENT, bx + cx_, rr.centery, "midright")
@@ -3392,7 +3389,6 @@ class UIRenderer:
         y = 144 + 76 + 12                                           # 통계 카드 아래
         rw, chips = self._result_summary_items(match)
         L["rw"], L["chips"] = rw, chips
-        score = rw.get("score")
         xp = rw.get("xp") or {}
         tier, _, pct = match.get_badge_info()
         badge_txt = f"배지 Lv.{tier} · 공격력 +{pct}" if tier > 0 else "배지 Lv.0"
@@ -3617,9 +3613,6 @@ class UIRenderer:
                 out.append((ln, col))
         return out[:6]
 
-    def _standings_scroll_seen(self, start):
-        """스크롤로 새로 보이게 된 행은 등장 애니메이션 없이 바로 표시"""
-        return True
 
     def _draw_timeline_graph(self, match, rect, legend_right=None, legend_y=None):
         """경기 흐름 미니 그래프: 주황=내 스택 높이(0~20줄), 파랑=생존자 비율. 범례는 그래프 안 위쪽 띠에 한 줄로 (다른 글자와 겹치지 않음). 점이 5개 미만이면 그리지 않음"""

@@ -1,4 +1,4 @@
-"""
+r"""
 Block Royale 100 - 오류 기록
 창이 콘솔 없이 실행되는 exe에서도 예기치 않은 오류의 원인을 추적할 수 있도록, 처리되지 않은 예외를 error.log에 남김.
 저장 위치: 소스 실행은 프로젝트 폴더, exe는 %APPDATA%\BlockRoyale100 (settings.json 등과 같은 곳)

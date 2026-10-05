@@ -285,6 +285,8 @@ class NetworkManager:
         self.chat_log.clear()
         self.chat_seq = 0
         self.left_events.clear()
+        self.takeover_events.clear()           # 이전 방/경기의 봇 인계 대기열과 인계 기록이 새 방에 남지 않게
+        self.taken_tokens.clear()
         self.game_started = False
         self.room_settings = {
             "room_name": room_name,
@@ -607,6 +609,8 @@ class NetworkManager:
         self.game_started = False
         self.remote_players_state.clear()       # 지난 경기의 탈락 상태가 다음 경기에 남지 않도록
         self.incoming_attacks.clear()
+        self.takeover_events.clear()
+        self.taken_tokens.clear()
         now = time.time()
         for info in list(self.clients.values()):
             info["state"] = {}

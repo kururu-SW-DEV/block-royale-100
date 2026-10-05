@@ -21,7 +21,6 @@ LADDER_NAMES = {"easy": "쉬움", "normal": "보통", "hard": "어려움", "mast
 # 경기 규모별 구분: 2인 대전 1위와 100인 대전 1위는 같은 성적이 아니므로 최고 순위/기록 갱신/다음 목표는 규모별로 비교
 SIZE_BUCKETS = (("small", 2, 10, "소규모 2~10인"), ("mid", 11, 49, "중규모 11~49인"), ("large", 50, 100, "대규모 50~100인"))
 SIZE_BUCKET_IDS = tuple(b[0] for b in SIZE_BUCKETS)
-SIZE_BUCKET_LABELS = {b[0]: b[3] for b in SIZE_BUCKETS}
 
 
 # ---- 경험치와 레벨 (v1.1.6): 져도 매 판 조금씩 오르는 숫자. 레벨은 해금 스킨(불씨 Lv.5, 프리즘 Lv.10)으로 이어짐
@@ -479,12 +478,6 @@ class StatsManager:
             del c["daily"][old]
         return ids
 
-    def weekly_goal_state(self, week_key, rule_id):
-        c = self.ch()
-        rec = c["weekly"].setdefault(week_key, {"rule": rule_id, "done": []})
-        for old in sorted(c["weekly"])[:-20]:
-            del c["weekly"][old]
-        return rec
 
     def level(self):
         """(레벨, 이번 레벨에서 쌓은 경험치, 필요 경험치)"""

@@ -1416,9 +1416,9 @@ class SoundManager:
         """효과음 음량 설정 (0.0 ~ 1.0)"""
         self.sfx_volume = max(0.0, min(1.0, float(volume)))
         eff_vol = self.sfx_volume if (self.enabled and self.sfx_enabled) else 0.0
-        for snd in self.sounds.values():
+        for name, snd in self.sounds.items():
             try:
-                snd.set_volume(eff_vol)
+                snd.set_volume(1.0 if name == 'combo_layer' else eff_vol)      # 콤보 층은 BGM의 일부(채널 볼륨 _layer_vol로 조절): 효과음을 꺼도/줄여도 같이 죽지 않게
             except Exception:
                 pass
 

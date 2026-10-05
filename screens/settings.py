@@ -493,6 +493,14 @@ class SettingsMixin:
             self.settings.save()
             self.state = self.previous_state
 
+    def _sync_language_and_audio(self):
+        """초기화로 바뀐 언어/소리 설정을 실행 중인 상태(번역·사운드 매니저)에 즉시 반영"""
+        import i18n
+        i18n.set_language(self.settings.get("language", "ko"))
+        self.renderer.clear_visual_caches()                              # 번역된 글자 이미지 캐시를 비워 새 언어로 다시 그림
+        self.sound_mgr.set_warn_scale(self.settings.get("warn_volume", 100) / 100.0)
+        self.sound_mgr.set_announcer(self.settings.get("announcer", False))
+
     def _reset_current_tab(self):
         """현재 탭의 설정만 기본값으로 되돌림"""
         tab = self.settings_tab
@@ -502,6 +510,7 @@ class SettingsMixin:
             self.target_player_count = self.settings.get("target_player_count")
             self.bot_difficulty = self.settings.get("bot_difficulty")
             self.apply_gameplay_options()
+            self._sync_language_and_audio()
         elif tab == "general":
             self.renderer.mini_detailed = self.settings.get("mini_detail") != "simple"
             self.renderer.mini_focus = self.settings.get("mini_detail") == "focus"
@@ -513,9 +522,10 @@ class SettingsMixin:
             self.sound_mgr.set_sfx_enabled(self.settings.get("sfx_enabled"))
             self.sound_mgr.set_bgm_volume(self.settings.get("bgm_volume") / 100.0)
             self.sound_mgr.set_sfx_volume(self.settings.get("sfx_volume") / 100.0)
+            self._sync_language_and_audio()
         elif tab == "react":
             self.apply_handling()
-        else:
+        elif tab == "keys":                                              # 조작키는 '조작' 탭에서만 초기화 (규칙/기타 탭에서 눌러도 키 설정이 날아가지 않게)
             self.settings.reset_keys_to_default()
             self.apply_handling()
             self.rebinding_action = None
@@ -537,6 +547,13 @@ class SettingsMixin:
         self.sound_mgr.set_sfx_enabled(self.settings.get("sfx_enabled"))
         self.sound_mgr.set_bgm_volume(self.settings.get("bgm_volume") / 100.0)
         self.sound_mgr.set_sfx_volume(self.settings.get("sfx_volume") / 100.0)
+        self._sync_language_and_audio()
+        self.target_player_count = self.settings.get("target_player_count")
+        try:
+            self.name_color = max(0, min(len(NAME_COLORS) - 1, int(self.settings.get("name_color", 0))))
+        except (TypeError, ValueError):
+            self.name_color = 0
+        self.net_mgr.my_color = self.name_color
 
     def _update_settings(self, dt):
         self.menu_bg.update(dt)

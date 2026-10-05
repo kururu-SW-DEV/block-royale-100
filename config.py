@@ -2,7 +2,7 @@
 Block Royale 100 - Configuration & Constants
 """
 
-APP_VERSION = "1.4.6"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
+APP_VERSION = "1.4.7"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
 
 # 화면 해상도 설정
 SCREEN_WIDTH = 1366
@@ -132,8 +132,6 @@ NAME_COLOR_COUNT = len(NAME_COLORS)
 # 네트워크 기본 설정
 DEFAULT_UDP_PORT = 19999
 DISCOVERY_BROADCAST_PORT = 19998
-BROADCAST_INTERVAL = 1.0  # 초
-NETWORK_SYNC_RATE = 15     # 초당 상태 동기화 패킷 전송 횟수 (15Hz)
 
 # 배틀로얄 설정
 MIN_PLAYERS = 2

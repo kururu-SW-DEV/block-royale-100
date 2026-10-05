@@ -6,7 +6,6 @@ Block Royale 100 - AI 두뇌 (탐색형 배치 계획기)
  - T-스핀: T 블록은 실제 SRS 회전/킥을 따라 도달 가능한 자리를 너비 우선 탐색으로 찾아 T-스핀 클리어를 계획
 """
 
-import time
 from collections import deque
 
 from config import (
@@ -154,8 +153,10 @@ def _tspin_kind(rows, x, y, rot, flag):
     cx, cy = x + 1, y + 1
 
     def occ(px, py):
-        if px < 0 or px >= W or py >= H or py < 0:
+        if px < 0 or px >= W or py >= H:
             return True
+        if py < 0:
+            return False                                         # 위쪽 숨김 구역은 비어 있음 (엔진의 T-스핀 판정과 같은 규칙)
         return (rows[py] >> px) & 1 == 1
 
     tl, tr = occ(cx - 1, cy - 1), occ(cx + 1, cy - 1)
@@ -456,13 +457,3 @@ def plan_rows(rows, cur, hold, queue, can_hold, combo, b2b, incoming, depth=1, b
     results.sort(key=lambda t: t[0], reverse=True)
     return results
 
-
-class Timer:
-    """탐색에 걸린 시간을 재서 공유 예산에서 뺌"""
-    def __enter__(self):
-        self.t = time.perf_counter()
-        return self
-
-    def __exit__(self, *a):
-        self.dt = time.perf_counter() - self.t
-        spend(self.dt)

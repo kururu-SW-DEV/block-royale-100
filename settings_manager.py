@@ -232,7 +232,8 @@ def _valid_setting(key, value):
         elif key == "target_player_count":
             value = max(2, min(100, value))
         elif key == "name_color":
-            value = max(0, value)
+            from config import NAME_COLORS
+            value = max(0, min(len(NAME_COLORS) - 1, value))
         elif key in HANDLING_LIMITS:
             lo, hi, _step = HANDLING_LIMITS[key]
             value = max(lo, min(hi, value))
@@ -259,6 +260,10 @@ def _valid_setting(key, value):
         if key == "rule_garbage" and value not in ("half", "normal", "heavy"):
             return False, None
         if key == "rule_gravity" and value not in ("slow", "normal", "fast"):
+            return False, None
+        if key == "mini_detail" and value not in ("detailed", "focus", "simple"):
+            return False, None
+        if key == "key_preset" and value not in ("arcade", "wasd", "custom"):
             return False, None
         if key == "initials":
             value = "".join(ch for ch in value if ch.isalnum())[:3].upper()

@@ -62,7 +62,22 @@ def test_gamepad_mapper():
     other = E(pygame.KEYDOWN, key=pygame.K_q, mod=0, unicode="q")
     assert gm.translate([other], True) == [other], "다른 이벤트는 그대로"
     on[0] = False
+    out = gm.translate([hat((-1, 0)), other], True)             # 끄는 순간: 눌려 있던 입력(위에서 누른 Enter/Esc)은 KEYUP으로 떼 주고, 새 패드 입력은 버림
+    assert other in out and all(e.type == pygame.KEYUP for e in out if e is not other), "꺼져 있으면 패드 입력을 버림(누른 키는 뗌)"
     assert gm.translate([hat((-1, 0)), other], True) == [other], "꺼져 있으면 패드 입력을 버림"
+    # 누른 채로 패드를 끄거나 뽑으면 키가 눌린 채 남지 않음
+    on[0] = True
+    down = gm.translate([hat((-1, 0))], True)
+    assert [e.type for e in down] == [pygame.KEYDOWN]
+    on[0] = False
+    ups = gm.translate([], True)
+    assert [(e.type, e.key) for e in ups] == [(pygame.KEYUP, down[0].key)], "끄면 눌린 방향키를 뗌"
+    on[0] = True
+    down = gm.translate([hat((1, 0))], True)
+    assert [e.type for e in down] == [pygame.KEYDOWN]
+    removed = E(pygame.JOYDEVICEREMOVED, instance_id=0)
+    ups = gm.translate([removed], True)
+    assert [(e.type, e.key) for e in ups] == [(pygame.KEYUP, down[0].key)], "패드를 뽑으면 눌린 방향키를 뗌"
     print("  OK 게임패드 변환")
 
 

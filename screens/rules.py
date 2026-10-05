@@ -8,7 +8,6 @@ BlockRoyaleApp(main.py)이 상속하는 믹스인.
 from app_common import C_ACCENT, C_DIM, C_GOLD, C_GREEN, C_ORANGE, C_TEXT, SCREEN_HEIGHT, SCREEN_WIDTH, pygame
 import config
 from battle_royale import BattleRoyaleMatch
-from ui_renderer import TARGET_MODE_HELP
 
 
 def rules_card_data(match=None):

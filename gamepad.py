@@ -109,6 +109,25 @@ class GamepadMapper:
         key = self._sent.pop(token, None)
         return None if key is None else pygame.event.Event(pygame.KEYUP, key=key, mod=0, scancode=0)
 
+    @staticmethod
+    def _token_inst(token):
+        head = token[0]
+        return head[0] if isinstance(head, tuple) else head           # 방향 토큰은 ((장치, 'hat'|'stick'), 방향), 버튼 토큰은 (장치, 종류, 번호)
+
+    def release_all(self, inst=None):
+        """눌린 채로 남은 입력(패드가 뽑히거나 패드 입력을 껐을 때)의 KEYUP을 만들고 눌림 상태를 비움. inst를 주면 그 장치만"""
+        out = []
+        for token in [t for t in self._sent if inst is None or self._token_inst(t) == inst]:
+            ev = self._release(token)
+            if ev is not None:
+                out.append(ev)
+        for store in (self._dirs, self._axes):
+            for k in [k for k in store if inst is None or k[0] == inst]:
+                store.pop(k, None)
+        for k in [k for k in self._dpad if inst is None or k == inst]:
+            self._dpad.pop(k, None)
+        return out
+
     def _set_dirs(self, kind_key, new_dirs, in_game):
         old = self._dirs.get(kind_key, set())
         out = [self._release((kind_key, d)) for d in sorted(old - new_dirs)]
@@ -165,11 +184,13 @@ class GamepadMapper:
     def translate(self, events, in_game):
         """이벤트 목록을 받아 패드 이벤트는 키 이벤트로 바꾼 새 목록을 돌려줌 (나머지는 그대로)"""
         if not self.enabled():
-            return [e for e in events if e.type not in PAD_EVENT_TYPES]
+            return self.release_all() + [e for e in events if e.type not in PAD_EVENT_TYPES]      # 끄는 순간 눌려 있던 입력은 떼 줌 (안 그러면 블록이 계속 한쪽으로 움직임)
         out = []
         for e in events:
             if e.type in (pygame.JOYDEVICEADDED, pygame.JOYDEVICEREMOVED):
                 self.on_device_event(e)
+                if e.type == pygame.JOYDEVICEREMOVED and getattr(e, "instance_id", None) is not None:
+                    out.extend(self.release_all(e.instance_id))        # 누른 채로 패드를 뽑아도 키가 눌린 채 남지 않게
                 continue
             inst = getattr(e, "instance_id", 0)
             if inst in self.ctrls and e.type in (pygame.JOYBUTTONDOWN, pygame.JOYBUTTONUP, pygame.JOYHATMOTION, pygame.JOYAXISMOTION):

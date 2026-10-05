@@ -453,6 +453,9 @@ class BattleRoyaleMatch:
                     for x, ch in enumerate(str(row)[:eng.width]):
                         eng.grid[y][x] = ch if ch in "IJLOSTZG" else None
         eng.score = max(eng.score, int(p.get("score", 0) or 0))
+        if (not loaded or eng.current_piece is None) and not eng.game_over:
+            eng.current_piece = None
+            eng.spawn_piece()                                   # 스냅샷에 조작 중 블록이 없거나(보드 격자만 복원) 격자를 덮어쓴 경우: 새로 내려보냄 (블록 없이 탐색하면 KeyError로 호스트가 종료됨)
         p["bot"] = bot
         p["is_ai"] = True
         p["trait"] = ""
@@ -1822,7 +1825,7 @@ class BattleRoyaleMatch:
                 if r_id in self.players and not self.players[r_id].get("bot"):       # 봇이 이어받은 자리는 늦게 도착한 원격 상태로 덮어쓰지 않음
                     self.players[r_id]["compact_grid"] = r_state.get("compact_grid", self.players[r_id]["compact_grid"])
                     self.players[r_id]["highest_y"] = r_state.get("highest_y", 20)
-                    for key, src in (("score", "score"), ("lines", "lines"), ("attacks", "atk")):   # 호스트/클라이언트가 보낸 성적
+                    for key, src in (("score", "score"), ("lines", "lines"), ("attacks", "atk"), ("ko_count", "ko_count")):   # 호스트/클라이언트가 보낸 성적
                         v = r_state.get(src)
                         if isinstance(v, int) and not isinstance(v, bool):
                             self.players[r_id][key] = v

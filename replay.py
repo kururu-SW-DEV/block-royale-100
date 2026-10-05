@@ -45,8 +45,8 @@ class ReplayRecorder:
         for ev in log:                                         # 엔진이 쌓은 사건을 순서대로 옮김 (한 프레임에 여러 번 고정돼도 모두 기록)
             ev["t"] = t
             self.events.append(ev)
-        last = log[-1]
-        if last["k"] == "L":                                   # 지금 시점의 조작 중 블록 / 다음 3개 / 홀드 / 받을 쓰레기 (재생 화면 표시와 '여기서부터 연습'용)
+        last = next((ev for ev in reversed(log) if ev["k"] == "L"), None)      # 고정 직후 쓰레기 줄이 올라오면 마지막 사건은 G라서, 가장 최근의 L을 찾음
+        if last is not None:                                   # 지금 시점의 조작 중 블록 / 다음 3개 / 홀드 / 받을 쓰레기 (재생 화면 표시와 '여기서부터 연습'용)
             last["cp"] = engine.current_piece or ""
             last["nx"] = "".join(engine.next_queue[:3])
             last["hd"] = engine.hold_piece or ""
