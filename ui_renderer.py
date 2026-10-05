@@ -208,6 +208,7 @@ class UIRenderer:
         self.particles = ParticleManager()
         self.last_cleared_count = 0
         self.key_hints = []          # [(키, 설명)] - main에서 매 프레임 갱신
+        self.pad_ui = False          # True면 버튼/안내 줄의 키 표시를 게임패드 버튼으로 (main에서 매 프레임 갱신)
         self.chat_entries = []       # 네트워크 게임 채팅 기록 (main에서 매 프레임 갱신)
         self.chat_input = None       # 채팅 입력창이 열려 있으면 입력 중인 글자, 아니면 None
         self.chat_comp = ""           # IME 조합 중인 글자 (한글 입력)
@@ -444,11 +445,14 @@ class UIRenderer:
 
     def _text(self, text, font, color):
         self._check_ver()
-        key = (text, id(font), color)
+        key = (text, id(font), color, self.pad_ui)
         surf = self.text_cache.get(key)
         if surf is None:
             if len(self.text_cache) > 800:
                 self.text_cache.clear()
+            if self.pad_ui and isinstance(text, str) and ("ESC" in text or "Esc" in text or "Enter" in text or "Space" in text or "PgUp" in text):
+                from gamepad import padify
+                text = padify(text)                          # 패드로 하는 중이면 안내 글자 속 키 이름(ESC/Enter/Space)을 패드 버튼으로
             surf = font.render(text, True, color)
             self.text_cache[key] = surf
         return surf
@@ -493,6 +497,9 @@ class UIRenderer:
         label_surf = self._text(label, self.font_mid, (255, 255, 255))
         total_w = label_surf.get_width()
         key_surf = None
+        if key_hint and self.pad_ui:
+            from gamepad import pad_key_label
+            key_hint = pad_key_label(key_hint) or ("A" if hover else None)       # 패드 버튼이 있는 키는 그 버튼(B/Y…), 없는 키(R/S/T)는 선택된 버튼에만 A(확인)
         if key_hint:
             key_surf = self._text(key_hint, self.font_tiny, (20, 24, 36))
             total_w += key_surf.get_width() + 22
@@ -1036,7 +1043,7 @@ class UIRenderer:
 
         self._panel((px, py, pw, ph), border=C_GOLD, bg=(16, 20, 36), radius=16, alpha=245, border_w=2)
         self._draw_text("일시 정지", self.font_large, C_GOLD, px + pw // 2, py + 24, "midtop")
-        self._draw_text("PAUSED  ·  F1 규칙 요약", self.font_tiny, C_DIM, px + pw // 2, py + 58, "midtop")
+        self._draw_text("PAUSED" if self.pad_ui else "PAUSED  ·  F1 규칙 요약", self.font_tiny, C_DIM, px + pw // 2, py + 58, "midtop")
 
         mx, my = pygame.mouse.get_pos()
         self.pause_resume_btn = pygame.Rect(px + 40, py + 88, pw - 80, 44)
@@ -1050,10 +1057,11 @@ class UIRenderer:
                 if btn.collidepoint(mx, my):    # 마우스가 다른 버튼 위에 있으면 키보드 포커스도 그쪽으로 옮겨서, 두 버튼이 동시에 하이라이트되지 않게 함
                     self.pause_focus = i
                     break
-        self._button(self.pause_resume_btn, "계속하기", "blue", self.pause_focus == 0, "P")
-        self._button(self.pause_restart_btn, "다시 시작", "blue", self.pause_focus == 1, "R")
-        self._button(self.pause_settings_btn, "환경 설정", "green", self.pause_focus == 2)
-        self._button(self.pause_exit_btn, "메인 메뉴로 나가기", "red", self.pause_focus == 3, "ESC")
+        hint = lambda idx, key: key                                          # 패드에서 버튼이 없는 항목(R/T)은 _button이 선택된 때만 A(확인)를 보여 줌
+        self._button(self.pause_resume_btn, "계속하기", "blue", self.pause_focus == 0, hint(0, "P"))
+        self._button(self.pause_restart_btn, "다시 시작", "blue", self.pause_focus == 1, hint(1, "R"))
+        self._button(self.pause_settings_btn, "환경 설정", "green", self.pause_focus == 2, hint(2, "T"))
+        self._button(self.pause_exit_btn, "메인 메뉴로 나가기", "red", self.pause_focus == 3, hint(3, "ESC"))
 
     # ---------------------------------------------------------------- 상단 HUD
     KO_ORB_FLIGHT = 0.7      # 처치한 상대 카드에서 K.O. 칸까지 날아가는 시간(초)
@@ -1138,8 +1146,9 @@ class UIRenderer:
         if left <= 0 or not getattr(match, "local_is_alive", True) or getattr(match, "is_spectating", False):
             return
         rects = self._hud_rects
-        specs = [("survivors", "① 남은 생존자 수. 마지막 1명이 우승!  (Enter/클릭으로 닫기)", "below-left"),
-                 ("aim", "② 조준 모드: 공격 대상을 정해요. 처음엔 자동(AUTO) 그대로 OK  (TAB / 1~5)", "below-left"),
+        pad = self.pad_ui                                                          # 패드로 하는 중이면 키보드 글자 대신 패드 기준 안내
+        specs = [("survivors", "① 남은 생존자 수. 마지막 1명이 우승!  (잠시 뒤 저절로 사라져요)" if pad else "① 남은 생존자 수. 마지막 1명이 우승!  (Enter/클릭으로 닫기)", "below-left"),
+                 ("aim", "② 조준 모드: 공격 대상을 정해요. 처음엔 자동(AUTO) 그대로 OK  (Back 버튼)" if pad else "② 조준 모드: 공격 대상을 정해요. 처음엔 자동(AUTO) 그대로 OK  (TAB / 1~5)", "below-left"),
                  ]                                                                       # ③받을 공격 ④K.O.는 처음 일어날 때 '첫 경험 팁'으로 알려 줌 (처음부터 한꺼번에 가리지 않게)
         y_top = None
         alpha = 255 if left > 2.0 else int(255 * left / 2.0)
@@ -1272,7 +1281,7 @@ class UIRenderer:
                 self._hud_tip = (TARGET_MODE_HELP.get(mode, ""), cr)
 
         name = target_p.get("name", "탐색 중...")[:12]
-        tag = "수동 지정 · 우클릭 해제" if manual else "TAB으로 변경"
+        tag = "수동 지정 · 우클릭 해제" if manual else ("Back으로 변경" if self.pad_ui else "TAB으로 변경")
         spec_now = aim_on and getattr(match, 'is_spectating', False)
         if spec_now:                                                # 관전 중에는 죽은 내 조준 대상/TAB 안내 대신 관전 안내 (TAB은 동작하지 않음)
             self._draw_text("관전 중 · 조준은 사용할 수 없습니다", self.font_small, C_DIM, r2.centerx, r2.y + 37, "center")
@@ -1998,7 +2007,7 @@ class UIRenderer:
             self._draw_text(str(val), self.font_hud, C_TEXT if val not in (0, "-") else C_DIM, cell.right - 8, cell.bottom - 3, "bottomright")
         kr = pygame.Rect(rr.x, rr.bottom + 10, pw, 36 + len(self.PRACTICE_KEYS) * 28 + 8)
         self._panel(kr)
-        self._draw_text("연습 조작", self.font_hud, C_GOLD, kr.x + 14, kr.y + 8)
+        self._draw_text("연습 조작 (키보드)" if self.pad_ui else "연습 조작", self.font_hud, C_GOLD, kr.x + 14, kr.y + 8)
         for i, (k, d) in enumerate(self.PRACTICE_KEYS):
             ky = kr.y + 40 + i * 28
             kw = max(34, self.font_tiny.size(k)[0] + 16)
@@ -3788,7 +3797,7 @@ class UIRenderer:
                 self.result_practice_btn = rect
             self._button(rect, label, style, self.result_focus_id == bid, hint)
 
-        self._draw_text("버튼을 클릭하거나 단축키로, ← → 와 Enter 로도 실행할 수 있습니다", self.font_small, C_DIM,
+        self._draw_text("← → 로 고르고 A 로 실행합니다" if self.pad_ui else "버튼을 클릭하거나 단축키로, ← → 와 Enter 로도 실행할 수 있습니다", self.font_small, C_DIM,
                         bx + box_w // 2, by + L["foot_y"], "midtop")
 
     # ---------------------------------------------------------------- 관전 HUD
@@ -3829,6 +3838,9 @@ class UIRenderer:
         return total + gap * (len(items) - 1)
 
     def _keycap_hints(self, items, cx, y, gap=14):
+        if self.pad_ui:
+            from gamepad import pad_key_label
+            items = [(pad_key_label(k), lbl) for k, lbl in items if pad_key_label(k)]
         parts = []
         total = 0
         for key, label in items:

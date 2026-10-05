@@ -1536,13 +1536,15 @@ class BattleRoyaleMatch:
         mult = self.attack_multiplier() if self.attacks_enabled else 1.0
         if peak_in >= 8 or atk >= 3:
             lead = "집중 공격에 밀렸어요"
-            tip = "줄을 지우면 받을 공격이 먼저 깎여요. 연습 모드(P)에서 G키로 쓰레기를 받으며 막는 연습을 해 보세요"
+            tip = ("줄을 지우면 받을 공격이 먼저 깎여요. '연습하기' 버튼으로 쓰레기를 받으며 막는 연습을 해 보세요" if getattr(self, "pad_ui", False)
+                   else "줄을 지우면 받을 공격이 먼저 깎여요. 연습 모드(P)에서 G키로 쓰레기를 받으며 막는 연습을 해 보세요")
         elif peak_in < 4 and peak_h >= 16:
             lead = "스스로 쌓은 높이가 문제였어요"
-            tip = "높게 쌓기 전에 줄을 먼저 지워 보세요. 연습 모드(P)에서 B키로 판을 비우며 연습할 수 있어요"
+            tip = ("높게 쌓기 전에 줄을 먼저 지워 보세요. '연습하기' 버튼으로 판을 비우며 연습할 수 있어요" if getattr(self, "pad_ui", False)
+                   else "높게 쌓기 전에 줄을 먼저 지워 보세요. 연습 모드(P)에서 B키로 판을 비우며 연습할 수 있어요")
         else:
             lead = "버티지 못했어요"
-            tip = "탈락 직전 받은 공격을 줄 지우기로 상쇄하는 것을 노려 보세요 (연습 모드 P · G키)"
+            tip = "탈락 직전 받은 공격을 줄 지우기로 상쇄하는 것을 노려 보세요 (" + ("'연습하기' 버튼" if getattr(self, "pad_ui", False) else "연습 모드 P · G키") + ")"
         bits = [f"받을 공격 최대 {peak_in}줄"]
         if atk >= 1:
             bits.append(f"나를 노린 상대 {atk}명")

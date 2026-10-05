@@ -79,7 +79,11 @@ def test_react_tab_and_keys_tab_navigation():
     app.settings_tab = "keys"
     app.settings_focus["keys"] = SS.KEY_CARDS - 1
     app._settings_key_nav(pygame.K_DOWN)
+    assert app.settings_focus["keys"] == SS.PAD_FOCUS                  # 마지막 카드 아래 = 게임패드 줄 → 프리셋 줄 (v1.4.8)
+    app._settings_key_nav(pygame.K_DOWN)
     assert app.settings_focus["keys"] == SS.PRESET_FOCUS
+    app._settings_key_nav(pygame.K_UP)
+    assert app.settings_focus["keys"] == SS.PAD_FOCUS
     app._settings_key_nav(pygame.K_UP)
     assert app.settings_focus["keys"] == SS.KEY_CARDS - 1
     print("  OK 반응 탭/조작 탭")

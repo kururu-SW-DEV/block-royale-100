@@ -70,14 +70,22 @@ TAB_NAV = {
               ("rule_team", "rt_toggle", "rt=off", "rt=on")],
     "react": [("react_das", None, "das_dec", "das_inc"), ("react_arr", None, "arr_dec", "arr_inc"), ("react_sdf", None, "sdf_dec", "sdf_inc"),
               ("react_dcd", None, "dcd_dec", "dcd_inc"), ("react_dcancel", "dcancel_inc", "dcancel_dec", "dcancel_inc"),
-              ("react_hpre", "hpre_inc", "hpre_dec", "hpre_inc"),
-              ("gamepad", "gamepad_toggle", "gamepad=off", "gamepad=on")],
+              ("react_hpre", "hpre_inc", "hpre_dec", "hpre_inc")],
     "audio": [("bgm", "bgm_toggle", "bgm_dec", "bgm_inc"), ("stage_bgm", None, "stage_bgm_prev", "stage_bgm_next"),
               ("sfx", "sfx_toggle", "sfx_dec", "sfx_inc"), ("warn", "warn_next", "warn_prev", "warn_next"),
               ("announcer", "announcer_toggle", "announcer_toggle", "announcer_toggle"), ("sfx_test", "sfx_test", None, None)],
 }
-KEY_CARDS = len(ACTION_NAMES)                 # 조작 탭: 0~9 = 키 카드, 10 = 키 프리셋 (반응 속도는 별도 '반응' 탭)
+KEY_CARDS = len(ACTION_NAMES)                 # 조작 탭: 0~9 = 키 카드(게임패드 프리셋에서는 버튼 배치 카드), 10 = 키 프리셋, 11 = 게임패드 입력 켜기/끄기 (반응 속도는 별도 '반응' 탭)
 PRESET_FOCUS = KEY_CARDS
+PAD_FOCUS = KEY_CARDS + 1
+KEY_PRESET_ORDER = ("arcade", "wasd", "gamepad")
+KEY_PRESET_LABELS = {"arcade": "아케이드 표준", "wasd": "WASD 게이머", "gamepad": "게임패드"}
+
+# 게임패드 프리셋에서 키 카드 자리에 보여 주는 버튼 배치: (동작 id, 이름, 고정 입력). 동작 id가 PAD_REBINDABLE에 있으면 클릭해서 버튼을 바꿀 수 있음
+PAD_LAYOUT = [("move", "좌우 이동", "십자키 ← → / 왼쪽 스틱"), ("soft_drop", "소프트 드롭", "십자키 ↓"), ("hard_drop", "하드 드롭", "십자키 ↑"),
+              ("rotate_cw", "시계 회전", ""), ("rotate_ccw", "반시계 회전", ""), ("hold", "홀드", ""),
+              ("rotate_180", "180도 회전", ""), ("pause", "일시 정지", ""), ("target_cycle", "조준 대상 바꾸기", ""),
+              ("menu", "메뉴 · 결과 화면", "십자키 이동 · A 확인 · B 취소")]
 
 HELP_SKIN_BASE = "게임 화면 블록의 모양을 바꿉니다. 색은 위의 '블록 색상' 설정을 따르며, 로고와 미니 보드는 그대로입니다."
 
@@ -91,7 +99,7 @@ HELP = {
     "title": "달성한 업적의 이름을 칭호로 달 수 있습니다. 메인 메뉴의 프로필에 표시됩니다. 업적은 전적 기록실의 '업적' 탭에서 확인하세요.",
     "rules": "게임의 공격표, K.O. 배지, 역습 보너스, 조준 모드, 경기 흐름을 한 화면으로 보여 줍니다. 게임 중에도 F1 키로 열 수 있습니다.",
     "ghost": "켜면 혼자 하는 경기에서 저장된 내 리플레이 중 점수가 가장 높은 판의 보드가 왼쪽 상태 칸 아래에 작게 함께 달립니다. 같은 경기 시각의 그 판 점수와의 차이도 보여 줍니다. 리플레이가 없으면 아무것도 표시되지 않습니다.",
-    "gamepad": "게임패드의 십자키/왼쪽 스틱으로 이동, A 시계 회전, B 반시계 회전, X·LB 홀드, Y 180도 회전, RB 하드 드롭, Start 일시정지, Back 조준 변경. 메뉴에서는 십자키/스틱 = 방향키, A·Start = Enter, B = Esc입니다. 동작에 배정된 키를 따르며, 컨트롤러가 이상하게 동작하면 끄세요.",
+    "gamepad": "게임패드의 십자키/왼쪽 스틱으로 이동, 십자키 위 하드 드롭, B·X 시계 회전, A·Y 반시계 회전, LB·RB 홀드, R3 180도 회전, Start 일시정지, Back 조준 변경. 메뉴에서는 십자키/스틱 = 방향키, A·Start = Enter, B = Esc입니다. 동작에 배정된 키를 따르며, 컨트롤러가 이상하게 동작하면 끄세요.",
     "update": "켜면 게임을 시작할 때 GitHub에서 새 버전이 있는지 한 번만 확인하고, 있으면 메인 화면에 알려 줍니다. 자동으로 내려받거나 설치하지 않으며 개인 정보는 보내지 않습니다. 기본은 꺼짐입니다.",
     "errlog": "예기치 않은 오류가 났을 때 원인을 적어 두는 error.log가 있는 폴더를 엽니다. 문제를 알릴 때 이 파일을 함께 보내 주세요.",
     "matchlog": "켜면 경기가 끝날 때마다 받은/보낸 공격, 조준 변경, 탈락 원인을 담은 기록(JSON)을 저장 폴더의 match_logs에 남깁니다. 플레이 테스트 결과를 함께 볼 때 쓰며, 기본은 꺼짐입니다.",
@@ -109,7 +117,7 @@ HELP = {
     "stage_bgm": "경기 중(1/2/3단계) 배경음 세트를 고릅니다. '랜덤'이면 경기를 시작할 때마다 5가지 중 하나가 무작위로 재생됩니다.",
     "sfx": "효과음 켜기/끄기와 음량. 음량을 바꾸면 바로 들어볼 수 있습니다.",
     "sfx_test": "현재 효과음 음량으로 대표 소리를 들어봅니다.",
-    "preset": "조작키 묶음을 한 번에 바꿉니다. 아래 카드를 하나라도 바꾸면 '사용자 지정'이 됩니다.",
+    "preset": "조작 방식을 한 번에 바꿉니다: 아케이드 표준(방향키) / WASD 게이머 / 게임패드. 키 카드를 하나라도 바꾸면 '사용자 지정'이 됩니다. 게임패드를 고르면 게임 중 안내도 패드 버튼으로 바뀝니다.",
     "cards": "카드를 클릭하거나 Enter를 누른 뒤 새 키를 누르세요. 다른 동작이 쓰던 키면 자동으로 옮겨집니다. 고정 키: ESC 일시정지/메뉴 · F11 전체화면 · M 음소거 · T 설정",
     "rule_garbage": "상대에게 보내는 쓰레기 줄을 모두 이 배율로 곱합니다(올림). ×0.5는 느긋한 판, ×1.5는 거친 판입니다. 기본이 아니면 커스텀 경기라 전적/점수표/경험치에 기록되지 않습니다.",
     "rule_gravity": "내 블록이 자동으로 내려오는 속도를 바꿉니다(느리게 ×0.7 속도, 빠르게 ×1.4 속도). 봇의 속도는 그대로입니다. 기본이 아니면 기록되지 않습니다.",
@@ -122,6 +130,8 @@ HELP = {
     "react_dcancel": "방향을 바꿀 때(한쪽 키를 떼고 반대쪽 키가 눌려 있을 때) DAS를 새로 충전합니다. 켜면 방향 전환 직후의 오버슈트가 줄어듭니다.",
     "react_hpre": "느긋 · 기본 · 빠름 · 프로 중에서 DAS/ARR/소프트드롭/DCD/DAS 취소를 한 번에 맞춥니다. 값을 직접 바꾸면 '사용자'로 표시됩니다.",
     "rebinding": "새 키를 누르세요  ·  ESC 취소",
+    "pad_rebinding": "패드의 버튼을 누르세요  ·  다른 동작이 쓰던 버튼이면 자동으로 옮겨집니다  ·  취소는 키보드 ESC",
+    "pad_cards": "카드를 클릭하거나 Enter를 누른 뒤 패드의 버튼을 누르면 그 동작의 버튼이 바뀝니다 (다른 동작이 쓰던 버튼은 자동으로 옮겨짐). 이동·소프트 드롭·하드 드롭은 십자키/왼쪽 스틱에 고정이고, 하드 드롭은 버튼을 더 줄 수 있습니다. '이 탭 기본값으로'로 되돌립니다.",
 }
 
 # 탭별 '기본값으로' 대상 설정 키
@@ -130,8 +140,8 @@ TAB_DEFAULT_KEYS = {
     "help": ["match_log", "update_check", "ghost_race"],
     "general": ["resolution", "mini_detail", "color_mode", "text_size", "block_skin", "key_hints"],
     "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume", "warn_volume", "announcer"],
-    "keys": [],
-    "react": ["das_ms", "arr_ms", "sdf_ms", "dcd_ms", "das_cancel", "gamepad"],
+    "keys": ["gamepad"],
+    "react": ["das_ms", "arr_ms", "sdf_ms", "dcd_ms", "das_cancel"],
     "rules": ["rule_garbage", "rule_gravity", "rule_badges", "rule_team"],
 }
 
@@ -141,6 +151,11 @@ class SettingsMixin:
     def _handle_settings_event(self, event):
         # 1. 키 리바인딩 대기 중인 경우 키 입력 캡처
         if self.rebinding_action:
+            if str(self.rebinding_action).startswith("pad:"):
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    self.sound_mgr.play('move')
+                    self.rebinding_action = None
+                return                                                       # 패드 버튼을 기다리는 중: 다른 키/마우스는 무시
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     self.sound_mgr.play('move')
@@ -234,6 +249,12 @@ class SettingsMixin:
         if tab == "keys":
             if f == PRESET_FOCUS:
                 return "preset"
+            if f == PAD_FOCUS:
+                return "gamepad"
+            if self.settings.get("key_preset", "arcade") == "gamepad":
+                from gamepad import PAD_REBINDABLE
+                act = PAD_LAYOUT[f % KEY_CARDS][0]
+                return ("padbind_" if act in PAD_REBINDABLE else "padfix_") + act
             return "bind_" + ACTION_NAMES[f % KEY_CARDS][0]
         rows = TAB_NAV[tab]
         return rows[f % len(rows)][0]
@@ -262,19 +283,30 @@ class SettingsMixin:
         self.settings_focus[tab] = f
 
     def _settings_key_nav_keys(self, key, enter):
-        """조작 탭: 키 카드 3열 + 프리셋 줄 (반응 속도는 '반응' 탭)"""
+        """조작 탭: 키 카드 3열 + 프리셋 줄 + 게임패드 줄 (반응 속도는 '반응' 탭)"""
         n = KEY_CARDS
-        f = self.settings_focus.get("keys", 0) % (n + 1)
+        f = self.settings_focus.get("keys", 0) % (n + 2)
         moved = True
+        cur = self.settings.get("key_preset", "arcade")
+        has_cards = True                                          # 게임패드 프리셋은 키 카드 대신 패드 버튼 카드(클릭해서 바꿈)를 보여 줌
         if f == PRESET_FOCUS:                                     # 프리셋 줄: ←→로 고르고 ↓로 카드로
             if key in (pygame.K_LEFT, pygame.K_RIGHT) or enter:
-                self._settings_activate("preset_arcade" if key == pygame.K_LEFT else "preset_wasd" if key == pygame.K_RIGHT else
-                                        ("preset_wasd" if self.settings.get("key_preset") == "arcade" else "preset_arcade"))
+                idx = KEY_PRESET_ORDER.index(cur) if cur in KEY_PRESET_ORDER else 0
+                step = -1 if key == pygame.K_LEFT else 1
+                self._settings_activate("preset_" + KEY_PRESET_ORDER[(idx + step) % len(KEY_PRESET_ORDER)])
                 moved = False
             elif key == pygame.K_DOWN:
-                f = 0
+                f = 0 if has_cards else PAD_FOCUS
             elif key == pygame.K_UP:
-                f = n - 1
+                f = PAD_FOCUS
+        elif f == PAD_FOCUS:                                      # 게임패드 입력 켜기/끄기 줄
+            if key in (pygame.K_LEFT, pygame.K_RIGHT) or enter:
+                self._settings_activate("gamepad_toggle")
+                moved = False
+            elif key == pygame.K_DOWN:
+                f = PRESET_FOCUS
+            elif key == pygame.K_UP:
+                f = (n - 1) if has_cards else PRESET_FOCUS
         else:                                                     # 카드
             if key == pygame.K_LEFT:
                 f = (f - 1) % n
@@ -283,7 +315,12 @@ class SettingsMixin:
             elif key == pygame.K_UP:
                 f = PRESET_FOCUS if f < 3 else f - 3
             elif key == pygame.K_DOWN:
-                f = PRESET_FOCUS if f + 3 >= n else f + 3
+                f = PAD_FOCUS if f + 3 >= n else f + 3
+            elif cur == "gamepad":
+                from gamepad import PAD_REBINDABLE
+                if PAD_LAYOUT[f][0] in PAD_REBINDABLE:
+                    self._settings_activate("padbind_" + PAD_LAYOUT[f][0])
+                moved = False
             else:
                 self._settings_activate("bind_" + ACTION_NAMES[f][0])
                 moved = False
@@ -306,13 +343,16 @@ class SettingsMixin:
         elif btn_id in ("color_prev", "color_next"):
             self._set_name_color((self.name_color + (-1 if btn_id == "color_prev" else 1)) % len(NAME_COLORS))
         # 조작 탭
-        elif btn_id in ("preset_arcade", "preset_wasd"):
+        elif btn_id in ("preset_arcade", "preset_wasd", "preset_gamepad"):
             self.sound_mgr.play('rotate')
             self.settings.set_key_preset(btn_id[7:])
             self.rebinding_action = None
         elif btn_id.startswith("bind_"):
             self.sound_mgr.play('move')
             self.rebinding_action = btn_id[5:]
+        elif btn_id.startswith("padbind_"):                       # 게임패드 버튼 배정: 다음에 누르는 패드 버튼이 이 동작의 버튼이 됨 (main 루프가 gamepad.capture를 연결)
+            self.sound_mgr.play('move')
+            self.rebinding_action = "pad:" + btn_id[8:]
         elif btn_id in ("das_dec", "das_inc", "arr_dec", "arr_inc", "sdf_dec", "sdf_inc", "dcd_dec", "dcd_inc"):
             self.sound_mgr.play('rotate')
             self.settings.adjust_handling(btn_id[:-4] + "_ms", -1 if btn_id.endswith("dec") else 1)
@@ -840,12 +880,15 @@ class SettingsMixin:
         mx, my = pygame.mouse.get_pos()
         y = TOP
         cur_preset = self.settings.get("key_preset", "arcade")
-        p_label = {"arcade": "아케이드 표준", "wasd": "WASD 게이머"}.get(cur_preset, "사용자 지정")
+        p_label = KEY_PRESET_LABELS.get(cur_preset, "사용자 지정")
         self._s_row("preset", y, 48, "프리셋")
-        self._s_seg([("preset_arcade", "아케이드 표준"), ("preset_wasd", "WASD 게이머")],
-                    "preset_" + cur_preset if cur_preset in ("arcade", "wasd") else None, RIGHT - 210, y + 24)
-        self._t(f"현재: {p_label}", self.font_val, C_GREEN if cur_preset in ("arcade", "wasd") else C_GOLD, RIGHT, y + 24, "midright")
+        self._s_seg([("preset_" + k, KEY_PRESET_LABELS[k]) for k in KEY_PRESET_ORDER],
+                    "preset_" + cur_preset if cur_preset in KEY_PRESET_ORDER else None, RIGHT - 150, y + 24)
+        self._t(p_label, self.font_val, C_GREEN if cur_preset in KEY_PRESET_ORDER else C_GOLD, RIGHT, y + 24, "midright")
         y += 48 + 8
+        if cur_preset == "gamepad":
+            self._render_pad_layout(y)
+            return
 
         used = {}
         for act_id, _n in ACTION_NAMES:
@@ -894,7 +937,83 @@ class SettingsMixin:
         elif conflicts:
             self._t("같은 키가 여러 동작에 배정되어 있습니다. 빨간 카드를 다시 지정하세요.", self.font_help, C_DANGER, IX + IW // 2, y + 8, "midtop")
         y += 22
-        self._t("반응 속도(DAS · ARR · 소프트드롭 · DCD · 프리셋)는 위쪽의 '반응' 탭에서 바꿉니다.", self.font_help, COL_SUB, IX + IW // 2, y + 6, "midtop")
+        self._render_pad_row(y)
+
+    def _pad_capture(self, name):
+        """패드 버튼 배정 대기 중 누른 버튼(name)을 그 동작에 배정 (다른 동작이 쓰던 버튼이면 그쪽에서 뺌)"""
+        from gamepad import pad_button_label
+        action = str(self.rebinding_action or "")[4:]
+        self.rebinding_action = None
+        if not action:
+            return
+        moved = self.settings.set_pad_button(action, name)
+        self.sound_mgr.play('rotate')
+        names = {a: n for a, n, _f in PAD_LAYOUT}
+        if moved:
+            self.rebind_notice = (f"{pad_button_label(name)} 버튼은 " + ", ".join(f"[{names.get(a, a)}]" for a in moved) + "에서 해제했습니다", time.time() + 5.0)
+        else:
+            self.rebind_notice = (f"[{names.get(action, action)}] = {pad_button_label(name)} 버튼", time.time() + 3.0)
+
+    def _render_pad_layout(self, y):
+        """조작 탭(게임패드 프리셋): 키 카드 자리에 패드 버튼 카드 + 게임패드 입력 켜기/끄기 줄. 카드를 클릭하고 패드 버튼을 누르면 그 동작의 버튼이 바뀜"""
+        from gamepad import PAD_REBINDABLE, pad_button_label
+        mx, my = pygame.mouse.get_pos()
+        card_w, card_h, gap = 282, 54, 7
+        n_rows = (len(PAD_LAYOUT) + 2) // 3
+        self._row_rects["cards"] = pygame.Rect(IX, y, IW, n_rows * card_h + (n_rows - 1) * gap)
+        pad_map = self.settings.get_pad_map()
+        focus_card = self._focus_key if self._kb_nav and self._focus_key.startswith("pad") else None
+        pending = str(self.rebinding_action or "")[4:] if str(self.rebinding_action or "").startswith("pad:") else None
+        for i, (act, label, fixed) in enumerate(PAD_LAYOUT):
+            col, row = i % 3, i // 3
+            rect = pygame.Rect(IX + col * (card_w + gap), y + row * (card_h + gap), card_w, card_h)
+            can_edit = act in PAD_REBINDABLE
+            if can_edit:
+                self.settings_buttons[f"padbind_{act}"] = rect
+            hover = can_edit and rect.collidepoint(mx, my)
+            focused = focus_card in (f"padbind_{act}", f"padfix_{act}")
+            rebinding = (pending == act)
+            bg = (58, 46, 20) if rebinding else ((34, 44, 72) if hover or focused else (20, 26, 46))
+            edge = C_GOLD if rebinding else (C_ACCENT if (hover or focused) else (52, 66, 104))
+            pygame.draw.rect(self.screen, bg, rect, border_radius=12)
+            pygame.draw.rect(self.screen, edge, rect, 2 if (hover or rebinding or focused) else 1, border_radius=12)
+            self._t(label, self.font_val, COL_TEXT, rect.x + 16, rect.y + 6)
+            if rebinding:
+                self._t("패드 버튼을 누르세요…", self.font_val, C_GOLD, rect.x + 16, rect.y + 28)
+                self._t("키보드 ESC 취소", self.font_tiny, COL_SUB, rect.right - 12, rect.y + 12, "topright")
+                continue
+            chips = []
+            if fixed:
+                chips.append((fixed, False))
+            for name in pad_map.get(act, []) if can_edit else []:
+                chips.append((pad_button_label(name), True))
+            if can_edit and not chips:
+                self._t("지정 안 됨 (클릭해서 지정)", self.font_tiny, COL_OFF, rect.x + 16, rect.y + 39, "midleft")
+            kx = rect.x + 16
+            for text, editable in chips:
+                ks = self.renderer._text(text, self.font_tiny, (225, 232, 248))
+                while ks.get_width() > rect.w - 44 and len(text) > 4:
+                    text = text[:-2]
+                    ks = self.renderer._text(text + "…", self.font_tiny, (225, 232, 248))
+                kr = pygame.Rect(kx, rect.y + 28, max(28, ks.get_width() + 16), 20)
+                pygame.draw.rect(self.screen, (44, 54, 86) if editable else (32, 40, 66), kr, border_radius=7)
+                pygame.draw.rect(self.screen, (92, 108, 150) if editable else (60, 74, 112), kr, 1, border_radius=7)
+                self.screen.blit(ks, (kr.centerx - ks.get_width() // 2, kr.centery - ks.get_height() // 2))
+                kx = kr.right + 6
+        y += n_rows * card_h + (n_rows - 1) * gap + 6
+        notice = getattr(self, "rebind_notice", None)
+        if notice and time.time() < notice[1]:
+            self._t(notice[0], self.font_help, C_GOLD, IX + IW // 2, y, "midtop")
+        else:
+            self._t("카드를 클릭하고 패드 버튼을 누르면 바뀝니다 (키보드는 아케이드 표준과 같고 180도 회전만 A 키)", self.font_help, COL_SUB, IX + IW // 2, y, "midtop")
+        y += 24
+        self._render_pad_row(y)
+
+    def _render_pad_row(self, y):
+        pad_on = bool(self.settings.get("gamepad", True))
+        npad = len(self.gamepad.joys) + len(self.gamepad.ctrls)
+        self._s_row("gamepad", y, 50, "게임패드 입력", f"연결된 컨트롤러 {npad}개  ·  A=아래 B=오른쪽 X=왼쪽 Y=위" if npad else "연결된 컨트롤러 없음  ·  연결하면 바로 사용할 수 있습니다")
+        self._s_seg([("gamepad=off", "끔"), ("gamepad=on", "켜기")], "gamepad=on" if pad_on else "gamepad=off", RIGHT, y + 25)
 
     def _render_tab_rules(self):
         """규칙 탭(커스텀 규칙): 혼자 하는 배틀로얄에서 쓰레기 배율 / 내 낙하 속도 / 배지를 바꿈. 기본이 아니면 기록되지 않는 경기가 됨"""
@@ -940,11 +1059,6 @@ class SettingsMixin:
             on_col = C_ACCENT if text not in ("끔", "사용자") else COL_SUB
             self._s_cycler(dec, inc, text, RIGHT, y + 28, color=on_col)
             y += 56
-        pad_on = bool(self.settings.get("gamepad", True))
-        npad = len(self.gamepad.joys) + len(self.gamepad.ctrls)
-        self._s_row("gamepad", y, 50, "게임패드", f"연결된 컨트롤러 {npad}개  ·  십자키/스틱 이동, A·B 회전" if npad else "연결된 컨트롤러 없음  ·  연결하면 바로 사용할 수 있습니다")
-        self._s_seg([("gamepad=off", "끔"), ("gamepad=on", "켜기")], "gamepad=on" if pad_on else "gamepad=off", RIGHT, y + 25)
-        y += 50
 
     # ------------------------------------------------------------------ 전체 화면
     def _render_settings(self):
@@ -1003,7 +1117,7 @@ class SettingsMixin:
         self._t("전체 초기화", self.font_help, C_DANGER if self._s_hover(full) else COL_SUB, full.centerx, full.centery, "center")
         note = "인원·난이도·게임 모드는 다음 판부터 적용됩니다" if (in_game and self.settings_tab == "match") else "변경 사항은 즉시 적용·저장됩니다"
         self._t(note, self.font_help, COL_SUB, IX + IW // 2 + 30, 654, "midtop")
-        self._t("↑↓ 이동   ←→ 조절   Enter 실행   TAB 탭   ESC 닫기", self.font_tiny, (128, 142, 175), IX + IW // 2 + 30, 673, "midtop")
+        self._t("십자키 이동   ←→ 조절   A 실행   Back 탭   B 닫기" if self.renderer.pad_ui else "↑↓ 이동   ←→ 조절   Enter 실행   TAB 탭   ESC 닫기", self.font_tiny, (128, 142, 175), IX + IW // 2 + 30, 673, "midtop")
         done = pygame.Rect(IX + IW - 170, 642, 170, 38)
         self.settings_buttons["save_and_back"] = done
         hov = done.collidepoint(mx, my)
@@ -1020,12 +1134,14 @@ class SettingsMixin:
             if r.collidepoint(mx, my):
                 key = k
         if self.rebinding_action:
-            text, col = HELP["rebinding"], C_GOLD
+            text, col = (HELP["pad_rebinding"] if str(self.rebinding_action).startswith("pad:") else HELP["rebinding"]), C_GOLD
         else:
             if key is None and self._kb_nav:
                 key = self._focus_key
-            if key and key.startswith("bind_"):
+            if key and (key.startswith("bind_") or key.startswith("padbind_") or key.startswith("padfix_")):
                 key = "cards"
+            if key == "cards" and self.settings.get("key_preset", "arcade") == "gamepad":
+                key = "pad_cards"
             elif key and key.startswith("hf_"):
                 key = "react_das"
             if key == "diff":

@@ -187,6 +187,8 @@ def test_settings_screen_react_tab_renders_and_navigates():
     app.settings_tab = "keys"
     app.settings_focus["keys"] = SS.PRESET_FOCUS
     app._settings_key_nav(pygame.K_UP)
+    assert app.settings_focus["keys"] == SS.PAD_FOCUS                  # 프리셋 줄 위 = 게임패드 줄 (v1.4.8), 그 위 = 마지막 키 카드
+    app._settings_key_nav(pygame.K_UP)
     assert app.settings_focus["keys"] == SS.KEY_CARDS - 1
     print("  OK 설정 화면")
 

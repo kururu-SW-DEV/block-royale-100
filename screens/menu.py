@@ -323,13 +323,14 @@ class MenuMixin:
         gx, gy = (dr.x + 28, dr.y + 22) if hero else (dr.x + 22, dr.y + 22)
         self._menu_glyph(kind, gx, gy, accent, hero)
         tx = dr.x + (118 if hero else 88)
-        kr = pygame.Rect(dr.right - 18 - 26, dr.y + 14, 26, 22)                      # 번호 키: 속 빈 키캡
-        pygame.draw.rect(self.screen, _mix(edge, CARD_BG, 0.2), kr, 1, border_radius=6)
-        self._t(key, self.font_small, COL_SUB if t < 0.5 else C_TEXT, kr.centerx, kr.centery, "center")
+        kr = pygame.Rect(dr.right - 18 - 26, dr.y + 14, 26, 22)                      # 번호 키: 속 빈 키캡 (패드로 할 때는 숨김)
+        if not self.renderer.pad_ui:
+            pygame.draw.rect(self.screen, _mix(edge, CARD_BG, 0.2), kr, 1, border_radius=6)
+            self._t(key, self.font_small, COL_SUB if t < 0.5 else C_TEXT, kr.centerx, kr.centery, "center")
         if hero:
             self._t(title, self.font_hero, C_TEXT, tx, dr.y + 16)
             self._t(self._menu_fit(desc, self.font_help, dr.w - (tx - dr.x) - 70), self.font_help, COL_SUB, tx, dr.y + 54)
-            self._t("Enter  >", self.font_small, accent, dr.right - 20, dr.bottom - 18, "midright")
+            self._t("A  >" if self.renderer.pad_ui else "Enter  >", self.font_small, accent, dr.right - 20, dr.bottom - 18, "midright")
         else:
             self._t(title, self.font_menu, C_TEXT, tx, dr.y + 14)
             self._t(self._menu_fit(desc, self.font_help, dr.w - (tx - dr.x) - 56), self.font_help, COL_SUB, tx, dr.y + 42)
@@ -342,9 +343,11 @@ class MenuMixin:
 
     def _menu_pill(self, bid, right, y, label, key, tint, dot=None):
         """오른쪽 위 메뉴 항목 하나 (테두리 없는 글자 + 작은 키 표시, 포커스/호버는 밑줄). 오른쪽 끝 기준으로 폭을 계산해 그리고 왼쪽 끝 x를 반환"""
+        if self.renderer.pad_ui:
+            key = ""                                          # 패드로 할 때는 단축키 글자(P/C/W/R/S/M/F11)를 숨김: 십자키로 골라 A로 실행
         lw = self.font_small.size(label)[0]
-        kw = self.font_tiny.size(key)[0]
-        w = 8 + (14 if dot else 0) + lw + 8 + kw + 8
+        kw = self.font_tiny.size(key)[0] if key else 0
+        w = 8 + (14 if dot else 0) + lw + (8 + kw if key else 0) + 8
         rect = pygame.Rect(right - w, y, w, 36)
         self.menu_buttons[bid] = rect
         t = self._menu_hl.get(bid, 1.0 if self._menu_focus_id() == bid else 0.0)
@@ -355,7 +358,8 @@ class MenuMixin:
             x += 14
         col = _mix((176, 188, 218), C_TEXT, 1.0 if pressed else t)
         self._t(label, self.font_small, col, x, rect.centery, "midleft")
-        self._t(key, self.font_tiny, _mix((104, 116, 150), C_TEXT, 0.5 * t), x + lw + 8, rect.centery + 1, "midleft")
+        if key:
+            self._t(key, self.font_tiny, _mix((104, 116, 150), C_TEXT, 0.5 * t), x + lw + 8, rect.centery + 1, "midleft")
         if t > 0.05:                                         # 밑줄: 호버/포커스 때 왼쪽에서 오른쪽으로 차오름
             ul = int((lw + 8 + kw) * min(1.0, t))
             pygame.draw.rect(self.screen, C_ACCENT, (rect.x + 8 + (14 if dot else 0), rect.bottom - 5, ul, 2), border_radius=1)

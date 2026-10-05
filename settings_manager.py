@@ -106,6 +106,19 @@ KEY_PRESETS = {
         "target_cycle": [pygame.K_TAB],
         "pause": [pygame.K_p],
         "rotate_180": []
+    },
+    # 게임패드 프리셋: 키보드는 아케이드와 같고(보조), 패드 버튼이 이 키들을 누른 것처럼 동작함. 키 안내는 패드 버튼으로 표시. 180도 회전(패드 R3)만 키 A를 배정
+    "gamepad": {
+        "move_left": [pygame.K_LEFT],
+        "move_right": [pygame.K_RIGHT],
+        "soft_drop": [pygame.K_DOWN],
+        "hard_drop": [pygame.K_SPACE],
+        "rotate_cw": [pygame.K_UP, pygame.K_x],
+        "rotate_ccw": [pygame.K_z],
+        "hold": [pygame.K_c, pygame.K_LSHIFT],
+        "target_cycle": [pygame.K_TAB],
+        "pause": [pygame.K_p],
+        "rotate_180": [pygame.K_a]
     }
 }
 
@@ -169,7 +182,8 @@ DEFAULT_SETTINGS = {
     "screen_shake": "normal",    # 화면 흔들림: "off"(끔) / "low"(약하게) / "normal"(보통)
     "game_mode": "battle",       # 게임 모드: "battle"(배틀로얄: 공격을 주고받음) / "survival"(서바이벌: 공격 없이 각자 생존 경쟁)
     "mini_detail": "focus",      # 미니 보드 표시: "detailed"(자세히) / "focus"(자세히 + 나를 노리는/조준/위기 카드만 또렷하게) / "simple"(간략)
-    "key_preset": "arcade",
+    "pad_buttons": None,             # 게임패드 버튼 배치: {동작: [버튼 이름, ...]} (None이면 기본 배치. gamepad.DEFAULT_PAD_MAP)
+    "key_preset": "arcade",        # "arcade"(아케이드 표준) / "wasd" / "gamepad"(게임패드) / "custom"(키를 직접 바꾼 경우)
     "custom_keys": None
 }
 
@@ -263,7 +277,7 @@ def _valid_setting(key, value):
             return False, None
         if key == "mini_detail" and value not in ("detailed", "focus", "simple"):
             return False, None
-        if key == "key_preset" and value not in ("arcade", "wasd", "custom"):
+        if key == "key_preset" and value not in ("arcade", "wasd", "gamepad", "custom"):
             return False, None
         if key == "initials":
             value = "".join(ch for ch in value if ch.isalnum())[:3].upper()
@@ -486,12 +500,46 @@ class SettingsManager:
         return moved
 
     def set_key_preset(self, preset_name):
-        """프리셋 변경 ('arcade' 또는 'wasd')"""
+        """프리셋 변경 ('arcade' / 'wasd' / 'gamepad'). 게임패드 프리셋은 패드 입력도 켬"""
         if preset_name in KEY_PRESETS:
             self.data["key_preset"] = preset_name
             self.data["custom_keys"] = None
+            if preset_name == "gamepad":
+                self.data["gamepad"] = True
             self.save()
+
+    def get_pad_map(self):
+        """게임패드 버튼 배치 {동작: [버튼 이름]}: 기본 배치 위에 저장된 값을 덮어씀 (잘못된 값은 무시)"""
+        from gamepad import DEFAULT_PAD_MAP, PAD_BUTTONS, PAD_REBINDABLE
+        out = {a: list(v) for a, v in DEFAULT_PAD_MAP.items()}
+        saved = self.get("pad_buttons")
+        if isinstance(saved, dict):
+            for act in PAD_REBINDABLE:
+                v = saved.get(act)
+                if isinstance(v, list):
+                    out[act] = [n for n in v if n in PAD_BUTTONS][:3]
+        return out
+
+    def set_pad_button(self, action, name):
+        """동작의 패드 버튼을 새 버튼 하나로 바꿈. 다른 동작이 쓰던 버튼이면 그쪽에서 빼 한 버튼이 두 동작을 하지 않게 함. 반환: 버튼을 빼앗긴 동작 목록"""
+        from gamepad import PAD_BUTTONS, PAD_REBINDABLE
+        if action not in PAD_REBINDABLE or name not in PAD_BUTTONS:
+            return []
+        m = self.get_pad_map()
+        moved = [a for a, names in m.items() if a != action and name in names]
+        for a in moved:
+            m[a] = [n for n in m[a] if n != name]
+        m[action] = [name]
+        self.data["pad_buttons"] = {a: list(v) for a, v in m.items() if a in PAD_REBINDABLE}
+        self.save()
+        return moved
+
+    def reset_pad_buttons(self):
+        self.data["pad_buttons"] = None
+        self.save()
 
     def reset_keys_to_default(self):
         """조작키를 아케이드 표준 기본값으로 초기화"""
         self.set_key_preset("arcade")
+        self.data["pad_buttons"] = None                  # 패드 버튼 배치도 기본으로
+        self.save()

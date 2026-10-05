@@ -73,7 +73,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         self.sound_mgr.set_warn_scale(self.settings.get("warn_volume", 100) / 100.0)
         self.sound_mgr.set_announcer(self.settings.get("announcer", False))
         from gamepad import GamepadMapper
-        self.gamepad = GamepadMapper(lambda action: self.settings.get_action_keys(action), lambda: bool(self.settings.get("gamepad", True)))
+        self.gamepad = GamepadMapper(lambda action: self.settings.get_action_keys(action), lambda: bool(self.settings.get("gamepad", True)),
+                                     lambda: self.settings.get_pad_map())
         import i18n
         from gfx import HiFont as _HF
         _HF.text_filter = i18n.tr                        # 번역은 글자를 그리는 곳(HiFont)에서 한 번에 처리
@@ -251,11 +252,18 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                 self._on_long_frame(raw_dt)              # 창 드래그/크기 조절로 루프가 멈췄다 돌아온 경우
             dt = min(raw_dt, self.MAX_FRAME_DT)
             self.sound_mgr.tick()
+            self.renderer.pad_ui = self._pad_hints_active()          # 패드로 조작 중이면 버튼/안내의 키 표시를 패드 버튼으로
+            if self.match is not None:
+                self.match.pad_ui = self.renderer.pad_ui             # 경기 중 문구(패인 팁 등)도 패드 기준으로
+            # 설정 > 조작 > 게임패드에서 버튼 배정을 기다리는 동안은 패드 버튼 누름을 배정으로 보냄
+            self.gamepad.capture = self._pad_capture if (self.state == "SETTINGS" and str(self.rebinding_action or "").startswith("pad:")) else None
             
             # 이벤트 처리
             pad_in_game = (self.state == "GAME" and self.match is not None and not self.is_paused and self.modal is None and not self.rules_open
                            and self.match.local_is_alive and not self.match.match_finished and self.match.countdown_left() <= 0)      # 그 밖에는 메뉴 방식(방향키/Enter/Esc)으로 변환
             for event in self.gamepad.translate(pygame.event.get(), pad_in_game):
+                if event.type == pygame.KEYDOWN and not getattr(event, "pad", False):
+                    self._last_kb_t = time.time()                  # 진짜 키보드 입력 시각: 패드 입력이 더 최근이면 게임 중 키 안내를 패드 버튼으로 보여 줌
                 if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEWHEEL):      # 어트랙트 화면: 깨우는 입력은 메뉴 동작으로 넘기지 않고 소비
                     was_attract = self._attract_on()
                     self._attract_reset()

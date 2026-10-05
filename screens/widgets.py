@@ -37,6 +37,9 @@ class WidgetsMixin:
     def _keycap_row(self, items, cx, y, gap=18, font=None, label_col=None):
         """[키] 설명 형태의 안내 줄을 가운데 정렬해서 그림 (font/label_col로 크기와 설명 글자색 지정)"""
         font = font or self.font_tiny
+        if self.renderer.pad_ui:
+            from gamepad import pad_key_label
+            items = [(pad_key_label(k), lbl) for k, lbl in items if pad_key_label(k)]       # 패드로 누를 수 있는 것만 패드 버튼 이름으로
         parts = []
         total = 0
         for key, label in items:

@@ -422,7 +422,7 @@ def test_survival_hides_aim_ui():
             app._tick_game(1 / 60)
         app.renderer.key_hints = app._build_key_hints()
         labels = [h[1] for h in app.renderer.key_hints]
-        assert (("조준" in labels) and ("조준모드" in labels)) == want, (mode, labels)
+        assert ("조준" in labels) == want, (mode, labels)                    # 조준 순환 키와 조준 모드(1~5)는 한 칸("조준")에 합쳐 안내
         lasers = []
         orig = app.renderer._draw_targeting_laser
         app.renderer._draw_targeting_laser = lambda *a, **k: lasers.append(1)

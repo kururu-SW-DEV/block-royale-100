@@ -193,11 +193,29 @@ class CoreMixin:
         self._notice_shown = False
         self.state = "MENU"
 
+    def _pad_hints_active(self):
+        """게임 중 하단 키 안내를 패드 버튼으로 보일지: 컨트롤러가 연결돼 있고 패드 입력이 켜져 있으며,
+        조작 프리셋이 '게임패드'이거나 가장 최근 입력이 패드(키보드보다 최근)일 때"""
+        pad = getattr(self, "gamepad", None)
+        if pad is None or not pad.connected() or not self.settings.get("gamepad", True):
+            return False
+        if self.settings.get("key_preset", "arcade") == "gamepad":
+            return True
+        return pad.last_pad_t > getattr(self, "_last_kb_t", 0.0)
+
     def _build_key_hints(self):
         """인게임 하단 조작 안내 바에 표시할 (동작, 키) 목록 (현재 키 설정 반영). 설정이 '끔'(또는 '처음 10판만'인데 이미 익숙함)이면 빈 목록"""
         mode = self.settings.get("key_hints", "always")
         if mode == "off" or (mode == "novice" and self.stats_mgr.data.get("total_games", 0) >= 10):
             return []
+        if self._pad_hints_active():
+            from gamepad import pad_hint_items
+            hints = pad_hint_items(self.settings.get_pad_map())
+            if self.match is not None and not self.match.attacks_enabled:
+                hints = [h for h in hints if h[1] != "조준"]
+            if self.net_mgr.mode != "NONE":
+                hints = [h for h in hints if h[1] != "일시정지"]
+            return hints
         def keys(action, limit=2):
             return "/".join(short_key_name(k) for k in self.settings.get_action_keys(action)[:limit])
         hints = [
@@ -207,17 +225,19 @@ class CoreMixin:
             (keys("soft_drop", 1), "소프트"),
             (keys("hard_drop", 1), "하드드롭"),
             (keys("hold"), "홀드"),
-            (keys("target_cycle", 1), "조준"),
-            ("1~5", "조준모드"),
+            (keys("target_cycle", 1) + "/1~5", "조준"),                    # 조준 대상 순환 + 조준 모드 바로 선택(1~5)을 한 칸에 (안내 바가 3줄이 되면 화면 아래로 잘려서)
         ]
         if self.settings.get_action_keys("rotate_180"):
             hints.insert(3, (keys("rotate_180", 1), "180°"))                 # 키를 지정한 사람에게만 안내
         if self.match is not None and not self.match.attacks_enabled:
-            hints = [h for h in hints if h[1] not in ("조준", "조준모드")]      # 서바이벌: 조준 개념 없음
+            hints = [h for h in hints if h[1] != "조준"]      # 서바이벌: 조준 개념 없음
         if self.match is not None and self.match.practice:
             hints += [("G · B · V", "쓰레기 · 초기화 · 압박 드릴")]        # 항목이 10개를 넘으면 안내 바가 3줄이 되어 화면 아래로 잘림
         if self.net_mgr.mode == "NONE":
             hints.append((keys("pause", 1), "일시정지"))
+        else:
+            hints.append(("Enter", "채팅"))                                  # 네트워크 경기에서는 일시정지가 없고 대신 채팅 키가 있음 (안내가 없었음)
+        hints.append(("F1", "규칙"))                                          # 게임 중에도 열 수 있는 규칙 요약 (일시정지 화면에만 안내가 있었음)
         hints.append(("T", "설정"))
         return hints
 
