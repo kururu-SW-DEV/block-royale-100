@@ -71,6 +71,10 @@ def _translate(text):
                 return en.format(*groups)
             except (IndexError, KeyError, ValueError):                 # 틀이 잘못돼도 화면이 깨지지 않게 원문을 돌려줌
                 return text
+    if stripped != text and stripped:                                # 틀 앞뒤에 공백이 더 붙은 조각 ("a   ·   b"를 "  ·  "로 나눈 뒤 남는 공백 등)
+        done = _translate(stripped)
+        if done != stripped:
+            return text[:len(text) - len(text.lstrip())] + done + text[len(text.rstrip()):]
     for sep in _SEPARATORS:                                          # 조각으로 나눠 번역 (하나라도 옮겨지면 사용)
         if sep in text:
             pieces = text.split(sep)

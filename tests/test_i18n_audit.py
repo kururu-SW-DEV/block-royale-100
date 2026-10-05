@@ -24,11 +24,12 @@ HAN = re.compile(r"[가-힣]")
 ALLOWED = {"한국어", "Language / 언어"}          # 언어 선택 줄은 일부러 원래 언어로 표시
 
 
-def main():
+def main(pad=False):
     pygame.display.set_mode((1366, 768))
     CANVAS.attach(pygame.display.get_surface())
     app = M.BlockRoyaleApp()
     app.screen = CANVAS
+    app.renderer.pad_ui = pad                                     # 패드로 하는 중 화면: 키 이름을 패드 버튼으로 바꾼 글자도 번역돼야 함 (번역 전에 바꾸면 한글로 남았음)
     app.stats_mgr.filepath = os.path.join(tempfile.mkdtemp(), "s.json")
     i18n.set_language("en")
     missing = {}
@@ -99,6 +100,7 @@ def main():
         app.settings.set("rule_team", True)
         app.start_game(mode="SOLO", total_players=20)
         m = app.match
+        m.pad_ui = pad
         m.countdown_until = 0.0
         frames(120)
         m.phase = 2
@@ -136,6 +138,7 @@ if __name__ == "__main__":
     keep = {p: (open(p, "rb").read() if os.path.exists(p) else None) for p in (SETTINGS_FILE, STATS_FILE)}
     try:
         main()
+        main(pad=True)
     finally:
         for p, data in keep.items():
             if data is not None:

@@ -65,7 +65,7 @@ _PADIFY = None
 def padify(text):
     """패드로 하는 중에 화면 글자 속의 키보드 키 이름을 패드 버튼 이름으로 바꿈 ("메인 메뉴로 (ESC)" -> "(B)", "Enter 재생" -> "A 재생" 등. MENU_BUTTONS와 같은 대응)"""
     global _PADIFY
-    if "키보드" in text:
+    if "키보드" in text or "keyboard" in text.lower():
         return text                                           # "키보드 ESC로 취소"처럼 키보드를 가리키는 문구는 그대로 (패드 버튼 배정 중에는 B도 배정할 수 있는 버튼이라 취소는 키보드 ESC)
     if _PADIFY is None:
         import re

@@ -452,7 +452,8 @@ class UIRenderer:
                 self.text_cache.clear()
             if self.pad_ui and isinstance(text, str) and ("ESC" in text or "Esc" in text or "Enter" in text or "Space" in text or "PgUp" in text):
                 from gamepad import padify
-                text = padify(text)                          # 패드로 하는 중이면 안내 글자 속 키 이름(ESC/Enter/Space)을 패드 버튼으로
+                from i18n import tr
+                text = padify(tr(text))                      # 패드로 하는 중이면 안내 글자 속 키 이름(ESC/Enter/Space)을 패드 버튼으로. 번역을 먼저 해야 함 ("완료  (ESC)" -> "(B)"로 먼저 바꾸면 번역표에 없어 한글로 남음)
             surf = font.render(text, True, color)
             self.text_cache[key] = surf
         return surf
@@ -499,7 +500,7 @@ class UIRenderer:
         key_surf = None
         if key_hint and self.pad_ui:
             from gamepad import pad_key_label
-            key_hint = pad_key_label(key_hint) or ("A" if hover else None)       # 패드 버튼이 있는 키는 그 버튼(B/Y…), 없는 키(R/S/T)는 선택된 버튼에만 A(확인)
+            key_hint = pad_key_label(key_hint) or "A"       # 패드 버튼이 있는 키는 그 버튼(B/Y…), 없는 키(R/S/T)는 십자키로 고른 뒤 A(확인)로 누르므로 A
         if key_hint:
             key_surf = self._text(key_hint, self.font_tiny, (20, 24, 36))
             total_w += key_surf.get_width() + 22
