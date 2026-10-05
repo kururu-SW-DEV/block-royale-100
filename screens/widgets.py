@@ -29,7 +29,11 @@ class WidgetsMixin:
     def _menu_header(self, title, subtitle, accent=C_ACCENT, y=32):
         """모든 메뉴 화면 공통 헤더: 큰 제목 + 액센트 밑줄 + 보조 설명"""
         cx = SCREEN_WIDTH // 2
-        rect = self._t(HiFont.text_filter(title).replace(" ", "  ") if HiFont.text_filter else title.replace(" ", "  "), self.font_title, C_TEXT, cx, y, "midtop")      # 큰 글씨는 띄어쓰기 폭이 좁아 단어가 붙어 보이므로 넓힘
+        shown = HiFont.text_filter(title) if HiFont.text_filter else title
+        shown = " ".join(shown.split())
+        if not any("가" <= ch <= "힣" for ch in shown):                                        # 영어(라틴 글자)만 한 칸을 두 칸으로: 한글은 글자 자체가 넓어 한 칸으로도 충분하고, 두 칸이면 너무 벌어져 보임
+            shown = shown.replace(" ", "  ")                                    # 큰 글씨는 띄어쓰기 폭이 좁아 단어가 붙어 보이므로 한 칸을 두 칸으로 (원문에 이미 있던 여러 칸은 먼저 한 칸으로 줄여, "  ·  "이 네 칸씩 벌어지지 않게)
+        rect = self._t(shown, self.font_title, C_TEXT, cx, y, "midtop")
         pygame.draw.rect(self.screen, accent, (cx - 36, rect.bottom + 8, 72, 3), border_radius=2)
         if subtitle:
             self._t(subtitle, self.font_info, C_DIM, cx, rect.bottom + 22, "midtop")
