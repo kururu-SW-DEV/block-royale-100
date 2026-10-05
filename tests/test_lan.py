@@ -364,6 +364,25 @@ def test_v133_lobby_reap_rejoin_and_taken_over_notice():
         host.stop(); client.stop()
 
 
+def test_host_lobby_labels_fit_beside_their_controls():
+    """대기실 경기 설정 카드: 왼쪽 라벨이 오른쪽 컨트롤(칩/증감 버튼)과 겹치지 않아야 함 (영어 "Team Battle (2 teams)"가 칩 밑으로 잘리던 문제)"""
+    import i18n
+    app = _app()
+    try:
+        for lang in ("ko", "en"):
+            i18n.set_language(lang)
+            app.state = "HOST_LOBBY"
+            app._render_host_lobby()
+            card_w = 170 - 18 - 10                                   # 라벨 시작(card.x+18)부터 컨트롤 시작(card.x+170)까지, 여유 10px
+            for src in ("대전 인원", "봇 난이도", "게임 모드", "팀전 (2팀)"):
+                w = app.font_mid.size(i18n.tr(src))[0]
+                assert w <= card_w, f"{lang}: {src!r} 라벨 폭 {w} > {card_w}"
+            # 방 제목 라벨과 방 이름 입력 글자 사이 간격은 코드가 라벨 폭에서 계산하므로 라벨이 상자 안에 들어가는지만 확인
+            assert app.font_small.size(i18n.tr("방 제목"))[0] < 200
+    finally:
+        i18n.set_language("ko")
+
+
 if __name__ == "__main__":
     pygame.init()
     from settings_manager import SETTINGS_FILE

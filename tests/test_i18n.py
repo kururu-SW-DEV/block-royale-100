@@ -174,6 +174,58 @@ def test_no_glyphs_missing_from_the_game_font():
     assert not hits, f"글꼴에 없는 기호 사용: {hits}"
 
 
+def test_runtime_strings_translate():
+    """화면 묶음 렌더 검사(test_i18n_audit)가 닿지 못하는 곳(확인 창, 채팅 시스템 메시지, 대기실 안내, 경기 중 알림)에서 실제로 만들어지는 문장들이 영어로 바뀌는지"""
+    import re
+    import i18n
+    han = re.compile(r"[가-힣]")
+    cases = ["게임을 종료할까요?", "프로그램을 완전히 종료합니다.", "게임에서 나갈까요?", "계속 플레이", "방 유지", "방 닫기", "확인",
+             "진행 중인 경기는 저장되지 않고 메인 메뉴로 돌아갑니다.", "방장이 나가면 방이 닫히고 모든 참가자의 게임이 종료됩니다.",
+             "게임에서 나가면 탈락 처리되고 메인 메뉴로 돌아갑니다.", "방이 가득 찼습니다.", "게임 진행 중", "8초 이상 호스트에게서 응답이 없습니다.",
+             "Guest1 님이 입장했습니다", "Guest1 님이 나갔습니다", "Guest 님이 이름을 Bob(으)로 바꿨습니다", "Guest 님의 연결이 끊겨 봇이 대신 플레이합니다",
+             "나머지 3명", "방 제목   Royale Room", "키보드", "[처치 기여] Bob에게 5줄 보냄", "0/5번",
+             "드릴 종료: 12초 버팀  ·  막은 줄 3  ★ 최고 기록!", "드릴 종료: 12초 버팀  ·  막은 줄 3  (최고 20초)",
+             "소수 정예 ★1/3", "후반 가속 ★0/3", "2026-10-05 19:24   ·   최종 3위 / 50명   ·   K.O. 2"]
+    i18n.set_language("en")
+    try:
+        bad = [c for c in cases if han.search(i18n.tr(c))]
+        assert i18n.tr("[처치 기여] Bob에게 5줄 보냄") == "[K.O. assist] sent 5 lines to Bob", "인자 순서가 뒤바뀜"
+    finally:
+        i18n.set_language("ko")
+    assert not bad, f"영어로 바뀌지 않은 문장: {bad}"
+
+
+def test_spectator_bar_stays_between_the_mini_board_columns():
+    """관전 바는 좌우 미니 보드 열 사이(가운데 600px)에만 있어야 함: 영어처럼 안내가 길어지면 예전에는 바가 넓어져 미니 보드를 덮었음"""
+    import i18n
+    import pygame
+    from gfx import CANVAS
+    for lang, n, team in (("ko", 100, False), ("en", 100, False), ("en", 100, True), ("en", 40, False), ("en", 20, False)):
+        i18n.set_language(lang)
+        try:
+            app = _app()
+            app.settings.set("rule_team", team)
+            app.start_game("SOLO", total_players=n)
+            m = app.match
+            m.countdown_until = 0.0
+            for _ in range(10):
+                app._tick_game(1 / 30)
+            foes = [p for p in m.players if p != m.local_player_id]
+            m._eliminate_player(m.local_player_id, foes[0])
+            app.result_lock_until = 0.0
+            app._handle_game_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_s, mod=0, unicode="s"))
+            for _ in range(10):
+                app._tick_game(1 / 30)
+            app.renderer.render(m, app.sound_mgr)
+            bar = app.renderer._hud_rects.get("spectate_bar")
+            assert bar is not None, f"{lang}: 관전 바가 그려지지 않음"
+            assert bar.w <= 600 and abs(bar.centerx - 683) <= 12, f"{lang}: 관전 바가 가운데 빈 공간을 벗어남 {bar}"
+            hit = [pid for pid, r in app.renderer.mini_board_rects.items() if bar.colliderect(r.inflate(0, 18))]       # 이름표(카드 위 16px)까지 포함해 어떤 미니 보드도 덮지 않아야 함
+            assert not hit, f"{lang}: 관전 바가 미니 보드를 덮음 {bar} {[tuple(app.renderer.mini_board_rects[p]) for p in hit[:3]]}"
+        finally:
+            i18n.set_language("ko")
+
+
 if __name__ == "__main__":
     pygame.init()
     from settings_manager import SETTINGS_FILE

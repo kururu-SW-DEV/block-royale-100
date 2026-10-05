@@ -334,11 +334,11 @@ class LobbyMixin:
         editing = (self.text_focus == "room_name")
         pygame.draw.rect(self.screen, (11, 13, 24), name_box, border_radius=10)
         pygame.draw.rect(self.screen, C_ACCENT if editing else (60, 74, 110), name_box, 2 if editing else 1, border_radius=10)
-        self._t("방 제목", self.font_small, C_DIM, name_box.x + 16, name_box.centery, "midleft")
+        label_r = self._t("방 제목", self.font_small, C_DIM, name_box.x + 16, name_box.centery, "midleft")
         shown_name = self.room_name_input + (self.chat_comp if editing else "")
         if not editing and not shown_name.strip():
             shown_name = self._default_room_name()
-        t = self._t(shown_name, self.font_mid, C_TEXT, name_box.x + 92, name_box.centery, "midleft")
+        t = self._t(shown_name, self.font_mid, C_TEXT, max(name_box.x + 92, label_r.right + 14), name_box.centery, "midleft")         # 영어 라벨이 길어도 방 이름과 붙지 않게
         if editing and int(time.time() * 2) % 2 == 0:
             pygame.draw.rect(self.screen, C_ACCENT, (t.right + 3, name_box.y + 9, 2, name_box.h - 18))
 

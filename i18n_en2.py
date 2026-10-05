@@ -67,7 +67,7 @@ EXACT = {
     "마우스 휠 / ↑ ↓ / PageUp·PageDown 으로 스크롤": "Scroll with mouse wheel / ↑ ↓ / PageUp·PageDown",
     "이름": "Name", "라인": "Lines", "생존 중": "Alive", "탈락": "Out",
     "  ·  사람": "  ·  Human", "  ·  봇": "  ·  Bot", " 봇": " Bot", "봇": "Bot", "사람": "Human",
-    "대상 변경": "Change target", "클릭": "Click", "미니 보드 선택": "Pick mini board", "결과 화면": "Results",
+    "대상 변경": "Target", "클릭": "Click", "미니 보드 선택": "Pick board", "결과 화면": "Results",
     "메시지 입력 (Enter 전송 · ESC 취소)": "Type a message (Enter to send · ESC to cancel)", "Enter  채팅": "Enter  Chat",
     "배속": "Speed", "일시정지": "Pause", "메뉴": "Menu",
     "★ 개인 최고!": "★ Personal best!",

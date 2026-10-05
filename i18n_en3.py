@@ -75,7 +75,7 @@ TEMPLATES = {
     "[피격 경고] {}명 +{}줄 공격 받음": "[Under attack] {} players +{} lines received",
     "[피격 경고] +{}줄 공격 받음 (보낸이: {})": "[Under attack] +{} lines received (from {})",
     "생존자 {}명!  접전": "{} players left!  Tight race",
-    "[처치 기여] {}에게 {}줄 보냄": "[K.O. assist] sent {} lines to {}",
+    "[처치 기여] {}에게 {}줄 보냄": "[K.O. assist] sent {1} lines to {0}",
     "[K.O. 처치!] +1 배지 획득 >> {}": "[K.O.!] +1 badge >> {}",
     "★ 현상금 사냥 성공! {} ★": "★ Bounty hunted! {} ★",
     "★ {} 최종 우승! ★": "★ {} wins it all! ★",

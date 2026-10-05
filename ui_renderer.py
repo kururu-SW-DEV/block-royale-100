@@ -2370,7 +2370,7 @@ class UIRenderer:
                 name_surf = self._text(name_str, tag_font, (16, 20, 30) if is_spec else name_col)
                 if self.mini_fast:
                     self._card_info[pid] = (sig, name_str, name_col, tag_font, ko, ko_surf, ko_w, hold_icon, hold_w, name_surf)
-            tag_y = board_rect.y - (16 if bw >= 90 else 13)
+            tag_y = board_rect.y - max(16 if bw >= 90 else 13, tag_font.get_height() + 1)         # 글꼴이 커도(글자 크기 '크게', 한글/영문 높이 차이) 이름이 카드 윗변에 걸치지 않게
 
             def draw_tag():
                 if is_spec:
@@ -3687,7 +3687,8 @@ class UIRenderer:
             tail = ""
             if killer and killer in match.players:
                 kp = match.players[killer]
-                tail = f" · {kp.get('name', '?')[:12]}" + (f"({kp['trait']})" if kp.get("trait") else "") + "에게 탈락"       # 나를 K.O.한 상대
+                kname = kp.get('name', '?')[:12] + (f"({_tr(kp['trait'])})" if kp.get("trait") else "")          # 특성 이름은 따로 번역 (합친 뒤에는 안쪽 단어를 번역할 수 없음)
+                tail = " · " + _tr(f"{kname}에게 탈락")                                                           # 나를 K.O.한 상대 ("… eliminated by 이름")
             if team:                                                                      # 팀전: 팀 상황이 더 중요하므로 탈락시킨 상대 대신 팀 생존자 수
                 mine, foes = match.team_alive_counts()
                 tail = (" · 상대 팀 승리" if match.team_won is False else f" · 우리 팀 {mine}명 / 상대 팀 {foes}명 생존 (끝까지 지켜보세요)")
@@ -3805,7 +3806,7 @@ class UIRenderer:
         """관전 바: 미니 보드 영역(좌우)을 가리지 않도록 보드 아래 중앙 빈 공간에 2줄로 표시"""
         target_p = match.players.get(match.spectate_target_id, {})
         name = target_p.get("name", "생존자 탐색 중")
-        who = (f"{target_p['trait']} 봇" if target_p.get("trait") else "봇") if target_p.get("is_ai", False) else "사람"
+        who = (f"{_tr(target_p['trait'])} {_tr('봇')}" if target_p.get("trait") else _tr("봇")) if target_p.get("is_ai", False) else _tr("사람")      # 조각마다 번역 (한 줄로 합친 뒤에는 안쪽 단어를 번역할 수 없음)
         ko = target_p.get("ko_count", 0)
 
         net_on = match.net_mgr is not None and match.net_mgr.mode != "NONE"
@@ -3815,20 +3816,39 @@ class UIRenderer:
             hints.append(("R", "재도전"))
             hints.append(("P", "연습"))
         hints.append(("ESC", "일시정지" if not net_on else "메뉴"))
-        bar_w, bar_h = max(580, self._keycap_width(hints) + 40), 60            # 안내가 많으면(글자 크기 '크게' 포함) 바를 넓혀 안내가 삐져나오지 않게
+        # 바는 좌우 미니 보드 열 사이(가운데 빈 공간)에만 둠: 영어처럼 안내가 길어져도 바를 넓혀 미니 보드를 덮지 않고, 안내 간격을 좁히고 중요도 낮은 안내(연습, 재도전)부터 뺌
+        bar_h, center_w = 60, 600
+        bar_top = self.main_board_y + self.main_board_h + 10 + int(oy)
+        cx_mid = self.width // 2 + int(ox)
+        lim_l, lim_r = 0, self.width
+        for r_ in self.mini_board_rects.values():                 # 실제로 그려진 미니 보드(이름표 높이 포함) 중 바와 같은 높이에 있는 것들이 비워 둘 폭을 정함
+            if r_.bottom >= bar_top - 18 and r_.top <= bar_top + bar_h:
+                if r_.centerx < cx_mid:
+                    lim_l = max(lim_l, r_.right + 6)
+                else:
+                    lim_r = min(lim_r, r_.left - 6)
+        center_w = max(300, min(center_w, 2 * min(cx_mid - lim_l, lim_r - cx_mid)))
+        gap = 14
+        droppable = [h_ for h_ in hints if h_[0] in ("P", "R")]
+        while self._keycap_width(hints, gap) + 40 > center_w and gap > 8:
+            gap -= 2
+        while self._keycap_width(hints, gap) + 40 > center_w and droppable:
+            hints.remove(droppable.pop())
+        bar_w = max(min(580, center_w), min(center_w, self._keycap_width(hints, gap) + 40))
         bar_w = min(bar_w, self.width - 20)
         rect = pygame.Rect(self.width // 2 - bar_w // 2 + int(ox),
                            self.main_board_y + self.main_board_h + 10 + int(oy), bar_w, bar_h)
+        self._hud_rects["spectate_bar"] = rect                                    # 테스트가 바가 가운데 빈 공간을 벗어나 미니 보드를 덮는지 확인
         self._panel(rect, border=C_GOLD, bg=(16, 20, 36), radius=12, alpha=245, border_w=2)
 
-        badge = pygame.Rect(rect.x + 12, rect.y + 8, 64, 22)
+        badge = pygame.Rect(rect.x + 12, rect.y + 8, max(64, self.font_small.size(_tr("관전 중"))[0] + 20), 22)         # 영어 "Spectating"이 배지 밖으로 나가지 않게 글자 폭에 맞춤
         pygame.draw.rect(self.screen, C_GOLD, badge, border_radius=11)
         self._draw_text("관전 중", self.font_small, (16, 20, 30), badge.centerx, badge.centery, "center")
         name_col = C_TEXT
         if not target_p.get("is_ai", False):
             name_col = NAME_COLORS[match.get_name_colors().get(match.spectate_target_id, 0)][1]
-        self._draw_text(f"{name}  ({who}, K.O. {ko})", self.font_hud, name_col, rect.x + 88, rect.y + 19, "midleft")
-        self._keycap_hints(hints, rect.centerx, rect.y + 36)
+        self._draw_text(f"{name}  ({who}, K.O. {ko})", self.font_hud, name_col, badge.right + 12, rect.y + 19, "midleft")
+        self._keycap_hints(hints, rect.centerx, rect.y + 36, gap)
 
     def _keycap_width(self, items, gap=14):
         """_keycap_hints가 그릴 전체 폭 (바 크기를 맞추는 데 씀)"""

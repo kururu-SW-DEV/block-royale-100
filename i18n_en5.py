@@ -143,6 +143,22 @@ EXACT = {
 }
 
 EXACT.update({
+    # (관전 바 안내 문구는 길어지면 미니 보드를 덮으므로 i18n_en2에서 짧게 둠)
+    # 대기실/입장 안내, 확인 창 버튼
+    "방이 가득 찼습니다.": "The room is full.",
+    "이미 경기가 진행 중입니다. 다음 경기를 기다려 주세요.": "A match is already in progress. Please wait for the next one.",
+    "게임 버전이 호스트와 달라 입장할 수 없습니다. 같은 버전으로 맞춰 주세요.": "Your game version differs from the host's, so you can't join. Please use the same version.",
+    "방 유지": "Keep Room", "방 닫기": "Close Room", "확인": "OK", "게임 진행 중": "Game in progress", "키보드": "Keyboard",
+    # 커스텀 규칙 알림 조각
+    "커스텀 규칙": "Custom rules", "(기록되지 않음)": "(not recorded)", "낙하 느리게": "Fall: slow", "낙하 기본": "Fall: normal", "낙하 빠르게": "Fall: fast",
+    "배지 켬": "Badges on", "배지 끔": "Badges off",
+    # 종료/나가기 확인 창
+    "게임을 종료할까요?": "Quit the game?", "프로그램을 완전히 종료합니다.": "The program will close completely.",
+    "게임에서 나갈까요?": "Leave the game?", "계속 플레이": "Keep Playing",
+    "진행 중인 경기는 저장되지 않고 메인 메뉴로 돌아갑니다.": "The match in progress won't be saved and you'll return to the main menu.",
+    "방장이 나가면 방이 닫히고 모든 참가자의 게임이 종료됩니다.": "If the host leaves, the room closes and the game ends for everyone.",
+    "게임에서 나가면 탈락 처리되고 메인 메뉴로 돌아갑니다.": "If you leave, you're counted as eliminated and return to the main menu.",
+    "이번 주 변형 규칙: 매주 규칙 하나가 바뀐 경기를 같은 블록 순서·같은 상대로 겨룹니다. (소수 정예 / 퍼펙트 폭격 / 안개 속 / 후반 가속 순환)": "Weekly variant: each week one rule changes, and everyone plays the same piece order against the same opponents. (rotates: Elite Few / Perfect Barrage / In the Fog / Late Rush)",
     "1줄": "1 line", "+1줄": "+1 line",
     "조준 모드": "Targeting", "경기 흐름": "Match Flow", "TAB 순환  ·  1~5 선택  ·  상단 칩 클릭": "TAB cycles  ·  1-5 select  ·  click the top chips",
     "사람 우선, 없으면 탈락 직전인 상대": "Humans first, else whoever is closest to elimination",
@@ -175,7 +191,7 @@ EXACT.update({
     "팀 승리!": "Team Victory!", "팀 패배": "Team Defeat", "우리 팀이 끝까지 살아남았습니다": "Your team survived to the end",
     " · 상대 팀 승리": " · The other team won", "★ 내 팀 승리! ★": "★ My team wins! ★", "상대 팀 승리": "The other team wins",
     "★ 팀 승리! 우리 팀이 끝까지 살아남았습니다 ★": "★ Team victory! Your team survived to the end ★", "상대 팀이 승리했습니다": "The other team won",
-    "팀전 (2팀)": "Team Battle (2 teams)", "같은 편은 공격하지 않고 상대 팀을 모두 탈락시키면 승리": "Allies don't attack each other; eliminate the other team to win",
+    "팀전 (2팀)": "Team Battle", "같은 편은 공격하지 않고 상대 팀을 모두 탈락시키면 승리": "Allies don't attack each other; eliminate the other team to win",
     "팀전(2팀): 나와 같은 편 봇 절반은 서로 공격하지 않고, 상대 팀을 모두 탈락시키면 이깁니다. 같은 편은 초록 테두리로 표시됩니다. 혼자 하는 배틀로얄에서만 적용되고 기록되지 않습니다(4명 이상).": "Team Battle (2 teams): half the bots are on your side and never attack you or each other; eliminate the other team to win. Allies have a green border. Applies to solo Battle Royale only (4+ players) and isn't recorded.",
     "소수 정예": "Elite Few", "30인 · 모두 어려움 봇": "30 players · all Hard bots",
     "퍼펙트 폭격": "Perfect Barrage", "퍼펙트 클리어 공격 2배 (20줄)": "Perfect Clear attacks doubled (20 lines)",
@@ -186,6 +202,18 @@ EXACT.update({
 })
 
 TEMPLATES = {
+    "쓰레기 {}": "Garbage {}",
+    "{#}초 이상 호스트에게서 응답이 없습니다.": "No response from the host for over {} seconds.",
+    "나머지 {#}명": "{} more",
+    "{} 님이 입장했습니다": "{} joined", "{} 님이 나갔습니다": "{} left",
+    "{} 님이 이름을 {}(으)로 바꿨습니다": "{} changed their name to {}",
+    "{} 님의 연결이 끊겨 봇이 대신 플레이합니다": "{}'s connection dropped; a bot is playing in their place",
+    "방 제목   {}": "Room name   {}",
+    "드릴 종료: {#}초 버팀  ·  막은 줄 {#}  ★ 최고 기록!": "Drill over: survived {}s  ·  blocked {} lines  ★ Best record!",
+    "드릴 종료: {#}초 버팀  ·  막은 줄 {#}  (최고 {#}초)": "Drill over: survived {}s  ·  blocked {} lines  (best {}s)",
+    "{#}/{#}번": "{}/{} times",
+    "소수 정예 ★{#}/{#}": "Elite Few ★{}/{}", "퍼펙트 폭격 ★{#}/{#}": "Perfect Barrage ★{}/{}", "안개 속 ★{#}/{#}": "In the Fog ★{}/{}", "후반 가속 ★{#}/{#}": "Late Rush ★{}/{}",
+    "{}   ·   최종 {#}위 / {#}명   ·   K.O. {#}": "{}   ·   Final #{} / {} players   ·   K.O. {}",
     "받은 공격은 {}초 차징 뒤에 올라옵니다. 그 사이에 줄을 지우면 먼저 깎입니다. (한 번에 최대 {}줄)": "Received attacks rise after a {}s charge. Clearing lines in between cancels them first. (max {} lines at once)",
     "경기 시작 {}분부터 매분 공격력 +{}% (최대 ×{}). 생존자가 절반이 되면 PHASE 2, 더 줄면 FINAL.": "From minute {} of the match, attack +{}% every minute (max ×{}). PHASE 2 at half the field, FINAL below that.",
     "처음이라면  {} ① 연습 기초 과제 3개 ({#}/3)   {} ② 첫 경기 끝까지 해 보기": "New here?  {} 1) 3 basic practice tasks ({}/3)   {} 2) play your first match to the end",
