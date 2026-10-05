@@ -368,12 +368,32 @@ class MenuMixin:
         return rect.x
 
     def _menu_profile_chip(self):
-        # 칩 폭: 영어처럼 요약("100 players · Easy · Battle Royale")이 길면 이름/칭호와 겹치지 않게 늘림 (위쪽 메뉴 항목과 부딪히지 않는 470px까지)
+        """프로필 칩: 내용(레벨 · 이름 · 칭호 · 요약 · >)의 실제 글자 폭을 재서 칩 폭을 정함 -> 한국어는 짧아서 딱 맞게, 영어는 길어서 넓게 (고정 폭이면 한쪽은 비고 한쪽은 겹침). 최대 540px (위쪽 메뉴 항목과 부딪히지 않는 범위)"""
         from i18n import tr as _tr
-        _diff = BOT_DIFFICULTY_LABELS.get(self.settings.get("bot_difficulty", "mixed"), "혼합").split(" (")[0]
-        _sum = f"{self.target_player_count}명 · {_diff}" + (" · 서바이벌" if self.settings.get("game_mode") == "survival" else " · 배틀로얄")
-        _need = 14 + 40 + 10 + 110 + 8 + 120 + 14 + self.font_small.size(_tr(_sum))[0] + 36
-        rect = pygame.Rect(24, 18, max(364, min(470, _need)), 44)
+        stm = __import__("stats_manager")
+        col = NAME_COLORS[self.name_color][1]
+        lv = self.stats_mgr.level()[0]
+        lv_txt = f"Lv.{lv}"
+        name = self._menu_fit(self.player_name, self.font_mid, 110)
+        title_id = self.settings.get("title", "")
+        title_txt = next((a[1] for a in stm.ACHIEVEMENTS if a[0] == title_id and title_id in self.stats_mgr.achievements_done()), "")
+        if not title_txt:                                       # 고른 업적 칭호가 없으면 레벨 칭호 (Lv.5 이상)
+            title_txt = stm.level_title(lv)
+        title_txt = _tr(title_txt) if title_txt else ""
+        diff = BOT_DIFFICULTY_LABELS.get(self.settings.get("bot_difficulty", "mixed"), "혼합").split(" (")[0]
+        summary = _tr(f"{self.target_player_count}명 · {diff}" + (" · 서바이벌" if self.settings.get("game_mode") == "survival" else " · 배틀로얄"))
+        PAD, GAP, ARROW = 14, 10, 28
+        lv_w = self.font_tiny.size(lv_txt)[0]
+        name_w = self.font_mid.size(name)[0]
+        sum_w = self.font_small.size(summary)[0]
+        title_w = self.font_tiny.size(title_txt)[0] if title_txt else 0
+        MAXW = 540
+        fixed = PAD + lv_w + GAP + name_w + (GAP if title_txt else 0) + 22 + sum_w + ARROW + PAD
+        if title_txt and fixed + title_w > MAXW:                # 칭호가 너무 길면 남는 폭만큼만 (너무 좁으면 생략)
+            room = MAXW - fixed
+            title_txt, title_w = (self._menu_fit(title_txt, self.font_tiny, room), room) if room >= 48 else ("", 0)
+            fixed = PAD + lv_w + GAP + name_w + (GAP if title_txt else 0) + 22 + sum_w + ARROW + PAD
+        rect = pygame.Rect(24, 18, min(MAXW, fixed + title_w), 44)
         self.menu_buttons['match_summary'] = rect
         t = self._menu_hl.get('match_summary', 1.0 if self._menu_focus_id() == 'match_summary' else 0.0)
         bg = _mix((14, 19, 36), (26, 34, 60), t)
@@ -381,24 +401,13 @@ class MenuMixin:
         pygame.draw.rect(self.screen, _mix((44, 56, 88), C_ACCENT, 0.7 * t), rect, 1, border_radius=10)
         if t > 0.5:
             self._menu_focus_ring(rect, C_ACCENT, bg, 10)
-        col = NAME_COLORS[self.name_color][1]
-        lv = self.stats_mgr.level()[0]                           # 레벨: 이름 색의 작은 글자 (배지 테두리 없이)
-        lv_txt = f"Lv.{lv}"
-        lr = self._t(lv_txt, self.font_tiny, col, rect.x + 14, rect.centery, "midleft")
-        name = self._menu_fit(self.player_name, self.font_mid, 110)
-        nr = self._t(name, self.font_mid, C_TEXT, lr.right + 10, rect.centery, "midleft")
-        diff = BOT_DIFFICULTY_LABELS.get(self.settings.get("bot_difficulty", "mixed"), "혼합").split(" (")[0]
+        lr = self._t(lv_txt, self.font_tiny, col, rect.x + PAD, rect.centery, "midleft")
+        nr = self._t(name, self.font_mid, C_TEXT, lr.right + GAP, rect.centery, "midleft")
+        if title_txt:
+            self._t(title_txt, self.font_tiny, C_GOLD, nr.right + GAP, rect.centery + 1, "midleft")
         flash = (time.time() - self._menu_flash) < 0.35
-        sr = self._t(f"{self.target_player_count}명 · {diff}" + (" · 서바이벌" if self.settings.get("game_mode") == "survival" else " · 배틀로얄"), self.font_small, C_GOLD if flash else COL_SUB, rect.right - 36, rect.centery, "midright")
-        title_id = self.settings.get("title", "")
-        title_txt = next((a[1] for a in __import__("stats_manager").ACHIEVEMENTS if a[0] == title_id and title_id in self.stats_mgr.achievements_done()), "")
-        if not title_txt:                                       # 고른 업적 칭호가 없으면 레벨 칭호 (Lv.5 이상)
-            title_txt = __import__("stats_manager").level_title(lv)
-        if title_txt:                                           # 칭호: 이름과 오른쪽 요약 사이의 남는 폭 안에서만 (영어는 요약이 길어 겹치던 문제). 폭이 너무 좁으면 칭호는 생략
-            room = sr.left - 12 - (nr.right + 8)
-            if room >= 48:
-                self._t(self._menu_fit(title_txt, self.font_tiny, min(130, room)), self.font_tiny, C_GOLD, nr.right + 8, rect.centery + 1, "midleft")
-        self._t(">", self.font_mid, C_ACCENT if t > 0.5 else COL_HINT, rect.right - 20, rect.centery, "midright")
+        self._t(summary, self.font_small, C_GOLD if flash else COL_SUB, rect.right - PAD - ARROW + 6, rect.centery, "midright")
+        self._t(">", self.font_mid, C_ACCENT if t > 0.5 else COL_HINT, rect.right - PAD - 4, rect.centery, "midright")
 
     # ------------------------------------------------------------------ 화면
     def _render_menu(self):
