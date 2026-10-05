@@ -368,7 +368,12 @@ class MenuMixin:
         return rect.x
 
     def _menu_profile_chip(self):
-        rect = pygame.Rect(24, 18, 364, 44)
+        # 칩 폭: 영어처럼 요약("100 players · Easy · Battle Royale")이 길면 이름/칭호와 겹치지 않게 늘림 (위쪽 메뉴 항목과 부딪히지 않는 470px까지)
+        from i18n import tr as _tr
+        _diff = BOT_DIFFICULTY_LABELS.get(self.settings.get("bot_difficulty", "mixed"), "혼합").split(" (")[0]
+        _sum = f"{self.target_player_count}명 · {_diff}" + (" · 서바이벌" if self.settings.get("game_mode") == "survival" else " · 배틀로얄")
+        _need = 14 + 40 + 10 + 110 + 8 + 120 + 14 + self.font_small.size(_tr(_sum))[0] + 36
+        rect = pygame.Rect(24, 18, max(364, min(470, _need)), 44)
         self.menu_buttons['match_summary'] = rect
         t = self._menu_hl.get('match_summary', 1.0 if self._menu_focus_id() == 'match_summary' else 0.0)
         bg = _mix((14, 19, 36), (26, 34, 60), t)
@@ -382,15 +387,17 @@ class MenuMixin:
         lr = self._t(lv_txt, self.font_tiny, col, rect.x + 14, rect.centery, "midleft")
         name = self._menu_fit(self.player_name, self.font_mid, 110)
         nr = self._t(name, self.font_mid, C_TEXT, lr.right + 10, rect.centery, "midleft")
+        diff = BOT_DIFFICULTY_LABELS.get(self.settings.get("bot_difficulty", "mixed"), "혼합").split(" (")[0]
+        flash = (time.time() - self._menu_flash) < 0.35
+        sr = self._t(f"{self.target_player_count}명 · {diff}" + (" · 서바이벌" if self.settings.get("game_mode") == "survival" else " · 배틀로얄"), self.font_small, C_GOLD if flash else COL_SUB, rect.right - 36, rect.centery, "midright")
         title_id = self.settings.get("title", "")
         title_txt = next((a[1] for a in __import__("stats_manager").ACHIEVEMENTS if a[0] == title_id and title_id in self.stats_mgr.achievements_done()), "")
         if not title_txt:                                       # 고른 업적 칭호가 없으면 레벨 칭호 (Lv.5 이상)
             title_txt = __import__("stats_manager").level_title(lv)
-        if title_txt:                                           # 칭호(달성한 업적 이름): 이름 오른쪽에 작게
-            self._t(self._menu_fit(title_txt, self.font_tiny, 80), self.font_tiny, C_GOLD, nr.right + 8, rect.centery + 1, "midleft")
-        diff = BOT_DIFFICULTY_LABELS.get(self.settings.get("bot_difficulty", "mixed"), "혼합").split(" (")[0]
-        flash = (time.time() - self._menu_flash) < 0.35
-        self._t(f"{self.target_player_count}명 · {diff}" + (" · 서바이벌" if self.settings.get("game_mode") == "survival" else " · 배틀로얄"), self.font_small, C_GOLD if flash else COL_SUB, rect.right - 36, rect.centery, "midright")
+        if title_txt:                                           # 칭호: 이름과 오른쪽 요약 사이의 남는 폭 안에서만 (영어는 요약이 길어 겹치던 문제). 폭이 너무 좁으면 칭호는 생략
+            room = sr.left - 12 - (nr.right + 8)
+            if room >= 48:
+                self._t(self._menu_fit(title_txt, self.font_tiny, min(130, room)), self.font_tiny, C_GOLD, nr.right + 8, rect.centery + 1, "midleft")
         self._t(">", self.font_mid, C_ACCENT if t > 0.5 else COL_HINT, rect.right - 20, rect.centery, "midright")
 
     # ------------------------------------------------------------------ 화면
