@@ -417,7 +417,9 @@ class MenuMixin:
         self._menu_profile_chip()
         snd_on = self.sound_mgr.enabled
         x = SCREEN_WIDTH - 24
-        x = self._menu_pill("toggle_fs", x, 18, "창 모드" if self.is_fullscreen else "전체 화면", "F11", C_ACCENT) - PILL_GAP
+        from app_paths import running_under_wine
+        if not running_under_wine():                                   # Proton에서는 전체 화면 전환이 없음 (입력이 막힘)
+            x = self._menu_pill("toggle_fs", x, 18, "창 모드" if self.is_fullscreen else "전체 화면", "F11", C_ACCENT) - PILL_GAP
         x = self._menu_pill("toggle_sound", x, 18, "소리 켜짐" if snd_on else "소리 꺼짐", "M",
                             C_GREEN if snd_on else C_DANGER, dot=C_GREEN if snd_on else (110, 120, 150)) - PILL_GAP
         x = self._menu_pill("settings", x, 18, "설정", "S", C_ACCENT) - PILL_GAP

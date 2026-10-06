@@ -14,6 +14,17 @@ APP_DIR_NAME = "BlockRoyale100"
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+def running_under_wine():
+    """Wine/Proton(SteamOS 등) 안에서 실행 중인가. SteamOS Proton 10 이후에서는 진짜 전체 화면이면 입력이 게임 창에 전달되지 않아(창 모드는 정상) 이때는 창 모드만 씀"""
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        return hasattr(ctypes.windll.ntdll, "wine_get_version")
+    except Exception:
+        return False
+
+
 def is_frozen():
     return bool(getattr(sys, "frozen", False))
 

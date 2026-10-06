@@ -795,7 +795,9 @@ class SettingsMixin:
         y = TOP
         fs = self.is_fullscreen
         size = pygame.display.get_surface().get_size() if pygame.display.get_surface() else (0, 0)
-        self._s_row("fs", y, 52, "화면 모드", f"현재 {size[0]}×{size[1]}  ·  F11 키로도 전환")
+        from app_paths import running_under_wine
+        fs_note = "SteamOS(Proton)에서는 전체 화면이면 입력이 막혀 창 모드로 고정됩니다 (게이밍 모드에서는 창이 화면을 가득 채웁니다)" if running_under_wine() else f"현재 {size[0]}×{size[1]}  ·  F11 키로도 전환"
+        self._s_row("fs", y, 52, "화면 모드", fs_note)
         self._s_seg([("fs=window", "창 모드"), ("fs=full", "전체 화면")], "fs=full" if fs else "fs=window", RIGHT, y + 26)
         y += 52
         res = self.settings.get("resolution", "auto")

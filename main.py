@@ -58,7 +58,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                 print(f"[App] Failed to set window icon: {e}")
                 
         self.settings = SettingsManager()
-        self.is_fullscreen = bool(self.settings.get("fullscreen", False))
+        from app_paths import running_under_wine
+        self.is_fullscreen = bool(self.settings.get("fullscreen", False)) and not running_under_wine()      # Proton: 전체 화면이면 입력이 막혀 창 모드 고정
         # 논리 좌표(1366x768)로 그리면 gfx.CANVAS가 실제 창/모니터 해상도로 선명하게 변환한다
         self.screen = CANVAS
         self._create_window()

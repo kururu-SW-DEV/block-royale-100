@@ -10,6 +10,7 @@ from app_common import (
     SCREEN_HEIGHT, SCREEN_WIDTH, pygame, short_key_name, socket, time
 )
 import bot_pool
+from app_paths import running_under_wine
 from config import bot_display_name
 
 
@@ -111,7 +112,7 @@ class CoreMixin:
 
     def _create_window(self):
         """현재 설정(전체화면 / 창 해상도)에 맞춰 디스플레이를 (재)생성하고 CANVAS에 연결"""
-        if self.is_fullscreen:
+        if self.is_fullscreen and not running_under_wine():
             surf = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
         else:
             w, h, (ax, ay, dw, dh) = self._target_window_size()
@@ -143,6 +144,8 @@ class CoreMixin:
         return new
 
     def toggle_fullscreen(self):
+        if running_under_wine():
+            return                                            # Proton: 전체 화면이면 입력이 막히므로 창 모드로 고정 (게이밍 모드에서는 창이 화면을 가득 채움)
         self.is_fullscreen = not self.is_fullscreen
         self.settings.set("fullscreen", self.is_fullscreen)
         self._create_window()

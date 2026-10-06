@@ -212,6 +212,32 @@ def test_easy_cards_keep_a_hold_slot_in_detailed_mini_view():
     assert infos and all(v[7] == "" for v in infos if v[7] is not None) and any(v[7] == "" for v in infos), "빈 홀드 칸이 예약돼야 함"
 
 
+def test_fullscreen_is_never_used_under_wine():
+    import main as M
+    import screens.core as C
+    from gfx import CANVAS
+    import app_paths
+    orig, orig_ap = C.running_under_wine, app_paths.running_under_wine
+    C.running_under_wine = app_paths.running_under_wine = lambda: True      # core는 이름으로, 메뉴/설정은 호출할 때 app_paths에서 가져옴
+    try:
+        app = M.BlockRoyaleApp()
+        app.screen = CANVAS
+        app.settings.set("fullscreen", True, autosave=False)
+        app.is_fullscreen = True
+        app._create_window()
+        assert not (pygame.display.get_surface().get_flags() & pygame.FULLSCREEN), "Proton에서는 전체 화면을 만들지 않음"
+        before = app.is_fullscreen
+        app.toggle_fullscreen()
+        assert app.is_fullscreen == before, "Proton에서는 전체 화면 전환이 없음"
+        app.state = "MENU"
+        app._render_menu()
+        assert "toggle_fs" not in app.menu_buttons
+        app.state, app.settings_tab, app.previous_state = "SETTINGS", "general", "MENU"
+        app._render_settings()
+    finally:
+        C.running_under_wine, app_paths.running_under_wine = orig, orig_ap
+
+
 if __name__ == "__main__":
     pygame.init()
     for name, fn in list(globals().items()):
