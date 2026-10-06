@@ -21,23 +21,6 @@ if sys.platform == "win32":
         except Exception:
             pass
 
-# Wine/Proton(SteamOS 게임 모드)에서 실행 중이면: 게임 모드(gamescope)는 창이 입력 포커스를 못 받은 채 시작할 수 있고, SDL은 포커스가 없는 창에는
-# 컨트롤러 입력을 주지 않아 "데스크톱 모드에서 한 번 조작해 줘야 게임 모드에서 된다"는 증상이 생김 -> 포커스와 상관없이 컨트롤러 입력을 받음 (윈도우에서는 건드리지 않음)
-def _running_under_wine():
-    if sys.platform != "win32":
-        return False
-    try:
-        import ctypes
-        return hasattr(ctypes.windll.ntdll, "wine_get_version")
-    except Exception:
-        return False
-
-
-RUNNING_UNDER_WINE = _running_under_wine()
-if RUNNING_UNDER_WINE:
-    os.environ.setdefault("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1")
-    os.environ.setdefault("SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD", "1")
-
 # 논리 해상도(1366x768)를 실제 창/모니터 해상도로 확대할 때 부드럽게 보간
 os.environ.setdefault("SDL_HINT_RENDER_SCALE_QUALITY", "linear")
 import pygame
@@ -248,26 +231,6 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
             self.renderer.pause_focus = 0
             self.sound_mgr.pause_bgm()
 
-    def _wine_focus_assist(self):
-        """Wine/Proton(SteamOS 게임 모드): 창이 입력 포커스 없이 시작하면 키보드/컨트롤러 입력이 아예 안 들어옴 (데스크톱 모드에서 한 번 조작해 포커스를 주면 되던 증상).
-        포커스가 없는 동안 1초마다 창을 앞으로 가져오고 포커스를 요청함 (포커스가 잡히면 더는 하지 않음)"""
-        now = time.time()
-        if now - getattr(self, "_focus_try_t", 0.0) < 1.0:
-            return
-        self._focus_try_t = now
-        try:
-            if pygame.key.get_focused():
-                return
-            import ctypes
-            hwnd = pygame.display.get_wm_info().get("window")
-            if hwnd:
-                u = ctypes.windll.user32
-                u.SetForegroundWindow(hwnd)
-                u.SetActiveWindow(hwnd)
-                u.SetFocus(hwnd)
-        except Exception:
-            pass
-
     def _transition_check(self):
         """state가 바뀌면 화면 전환 와이프를 시작. 게임과 그 위에 겹쳐 여는 설정 사이, 시작 직후의 첫 화면은 제외. 흔들림 '끔'이면 짧은 페이드"""
         prev, cur = getattr(self.renderer, "_tr_state", None), self.state
@@ -283,8 +246,6 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         running = True
         while running:
             raw_dt = self.clock.tick(FPS) / 1000.0
-            if RUNNING_UNDER_WINE:
-                self._wine_focus_assist()
             if raw_dt > self.MAX_FRAME_DT:
                 self._on_long_frame(raw_dt)              # 창 드래그/크기 조절로 루프가 멈췄다 돌아온 경우
             dt = min(raw_dt, self.MAX_FRAME_DT)

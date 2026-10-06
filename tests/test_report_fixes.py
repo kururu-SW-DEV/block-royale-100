@@ -212,20 +212,6 @@ def test_easy_cards_keep_a_hold_slot_in_detailed_mini_view():
     assert infos and all(v[7] == "" for v in infos if v[7] is not None) and any(v[7] == "" for v in infos), "빈 홀드 칸이 예약돼야 함"
 
 
-def test_gamepad_rescan_finds_devices_without_add_events():
-    from gamepad import GamepadMapper
-    pad = GamepadMapper(lambda a: [], lambda: True)
-    opened = []
-    pad.on_device_event = lambda e: (opened.append(e.device_index), pad.joys.__setitem__(e.device_index, object()))
-    orig = pygame.joystick.get_count
-    pygame.joystick.get_count = lambda: 1
-    try:
-        assert pad.rescan(interval=0) is True and pad.connected() and opened == [0]
-        assert pad.rescan(interval=0) is False, "이미 연결돼 있으면 다시 열지 않음"
-    finally:
-        pygame.joystick.get_count = orig
-
-
 if __name__ == "__main__":
     pygame.init()
     for name, fn in list(globals().items()):

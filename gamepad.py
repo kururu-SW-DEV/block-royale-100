@@ -115,7 +115,6 @@ class GamepadMapper:
         self._sent = {}                                 # 누른 입력 -> 보낸 키 코드
         self.ctrls = {}                                 # instance_id -> 열어 둔 GameController
         self._dpad = {}                                 # instance_id -> 눌린 십자키 방향 집합 (GameController는 십자키가 버튼으로 옴)
-        self._scan_t = 0.0                              # 마지막으로 장치 목록을 직접 확인한 시각 (rescan)
         self.last_pad_t = 0.0                           # 마지막으로 패드 입력(또는 연결)이 있었던 시각 (게임 중 키 안내를 패드/키보드 중 어느 쪽으로 보일지 정하는 데 씀)
 
     # ---- 장치 연결/해제
@@ -140,27 +139,6 @@ class GamepadMapper:
                     self._dirs.pop(k, None)
         except Exception:
             pass
-
-    def rescan(self, interval=2.0):
-        """연결된 장치가 하나도 없을 때 2초마다 SDL의 장치 목록을 직접 확인해 아직 열지 않은 장치를 엶.
-        장치 연결 이벤트(JOYDEVICEADDED)가 오지 않거나 먼저 지나가 버리는 환경(SteamOS 게임 모드의 Proton 등)에서도 패드가 잡히게 함"""
-        now = time.time()
-        if self.connected() or now - self._scan_t < interval:
-            return False
-        self._scan_t = now
-        found = False
-        try:
-            if not pygame.joystick.get_init():
-                pygame.joystick.init()
-            for index in range(pygame.joystick.get_count()):
-                ev = pygame.event.Event(pygame.JOYDEVICEADDED, device_index=index)
-                self.on_device_event(ev)
-                found = found or self.connected()
-        except Exception:
-            return False
-        if found:
-            self.last_pad_t = now
-        return found
 
     def _open_controller(self, index):
         """표준 컨트롤러면 열어서 보관하고 True. 아니거나 실패하면 False (조이스틱으로 처리)"""
@@ -292,7 +270,6 @@ class GamepadMapper:
         """이벤트 목록을 받아 패드 이벤트는 키 이벤트로 바꾼 새 목록을 돌려줌 (나머지는 그대로)"""
         if not self.enabled():
             return self.release_all() + [e for e in events if e.type not in PAD_EVENT_TYPES]      # 끄는 순간 눌려 있던 입력은 떼 줌 (안 그러면 블록이 계속 한쪽으로 움직임)
-        self.rescan()
         out = []
         for e in events:
             if e.type in (pygame.JOYDEVICEADDED, pygame.JOYDEVICEREMOVED):
