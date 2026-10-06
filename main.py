@@ -72,8 +72,6 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         self.sound_mgr.set_sfx_volume(self.settings.get("sfx_volume", 70) / 100.0)
         self.sound_mgr.set_warn_scale(self.settings.get("warn_volume", 100) / 100.0)
         self.sound_mgr.set_announcer(self.settings.get("announcer", False))
-        from input_diag import InputDiag
-        self.input_diag = InputDiag()
         from gamepad import GamepadMapper
         self.gamepad = GamepadMapper(lambda action: self.settings.get_action_keys(action), lambda: bool(self.settings.get("gamepad", True)),
                                      lambda: self.settings.get_pad_map())
@@ -261,9 +259,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
             # 이벤트 처리
             pad_in_game = (self.state == "GAME" and self.match is not None and not self.is_paused and self.modal is None and not self.rules_open
                            and self.match.local_is_alive and not self.match.match_finished and self.match.countdown_left() <= 0)      # 그 밖에는 메뉴 방식(방향키/Enter/Esc)으로 변환
-            raw_events = pygame.event.get()
-            self.input_diag.events(raw_events)                       # (Wine/Proton일 때만) 입력 진단 기록
-            for event in self.gamepad.translate(raw_events, pad_in_game):
+            for event in self.gamepad.translate(pygame.event.get(), pad_in_game):
                 if event.type == pygame.KEYDOWN and not getattr(event, "pad", False):
                     self._last_kb_t = time.time()                  # 진짜 키보드 입력 시각: 패드 입력이 더 최근이면 게임 중 키 안내를 패드 버튼으로 보여 줌
                 if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEWHEEL):      # 어트랙트 화면: 깨우는 입력은 메뉴 동작으로 넘기지 않고 소비

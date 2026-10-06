@@ -212,33 +212,6 @@ def test_easy_cards_keep_a_hold_slot_in_detailed_mini_view():
     assert infos and all(v[7] == "" for v in infos if v[7] is not None) and any(v[7] == "" for v in infos), "빈 홀드 칸이 예약돼야 함"
 
 
-def test_input_diag_writes_log_only_when_enabled():
-    import input_diag
-    os.environ.pop("BR_INPUT_DIAG", None)
-    d = input_diag.InputDiag()
-    assert d.on == input_diag.under_wine(d.sig), "윈도우/리눅스 일반 실행에서는 꺼져 있어야 함 (Wine일 때만 켜짐)"
-    os.environ["BR_INPUT_DIAG"] = "1"
-    try:
-        d = input_diag.InputDiag()
-    finally:
-        os.environ.pop("BR_INPUT_DIAG", None)
-    assert d.on and os.path.exists(d.path)
-    evs = [pygame.event.Event(pygame.KEYDOWN, key=pygame.K_a, mod=0, unicode="a", scancode=0),
-           pygame.event.Event(pygame.JOYDEVICEADDED, device_index=0),
-           pygame.event.Event(pygame.WINDOWFOCUSGAINED, window=None)]
-    d.events(evs)
-    d._state_t = 0.0
-    d.events([])
-    d.f.flush()
-    text = open(d.path, encoding="utf-8").read().upper()
-    for word in ("START", "WINE_SIGNALS", "KEYDOWN", "JOYDEVICEADDED", "WINDOWFOCUSGAINED", "STATE"):
-        assert word in text, (word, text)
-    d.t0 -= 1000
-    d.events([])
-    assert d.on is False, "시간 제한이 지나면 기록을 멈춤"
-    d.f.close()
-
-
 if __name__ == "__main__":
     pygame.init()
     for name, fn in list(globals().items()):
