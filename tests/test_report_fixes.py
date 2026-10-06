@@ -159,6 +159,73 @@ def test_settings_validation_new_keys():
     assert 0 <= sm.get("name_color") < len(NAME_COLORS)
 
 
+def test_update_check_removed_and_errlog_button_works():
+    import os as _os
+    import main as M
+    from gfx import CANVAS
+    assert not _os.path.exists(_os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "update_check.py"))
+    app = M.BlockRoyaleApp()
+    CANVAS.attach(pygame.Surface((1366, 768)))
+    app.screen = CANVAS
+    app.state, app.settings_tab, app.previous_state = "SETTINGS", "help", "MENU"
+    app._render_settings()
+    assert not any("update" in k for k in app.settings_buttons), list(app.settings_buttons)
+    app.state = "MENU"
+    app._render_menu()
+    assert not any("update" in k for k in app.menu_buttons)
+    opened = []
+    orig = getattr(_os, "startfile", None)
+    _os.startfile = lambda path, *a, **k: opened.append(path)             # 테스트 중에 탐색기 창이 실제로 뜨지 않게
+    try:
+        app._settings_activate("open_errlog")
+    finally:
+        if orig is None:
+            del _os.startfile
+        else:
+            _os.startfile = orig
+
+
+def test_easy_cards_keep_a_hold_slot_in_detailed_mini_view():
+    import main as M
+    from gfx import CANVAS
+    app = M.BlockRoyaleApp()
+    CANVAS.attach(pygame.Surface((1366, 768)))
+    app.screen = CANVAS
+    app.settings.set("mini_detail", "detailed", autosave=False)
+    app.renderer.mini_detailed = True
+    app.bot_difficulty = "easy"
+    app.start_game(mode="SOLO", total_players=50)
+    m = app.match
+    m.countdown_until = 0.0
+    for _ in range(120):
+        app._tick_game(1 / 60)
+    assert not any(p.get("hold") for pid, p in m.players.items() if pid != m.local_player_id), "쉬움 봇은 홀드를 쓰지 않는 것이 이 테스트의 전제"
+    app.state = "GAME"
+    drawn = []
+    orig = app.renderer._render_preview_piece
+    app.renderer._render_preview_piece = lambda *a, **k: drawn.append(1)
+    app.renderer._card_info.clear()
+    app.renderer._card_layers.clear()
+    app.renderer.render(m, app.sound_mgr)
+    app.renderer._render_preview_piece = orig
+    infos = [v for v in app.renderer._card_info.values()]
+    assert infos and all(v[7] == "" for v in infos if v[7] is not None) and any(v[7] == "" for v in infos), "빈 홀드 칸이 예약돼야 함"
+
+
+def test_gamepad_rescan_finds_devices_without_add_events():
+    from gamepad import GamepadMapper
+    pad = GamepadMapper(lambda a: [], lambda: True)
+    opened = []
+    pad.on_device_event = lambda e: (opened.append(e.device_index), pad.joys.__setitem__(e.device_index, object()))
+    orig = pygame.joystick.get_count
+    pygame.joystick.get_count = lambda: 1
+    try:
+        assert pad.rescan(interval=0) is True and pad.connected() and opened == [0]
+        assert pad.rescan(interval=0) is False, "이미 연결돼 있으면 다시 열지 않음"
+    finally:
+        pygame.joystick.get_count = orig
+
+
 if __name__ == "__main__":
     pygame.init()
     for name, fn in list(globals().items()):

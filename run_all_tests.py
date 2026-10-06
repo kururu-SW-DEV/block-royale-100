@@ -12,7 +12,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TESTS_DIR = os.path.join(HERE, "tests")
-TESTS = ["test_engine_fixes.py", "test_royale.py", "test_v24_perfect_score.py", "test_review_network.py", "test_review_bot.py", "test_review_ui.py", "test_review_data.py", "test_review_rules.py", "test_opus_review2.py", "test_opus_review3.py", "test_challenges.py", "test_juice.py", "test_handling.py", "test_arcade.py", "test_perf.py", "test_update.py", "test_replay_ghost.py", "test_gamepad.py", "test_report_fixes.py", "test_lan.py", "test_rules_team.py", "test_i18n.py", "test_settings_crash.py", "test_i18n_audit.py", "test_ui_fit.py", "test_render_smoke.py"]
+TESTS = ["test_engine_fixes.py", "test_royale.py", "test_v24_perfect_score.py", "test_review_network.py", "test_review_bot.py", "test_review_ui.py", "test_review_data.py", "test_review_rules.py", "test_opus_review2.py", "test_opus_review3.py", "test_challenges.py", "test_juice.py", "test_handling.py", "test_arcade.py", "test_perf.py", "test_replay_ghost.py", "test_gamepad.py", "test_report_fixes.py", "test_lan.py", "test_rules_team.py", "test_i18n.py", "test_settings_crash.py", "test_i18n_audit.py", "test_ui_fit.py", "test_render_smoke.py"]
 
 
 def _snapshot():

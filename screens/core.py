@@ -34,21 +34,6 @@ class CoreMixin:
         if self.match is not None:
             self.match.shake_scale = SHAKE_SCALE.get(self.settings.get("screen_shake"), 1.0)
 
-    def _start_update_check(self):
-        """설정에서 켠 경우에만 새 버전을 한 번 조회 (백그라운드, 실패하면 조용히 끝남)"""
-        if self._update_checker is None and self.settings.get("update_check", False):
-            from update_check import UpdateChecker
-            self._update_checker = UpdateChecker()
-            self._update_checker.start()
-
-    def update_info(self):
-        """새 버전이 확인됐으면 {"tag", "url"}, 아니면 None"""
-        chk = self._update_checker
-        res = chk.result if (chk is not None and chk.done and self.settings.get("update_check", False)) else None
-        if res and res.get("tag") == self.settings.get("update_skip", ""):
-            return None                                                   # '이 버전 건너뛰기'를 누른 버전은 다시 알리지 않음 (더 새 버전이 나오면 다시 알림)
-        return res
-
     def apply_handling(self):
         """설정의 DAS/ARR/소프트드롭(ms)을 실제 입력 처리에 반영"""
         self.DAS_DELAY = self.settings.get("das_ms") / 1000.0

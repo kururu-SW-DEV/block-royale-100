@@ -59,7 +59,7 @@ TAB_NAV = {
     "help": [("title", None, "title_prev", "title_next"), ("rules", "open_rules", None, None), ("tips_replay", "tips_replay", None, None),
              ("matchlog", "matchlog_toggle", "matchlog=off", "matchlog=on"),
              ("ghost", "ghost_toggle", "ghost=off", "ghost=on"),
-             ("update", "update_toggle", "update=off", "update=on"), ("errlog", "open_errlog", None, None)],
+             ("errlog", "open_errlog", None, None)],
     "general": [("fs", "toggle_fs", "fs=window", "fs=full"), ("res", "res_next", "res_prev", "res_next"),
                 ("mini", "mini_detail", "mini_detail=detailed", "mini_detail=simple"),
                 ("block_skin", None, "skin_prev", "skin_next"),
@@ -100,7 +100,6 @@ HELP = {
     "rules": "게임의 공격표, K.O. 배지, 역습 보너스, 조준 모드, 경기 흐름을 한 화면으로 보여 줍니다. 게임 중에도 F1 키로 열 수 있습니다.",
     "ghost": "켜면 혼자 하는 경기에서 저장된 내 리플레이 중 점수가 가장 높은 판의 보드가 왼쪽 상태 칸 아래에 작게 함께 달립니다. 같은 경기 시각의 그 판 점수와의 차이도 보여 줍니다. 리플레이가 없으면 아무것도 표시되지 않습니다.",
     "gamepad": "게임패드의 십자키/왼쪽 스틱으로 이동, 십자키 위 하드 드롭, B·X 시계 회전, A·Y 반시계 회전, LB·RB 홀드, R3 180도 회전, Start 일시정지, Back 조준 변경. 메뉴에서는 십자키/스틱 = 방향키, A·Start = Enter, B = Esc입니다. 동작에 배정된 키를 따르며, 컨트롤러가 이상하게 동작하면 끄세요.",
-    "update": "켜면 게임을 시작할 때 GitHub에서 새 버전이 있는지 한 번만 확인하고, 있으면 메인 화면에 알려 줍니다. 자동으로 내려받거나 설치하지 않으며 개인 정보는 보내지 않습니다. 기본은 꺼짐입니다.",
     "errlog": "예기치 않은 오류가 났을 때 원인을 적어 두는 error.log가 있는 폴더를 엽니다. 문제를 알릴 때 이 파일을 함께 보내 주세요.",
     "matchlog": "켜면 경기가 끝날 때마다 받은/보낸 공격, 조준 변경, 탈락 원인을 담은 기록(JSON)을 저장 폴더의 match_logs에 남깁니다. 플레이 테스트 결과를 함께 볼 때 쓰며, 기본은 꺼짐입니다.",
     "fs": "창 모드와 전체 화면을 바꿉니다. F11 키로 언제든 전환할 수 있습니다.",
@@ -137,7 +136,7 @@ HELP = {
 # 탭별 '기본값으로' 대상 설정 키
 TAB_DEFAULT_KEYS = {
     "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake", "language"],
-    "help": ["match_log", "update_check", "ghost_race"],
+    "help": ["match_log", "ghost_race"],
     "general": ["resolution", "mini_detail", "color_mode", "text_size", "block_skin", "key_hints"],
     "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume", "warn_volume", "announcer"],
     "keys": ["gamepad"],
@@ -483,14 +482,6 @@ class SettingsMixin:
             if new != cur:
                 self.sound_mgr.play('rotate')
                 self.settings.set("ghost_race", new)
-        elif btn_id in ("update=on", "update=off", "update_toggle"):
-            cur = bool(self.settings.get("update_check", False))
-            new = (btn_id.endswith("=on")) if "=" in btn_id else (not cur)
-            if new != cur:
-                self.sound_mgr.play('rotate')
-                self.settings.set("update_check", new)
-                if new:
-                    self._start_update_check()
         elif btn_id == "open_errlog":
             self.sound_mgr.play('move')
             self._open_error_log_folder()
@@ -794,11 +785,6 @@ class SettingsMixin:
         _b = best_replay(load_replays_cached(), mode="battle")
         self._s_row("ghost", y, 50, "고스트 레이스", (f"내 최고 판({_b['score']:,}점)이 경기 옆에 함께 달립니다 (혼자 하는 경기)" if _b else "내 최고 판이 경기 옆에 함께 달립니다 (아직 저장된 리플레이 없음)"))
         self._s_seg([("ghost=off", "끔"), ("ghost=on", "켜기")], "ghost=on" if gh_on else "ghost=off", RIGHT, y + 25)
-        y += 50
-        up_on = bool(self.settings.get("update_check", False))
-        upd = self.update_info()
-        self._s_row("update", y, 50, "업데이트 확인", f"새 버전 {upd['tag']} 이(가) 있습니다" if upd else "시작할 때 새 버전이 있는지 한 번 확인 (자동 설치 없음)")
-        self._s_seg([("update=off", "끔"), ("update=on", "켜기")], "update=on" if up_on else "update=off", RIGHT, y + 25)
         y += 50
         self._s_row("errlog", y, 50, "오류 기록", "문제를 알릴 때 error.log를 함께 보내 주세요")
         self._s_btn("open_errlog", pygame.Rect(RIGHT - 200, y + 7, 200, 36), "error.log 폴더 열기", True)

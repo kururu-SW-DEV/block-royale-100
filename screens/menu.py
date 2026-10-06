@@ -149,20 +149,6 @@ class MenuMixin:
             self.toggle_fullscreen()
             return
         self.sound_mgr.play('move')
-        if btn_id == "update_skip":
-            upd = self.update_info()
-            if upd:
-                self.settings.set("update_skip", upd["tag"])
-            return
-        if btn_id == "update":
-            upd = self.update_info()
-            if upd:
-                try:
-                    import webbrowser
-                    webbrowser.open(upd["url"])
-                except Exception:
-                    pass
-            return
         if btn_id == "quick_play":
             self.start_game(mode="SOLO", total_players=self.target_player_count)
         elif btn_id == "host_room":
@@ -490,29 +476,7 @@ class MenuMixin:
             self._t(self._menu_fit(g, self.font_help, 900), self.font_help, C_GOLD if n_prac < 3 else COL_HINT, cx, by + 262, "midtop")
 
         # 5. 하단 바: 버전 · 키 안내 · 게임 종료
-        vr = self._t(f"v{APP_VERSION}", self.font_tiny, COL_HINT, 24, SCREEN_HEIGHT - 42, "topleft")
-        upd = self.update_info()
-        if upd:                                                          # 새 버전 알림: 누르면 릴리스 페이지가 브라우저에서 열림 (자동 설치 없음)
-            label = f"새 버전 {upd['tag']} 받기"
-            tw = self.font_tiny.size(label)[0]
-            ur = pygame.Rect((vr.right if vr is not None else 60) + 12, SCREEN_HEIGHT - 46, tw + 24, 24)
-            self.menu_buttons["update"] = ur
-            hov = ur.collidepoint(pygame.mouse.get_pos())
-            pygame.draw.rect(self.screen, _mix((22, 28, 48), C_GOLD, 0.30 if hov else 0.16), ur, border_radius=12)
-            pygame.draw.rect(self.screen, C_GOLD, ur, 1, border_radius=12)
-            self._t(label, self.font_tiny, C_GOLD, ur.centerx, ur.centery, "center")
-            sk = pygame.Rect(ur.right + 8, ur.y, self.font_tiny.size("건너뛰기")[0] + 20, 24)                 # 이 버전 건너뛰기
-            self.menu_buttons["update_skip"] = sk
-            pygame.draw.rect(self.screen, (60, 70, 100) if sk.collidepoint(pygame.mouse.get_pos()) else (36, 44, 70), sk, 1, border_radius=12)
-            self._t("건너뛰기", self.font_tiny, COL_SUB, sk.centerx, sk.centery, "center")
-            from update_check import breaks_lan                                                              # 무엇이 바뀌었나 요약 + LAN 경고 (왼쪽 아래 빈 자리)
-            ly = SCREEN_HEIGHT - 66
-            lines = [(x, COL_HINT) for x in (upd.get("summary") or [])]
-            if breaks_lan(upd["tag"]):
-                lines.append(("LAN 멀티: 상대도 같은 버전 필요", C_ORANGE))
-            for ln, col in lines[-3:][::-1]:
-                self._t(self._menu_fit(ln, self.font_tiny, 262), self.font_tiny, col, 24, ly, "bottomleft")           # 가운데 안내 줄(x 300~)과 겹치지 않는 폭
-                ly -= 17
+        self._t(f"v{APP_VERSION}", self.font_tiny, COL_HINT, 24, SCREEN_HEIGHT - 42, "topleft")
         self._keycap_row([("↑↓←→", "이동"), ("Enter", "선택"), ("R", "전적"), ("S", "설정"), ("F1", "규칙"), ("Esc", "종료")],
                          cx, SCREEN_HEIGHT - 42, gap=20, font=self.font_small, label_col=COL_SUB)
         quit_r = pygame.Rect(SCREEN_WIDTH - 24 - 112, SCREEN_HEIGHT - 50, 112, 34)

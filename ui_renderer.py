@@ -2359,11 +2359,11 @@ class UIRenderer:
                     ko_w = ko_surf.get_width() + (9 if bw >= 46 else 6)
                 # 이름이 K.O. 표시와 겹치지 않도록 남는 폭에 맞춰 자름
                 # 홀드 칸을 둘 수 없는 작은 보드(100인 등)는 이름 줄에 홀드한 블록을 작게 표시
-                hold_icon = p.get("hold") if (detailed and not strip_w and is_alive) else None
-                hold_w = 13 if hold_icon else 0
+                hold_icon = (p.get("hold") or "") if (detailed and not strip_w and is_alive) else None      # "" = 홀드한 블록이 없는 빈 칸 (쉬움 봇은 홀드를 안 써서 칸이 아예 없으면 '간략'처럼 보이고, 홀드를 처음 쓰는 순간 이름 폭이 바뀜 -> 자세히에서는 늘 칸을 둠)
+                hold_w = 13 if hold_icon is not None else 0
                 spec_pad = 14 if is_spec else 0                   # 관전 대상은 이름 뒤에 금색 판 여백이 붙음
                 max_name_w = max(8, int(bw) - ko_w - hold_w - spec_pad)
-                if hold_icon and tag_font.size(name_str[:2])[0] > max_name_w:
+                if hold_icon is not None and tag_font.size(name_str[:2])[0] > max_name_w:
                     hold_icon, hold_w = None, 0                  # 이름(최소 2글자, 예: 번호 "03")이 우선: 자리가 모자라면 홀드 아이콘부터 뺌
                     max_name_w = max(8, int(bw) - ko_w - spec_pad)
                 while len(name_str) > 2 and tag_font.size(name_str)[0] > max_name_w:
@@ -2386,11 +2386,12 @@ class UIRenderer:
                     pill = pygame.Rect(board_rect.right - ko_surf.get_width() - 6, tag_y, ko_surf.get_width() + 6, ko_surf.get_height() - 1)
                     self._panel(pill, border=(120, 44, 54), bg=(70, 24, 32), radius=4, alpha=255, border_w=1)
                     self.screen.blit(ko_surf, (pill.x + 3, pill.y))
-                if hold_icon:
+                if hold_icon is not None:
                     icon_cx = board_rect.right - ko_w - 7
                     icon_cy = tag_y + tag_font.get_height() // 2
-                    pygame.draw.rect(self.screen, C_GOLD, (icon_cx - 6, icon_cy - 5, 12, 10), 1, border_radius=2)
-                    self._render_preview_piece(hold_icon, icon_cx, icon_cy, scale=2)
+                    pygame.draw.rect(self.screen, C_GOLD if hold_icon else (70, 82, 116), (icon_cx - 6, icon_cy - 5, 12, 10), 1, border_radius=2)
+                    if hold_icon:
+                        self._render_preview_piece(hold_icon, icon_cx, icon_cy, scale=2)
 
             # 이름표(이름/판/K.O. 알약/홀드 아이콘)는 내용이 바뀔 때만 다시 그림
             self._blit_card_layer((pid, "tag"), (board_rect.x, board_rect.y, board_rect.w, tag_y, name_str, tuple(name_col), is_spec, ko, ko_w,
