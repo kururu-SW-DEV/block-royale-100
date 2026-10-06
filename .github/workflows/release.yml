@@ -36,5 +36,6 @@ jobs:
           files: |
             release/BlockRoyale100.exe
             BLOCK_ROYALE_100_MANUAL.html
+            steam/BlockRoyale100_SteamArt.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
