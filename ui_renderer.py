@@ -1281,7 +1281,7 @@ class UIRenderer:
             if cr.collidepoint(pygame.mouse.get_pos()):                # 칩에 마우스를 올리면 설명 (다른 그림 위에 그리려고 프레임 끝에서 표시)
                 self._hud_tip = (TARGET_MODE_HELP.get(mode, ""), cr)
 
-        name = target_p.get("name", "탐색 중...")[:12]
+        name = (target_p["name"] if "name" in target_p else _tr("탐색 중..."))[:12]       # 기본 문구는 "● 이름"으로 합치기 전에 번역해야 함 (합친 뒤에는 번역표에 없어 한글로 남음)
         tag = "수동 지정 · 우클릭 해제" if manual else ("Back으로 변경" if self.pad_ui else "TAB으로 변경")
         spec_now = aim_on and getattr(match, 'is_spectating', False)
         if spec_now:                                                # 관전 중에는 죽은 내 조준 대상/TAB 안내 대신 관전 안내 (TAB은 동작하지 않음)
@@ -3807,7 +3807,7 @@ class UIRenderer:
     def _render_spectator_hud(self, match, ox=0, oy=0):
         """관전 바: 미니 보드 영역(좌우)을 가리지 않도록 보드 아래 중앙 빈 공간에 2줄로 표시"""
         target_p = match.players.get(match.spectate_target_id, {})
-        name = target_p.get("name", "생존자 탐색 중")
+        name = target_p["name"] if "name" in target_p else _tr("생존자 탐색 중")
         who = (f"{_tr(target_p['trait'])} {_tr('봇')}" if target_p.get("trait") else _tr("봇")) if target_p.get("is_ai", False) else _tr("사람")      # 조각마다 번역 (한 줄로 합친 뒤에는 안쪽 단어를 번역할 수 없음)
         ko = target_p.get("ko_count", 0)
 

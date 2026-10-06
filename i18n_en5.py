@@ -3,6 +3,7 @@
 """
 
 EXACT = {
+    "SteamOS(Proton)에서는 전체 화면이면 입력이 막혀 창 모드로 고정됩니다": "On SteamOS (Proton), full screen blocks input, so window mode is used",
     # ---------------------------------------------------------------- 업적 (이름 / 설명)
     "소규모 2~10인": "Small 2-10", "중규모 11~49인": "Medium 11-49", "대규모 50~100인": "Large 50-100",
     "첫 K.O.": "First K.O.", "한 판에서 상대를 1명 처치": "Eliminate 1 opponent in one match",

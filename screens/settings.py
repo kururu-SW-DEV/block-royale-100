@@ -718,9 +718,11 @@ class SettingsMixin:
         cur = self.settings.get("bot_difficulty", "mixed")
         dc = {"easy": C_GREEN, "normal": C_ACCENT, "hard": C_ORANGE, "master": C_DANGER, "mixed": C_GOLD}.get(cur, C_TEXT)
         cleared = self.stats_mgr.ladder_cleared("battle")            # 100인급 대전에서 10위 안에 들어 클리어한 난이도는 ★ 표시
-        star = "  ★ 클리어" if cur in cleared else ""
-        self._s_row("diff", y, 56, "AI 봇 난이도", BOT_DIFFICULTY_DESCS.get(cur, "") if not star else __import__("i18n").tr(BOT_DIFFICULTY_DESCS.get(cur, ""))[:40])
-        self._s_cycler("diff_prev", "diff_next", BOT_DIFFICULTY_LABELS.get(cur, "혼합") + star, RIGHT, y + 28, color=dc)
+        # 난이도 이름에 "★ 클리어"를 글자로 붙이면 번역표에 없는 합친 글이 되어 영어에서 한글로 남고, 설명을 40자로 잘라야 했음 -> 클리어 표시는 제목 옆에 따로 그림
+        self._s_row("diff", y, 56, "AI 봇 난이도", BOT_DIFFICULTY_DESCS.get(cur, ""))
+        if cur in cleared:
+            self._t("  ★ 클리어", self.font_help, C_GOLD, IX + 22 + self.font_row.size("AI 봇 난이도")[0], y + 12)
+        self._s_cycler("diff_prev", "diff_next", BOT_DIFFICULTY_LABELS.get(cur, "혼합"), RIGHT, y + 28, color=dc)
         y += 56
         # 게임 모드: 배틀로얄(공격을 주고받음) / 서바이벌(공격 없이 각자 생존 경쟁)
         atk_on = self.settings.get("game_mode") != "survival"
@@ -796,7 +798,7 @@ class SettingsMixin:
         fs = self.is_fullscreen
         size = pygame.display.get_surface().get_size() if pygame.display.get_surface() else (0, 0)
         from app_paths import running_under_wine
-        fs_note = "SteamOS(Proton)에서는 전체 화면이면 입력이 막혀 창 모드로 고정됩니다 (게이밍 모드에서는 창이 화면을 가득 채웁니다)" if running_under_wine() else f"현재 {size[0]}×{size[1]}  ·  F11 키로도 전환"
+        fs_note = "SteamOS(Proton)에서는 전체 화면이면 입력이 막혀 창 모드로 고정됩니다" if running_under_wine() else f"현재 {size[0]}×{size[1]}  ·  F11 키로도 전환"
         self._s_row("fs", y, 52, "화면 모드", fs_note)
         self._s_seg([("fs=window", "창 모드"), ("fs=full", "전체 화면")], "fs=full" if fs else "fs=window", RIGHT, y + 26)
         y += 52

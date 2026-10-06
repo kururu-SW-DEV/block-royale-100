@@ -238,6 +238,50 @@ def test_fullscreen_is_never_used_under_wine():
         C.running_under_wine, app_paths.running_under_wine = orig, orig_ap
 
 
+def test_english_has_no_hangul_for_missing_target_and_cleared_difficulty():
+    """대상이 아직 없을 때의 '● 탐색 중...', 관전 대상이 없을 때의 '생존자 탐색 중', 클리어한 난이도의 '★ 클리어'가 영어에서 한글로 남지 않음"""
+    import re
+    import main as M
+    import i18n
+    from gfx import CANVAS, HiFont
+    app = M.BlockRoyaleApp()
+    CANVAS.attach(pygame.Surface((1366, 768)))
+    app.screen = CANVAS
+    app.settings.set("language", "en", autosave=False)
+    i18n.set_language("en")
+    app.renderer.clear_visual_caches()
+    seen = []
+    orig = HiFont.render
+
+    def render(self, text, *a, **k):
+        out = HiFont.text_filter(text) if HiFont.text_filter else text
+        if isinstance(out, str) and re.search(r"[가-힣]", out) and out not in ("한국어", "Language / 언어"):
+            seen.append(out)
+        return orig(self, text, *a, **k)
+
+    HiFont.render = render
+    try:
+        app.start_game(mode="SOLO", total_players=20)
+        m = app.match
+        m.countdown_until = 0.0
+        for _ in range(30):
+            app._tick_game(1 / 60)
+        app.state = "GAME"
+        m.players[m.local_player_id]["target_id"] = None
+        app.renderer.render(m, app.sound_mgr)
+        m.is_spectating = True
+        m.spectate_target_id = "NO_SUCH_PLAYER"
+        app.renderer.render(m, app.sound_mgr)
+        app.stats_mgr.ladder_cleared = lambda *a, **k: ["easy"]
+        app.settings.set("bot_difficulty", "easy", autosave=False)
+        app.state, app.settings_tab, app.previous_state = "SETTINGS", "match", "MENU"
+        app._render_settings()
+    finally:
+        HiFont.render = orig
+        i18n.set_language("ko")
+    assert not seen, seen[:10]
+
+
 if __name__ == "__main__":
     pygame.init()
     for name, fn in list(globals().items()):
