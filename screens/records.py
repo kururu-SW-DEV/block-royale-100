@@ -67,10 +67,10 @@ class RecordsMixin:
                         return
         if self.records_mode == "replay" and self._handle_replay_event(event):
             return
-        if event.type == pygame.KEYDOWN and event.key in RECORDS_SIZE_KEYS:
+        if event.type == pygame.KEYDOWN and event.key in RECORDS_SIZE_KEYS and self.records_mode in ("battle", "survival", "trend", "score"):
             self._records_set_filter(size=RECORDS_SIZE_KEYS[event.key])
             return
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_f:
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_f and self.records_mode in ("battle", "survival", "trend"):
             self._records_cycle_diff()
             return
         if event.type == pygame.MOUSEWHEEL:
@@ -145,6 +145,8 @@ class RecordsMixin:
         """리플레이 탭 입력: 목록(↑↓ 선택, Enter/클릭 재생)과 재생(Space 일시정지, ←→ 이동, ↑↓ 속도, Home 처음, Esc 목록으로). 처리했으면 True"""
         from replay import ReplayPlayer
         v = self.replay_view
+        if v is None:
+            self._replay_scrub = False                           # 진행 바를 누른 채 목록으로 나와도 다음 재생에서 타임라인이 멋대로 움직이지 않게
         if event.type == pygame.KEYDOWN:
             k = event.key
             shift = bool(getattr(event, "mod", 0) & pygame.KMOD_SHIFT)
@@ -203,6 +205,10 @@ class RecordsMixin:
         elif v is not None:
             bar = getattr(self, "replay_bar", None)
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                self._replay_scrub = False
+                for bid_, rect_ in self.records_buttons.items():             # 위쪽 모드 탭/돌아가기는 재생 중에도 눌림 (기록실의 기존 처리로 넘김)
+                    if rect_.collidepoint(event.pos) and (bid_.startswith("mode_") or bid_ == "back_to_menu"):
+                        return False
                 for bid, rect in getattr(self, "replay_btns", {}).items():
                     if rect.collidepoint(event.pos):
                         self._replay_button(v, bid)
@@ -212,6 +218,10 @@ class RecordsMixin:
                     self._replay_scrub_to(v, event.pos[0])
                 return True
             if event.type == pygame.MOUSEMOTION and getattr(self, "_replay_scrub", False):
+                btns = getattr(event, "buttons", None)
+                if btns is not None and not btns[0]:                         # 이벤트가 알려 주는 마우스 버튼 상태 사용
+                    self._replay_scrub = False                           # 버튼을 놓은 걸 놓쳤다면(창 밖에서 등) 드래그 상태를 풀어 줌
+                    return True
                 self._replay_scrub_to(v, event.pos[0])
                 return True
             if event.type == pygame.MOUSEBUTTONUP and event.button == 1 and getattr(self, "_replay_scrub", False):

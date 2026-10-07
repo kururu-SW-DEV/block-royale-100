@@ -928,7 +928,8 @@ class BattleRoyaleMatch:
             self.add_commentary(f"{self._short_name(killer_id)} → {vn} K.O.", (255, 110, 110), mine=(killer_id == self.local_player_id or victim_id == self.local_player_id))
         else:
             self.add_commentary(f"{vn} 탈락", (255, 110, 110))
-        if self.total_players > self.alive_count >= 2 and self.alive_count in (2, 3, 5, 10):
+        team_done = bool(self.teams) and self._round_over()          # 팀전에서 마지막 적이 쓰러졌으면 '최후의 2인' 같은 안내를 하지 않음 (남은 2명이 아군일 수 있음)
+        if self.total_players > self.alive_count >= 2 and self.alive_count in (2, 3, 5, 10) and not team_done:
             self.add_commentary("결승전!  최후의 2인" if self.alive_count == 2 else f"생존자 {self.alive_count}명!  접전", (255, 215, 90), prio=1)
 
         if victim_id == self.local_player_id:
@@ -981,7 +982,8 @@ class BattleRoyaleMatch:
                         self.sound_mgr.play('levelup')
                 self._check_live_achievements()
                 
-        self._announce_milestones(victim_id)
+        if not team_done:
+            self._announce_milestones(victim_id)
 
         # 승자 판정 (최후의 1인, 팀전은 한 팀만 남았을 때)
         if self._round_over():
@@ -1018,7 +1020,7 @@ class BattleRoyaleMatch:
         for pid in winners:
             self.players[pid]["rank"] = 1
             self.players[pid]["survival"] = self.elapsed
-        self.winner_id = winners[0] if winners else None
+        self.winner_id = self.local_player_id if self.local_player_id in winners else (winners[0] if winners else None)
         self.team_won = (win_team == self.teams.get(self.local_player_id))
         if self.team_won:
             if self.local_player_id in winners:
@@ -1167,10 +1169,8 @@ class BattleRoyaleMatch:
             return
         if info:
             self.challenge.on_clear(info)
-            if self.practice_all_done() and self.ta_mode is None and not self._ta_auto_done:
-                self._ta_auto_done = True
-                self.add_floating_text("수련 완료!  타임어택을 시작합니다 (Y로 종류 변경)", (255, 215, 90), duration=3.2, size=24, category="action")
-                self.ta_mode, self.ta_t0, self.ta_n = "quad", self.elapsed, 0
+            if self._auto_ta_start():
+                pass
             elif self.ta_mode and self.ta_t0 is not None:
                 self.ta_n = challenges.ta_next(self.ta_mode, self.ta_n, info)
                 _id, name, goal, _unit = challenges.TA_BY_ID[self.ta_mode]
@@ -1186,6 +1186,15 @@ class BattleRoyaleMatch:
                                            (255, 215, 90) if new_best else (140, 230, 255), duration=3.2, size=26, category="action")
                     self.ta_t0, self.ta_n = self.elapsed, 0
         self._challenge_events()
+
+    def _auto_ta_start(self):
+        """연습 과제를 모두 깼으면 쿼드 타임어택을 자동으로 켬 (마지막 과제가 줄 지우기가 아니라 블록 수/드릴로 달성돼도 켜지도록 _challenge_events에서도 부름)"""
+        if self.practice and self.challenge is not None and self.ta_mode is None and not self._ta_auto_done and self.practice_all_done():
+            self._ta_auto_done = True
+            self.add_floating_text("수련 완료!  타임어택을 시작합니다 (Y로 종류 변경)", (255, 215, 90), duration=3.2, size=24, category="action")
+            self.ta_mode, self.ta_t0, self.ta_n = "quad", self.elapsed, 0
+            return True
+        return False
 
     def challenge_summary(self):
         """결과 화면용 (긴 문구, 짧은 문구). 오늘의 도전/주간 변형이 아니면 None. 예: ('오늘의 도전 ★★☆  쿼드 2회 ● · K.O. 3 ● · 10위 안 ○', '오늘의 도전 ★2/3')"""
@@ -1214,9 +1223,13 @@ class BattleRoyaleMatch:
                 self.add_commentary(f"{self._short_name(self.local_player_id)}  도전 달성! {g['short']}", (140, 255, 170), mine=True)
             if self.sound_mgr:
                 self.sound_mgr.play('badge_up')
+        self._auto_ta_start()
 
     def practice_reset(self, announce=True):
         """연습 모드: 보드를 새로 시작 (직접 초기화하거나 블록이 끝까지 쌓였을 때)"""
+        if self.practice and self.challenge is not None:
+            for _ in range(max(0, self.local_engine.lock_events - self._prac_locks)):
+                self.challenge.on_lock(self.elapsed)         # 엔진을 바꾸기 전에 아직 세지 않은 블록 고정을 과제 추적기에 알림
         self.local_engine = BlockEngine()
         self._prac_locks = 0
         self._danger_since = None
@@ -1389,7 +1402,7 @@ class BattleRoyaleMatch:
         n = self.alive_count
         if n == 2 and not self._final_announced:
             self._final_announced = True
-            self.final_opp_id = next((pid for pid, p in self.players.items() if p["is_alive"] and pid != self.local_player_id), None)
+            self.final_opp_id = next((pid for pid, p in self.players.items() if p["is_alive"] and pid != self.local_player_id and not self.is_ally(self.local_player_id, pid)), None)
             opp = self._short_name(self.final_opp_id) if self.final_opp_id else ""
             self.trigger_screen_shake(8.0)
             self.trigger_impact(0.6)
@@ -1664,6 +1677,9 @@ class BattleRoyaleMatch:
                 total_attack = base_garbage + attacker_bonus
                 mult = self.attack_multiplier()
                 shown_attack = int(math.ceil(total_attack * mult)) if mult > 1.0 else total_attack      # apply_attack이 실제로 보내는 줄 수 (표시와 같게)
+                gm = self.CUSTOM_GARBAGE.get(self._custom("garbage", "normal"), 1.0)
+                if gm != 1.0:
+                    shown_attack = max(1, int(math.ceil(shown_attack * gm)))                          # 커스텀 규칙의 쓰레기 배율도 같게
                 # 반격(ATTACKERS) 모드: 나를 노리는 플레이어가 둘 이상이면 전원에게 동시에 같은 공격을 보냄 (역전 기회)
                 targets = [target]
                 if self.local_target_mode == "ATTACKERS" and not self.local_manual_target_id:
@@ -1823,7 +1839,10 @@ class BattleRoyaleMatch:
 
         # 7. 네트워크 플레이어들의 상태 반영
         if self.net_mgr and self.net_mgr.remote_players_state:
-            for r_id, r_state in list(self.net_mgr.remote_players_state.items()):
+            def _rank_key(item):                                    # 한 패킷에 여럿이 탈락했으면 호스트가 정한 낮은 순위(큰 번호)부터 처리
+                hr_ = item[1].get("rank") if isinstance(item[1], dict) else None
+                return -hr_ if isinstance(hr_, int) and not isinstance(hr_, bool) else 0
+            for r_id, r_state in sorted(list(self.net_mgr.remote_players_state.items()), key=_rank_key):
                 if r_id in self.players and not self.players[r_id].get("bot"):       # 봇이 이어받은 자리는 늦게 도착한 원격 상태로 덮어쓰지 않음
                     self.players[r_id]["compact_grid"] = r_state.get("compact_grid", self.players[r_id]["compact_grid"])
                     self.players[r_id]["highest_y"] = r_state.get("highest_y", 20)

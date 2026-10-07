@@ -137,7 +137,7 @@ HELP = {
 TAB_DEFAULT_KEYS = {
     "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake", "language"],
     "help": ["match_log", "ghost_race"],
-    "general": ["resolution", "mini_detail", "color_mode", "text_size", "block_skin", "key_hints"],
+    "general": ["fullscreen", "resolution", "mini_detail", "color_mode", "text_size", "block_skin", "key_hints"],
     "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume", "warn_volume", "announcer"],
     "keys": ["gamepad"],
     "react": ["das_ms", "arr_ms", "sdf_ms", "dcd_ms", "das_cancel"],
@@ -466,11 +466,11 @@ class SettingsMixin:
             if btn_id.startswith("rg_"):
                 opts = ("half", "normal", "heavy")
                 cur = self.settings.get("rule_garbage", "normal")
-                self.settings.set("rule_garbage", opts[(opts.index(cur) + (-1 if btn_id == "rg_prev" else 1)) % 3])
+                self.settings.set("rule_garbage", opts[((opts.index(cur) if cur in opts else 1) + (-1 if btn_id == "rg_prev" else 1)) % 3])
             elif btn_id.startswith("rgr_"):
                 opts = ("slow", "normal", "fast")
                 cur = self.settings.get("rule_gravity", "normal")
-                self.settings.set("rule_gravity", opts[(opts.index(cur) + (-1 if btn_id == "rgr_prev" else 1)) % 3])
+                self.settings.set("rule_gravity", opts[((opts.index(cur) if cur in opts else 1) + (-1 if btn_id == "rgr_prev" else 1)) % 3])
             else:
                 cur = bool(self.settings.get("rule_badges", True))
                 self.settings.set("rule_badges", (btn_id.endswith("=on")) if "=" in btn_id else (not cur))
@@ -550,8 +550,7 @@ class SettingsMixin:
             self.renderer.mini_detailed = self.settings.get("mini_detail") != "simple"
             self.renderer.mini_focus = self.settings.get("mini_detail") == "focus"
             self.apply_visual_options()
-            if not self.is_fullscreen:
-                self._apply_window_size()
+            self._sync_fullscreen_from_settings()
         elif tab == "audio":
             self.sound_mgr.set_bgm_enabled(self.settings.get("bgm_enabled"))
             self.sound_mgr.set_sfx_enabled(self.settings.get("sfx_enabled"))
@@ -565,6 +564,16 @@ class SettingsMixin:
             self.apply_handling()
             self.rebinding_action = None
 
+    def _sync_fullscreen_from_settings(self):
+        """초기화로 바뀐 전체 화면/해상도 설정에 실제 창을 맞춤 (설정 값만 창 모드로 바뀌고 창은 전체 화면에 남던 문제)"""
+        from app_paths import running_under_wine
+        want = bool(self.settings.get("fullscreen", False)) and not running_under_wine()
+        if want != self.is_fullscreen:
+            self.is_fullscreen = want
+            self._create_window()
+        elif not self.is_fullscreen:
+            self._apply_window_size()
+
     def _do_reset_defaults(self):
         self.sound_mgr.play('clear')
         self.settings.reset_to_defaults()
@@ -575,8 +584,7 @@ class SettingsMixin:
         self._end_text(commit=False)
         self.player_name = "Player_1"
         self.room_name_input = ""
-        if not self.is_fullscreen:
-            self._apply_window_size()
+        self._sync_fullscreen_from_settings()
         self.bot_difficulty = self.settings.get("bot_difficulty")
         self.sound_mgr.set_bgm_enabled(self.settings.get("bgm_enabled"))
         self.sound_mgr.set_sfx_enabled(self.settings.get("sfx_enabled"))
@@ -589,6 +597,8 @@ class SettingsMixin:
         except (TypeError, ValueError):
             self.name_color = 0
         self.net_mgr.my_color = self.name_color
+        self.apply_gameplay_options()
+        self._sync_profile()
 
     def _update_settings(self, dt):
         self.menu_bg.update(dt)
@@ -1018,10 +1028,10 @@ class SettingsMixin:
         y = TOP
         g, v, b = st.get("rule_garbage", "normal"), st.get("rule_gravity", "normal"), bool(st.get("rule_badges", True))
         self._s_row("rule_garbage", y, 56, "쓰레기 줄 배율", "상대에게 보내는 쓰레기 줄에 곱함 (올림)")
-        self._s_cycler("rg_prev", "rg_next", {"half": "×0.5 (느긋하게)", "normal": "×1 (기본)", "heavy": "×1.5 (거칠게)"}[g], RIGHT, y + 28, color=C_ACCENT if g != "normal" else None)
+        self._s_cycler("rg_prev", "rg_next", {"half": "×0.5 (느긋하게)", "normal": "×1 (기본)", "heavy": "×1.5 (거칠게)"}.get(g, "×1 (기본)"), RIGHT, y + 28, color=C_ACCENT if g != "normal" else None)
         y += 56
         self._s_row("rule_gravity", y, 56, "내 낙하 속도", "블록이 자동으로 내려오는 속도 (봇은 그대로)")
-        self._s_cycler("rgr_prev", "rgr_next", {"slow": "느리게 (×0.7)", "normal": "기본", "fast": "빠르게 (×1.4)"}[v], RIGHT, y + 28, color=C_ACCENT if v != "normal" else None)
+        self._s_cycler("rgr_prev", "rgr_next", {"slow": "느리게 (×0.7)", "normal": "기본", "fast": "빠르게 (×1.4)"}.get(v, "기본"), RIGHT, y + 28, color=C_ACCENT if v != "normal" else None)
         y += 56
         self._s_row("rule_badges", y, 56, "K.O. 배지 보너스", "끄면 K.O.를 해도 공격력이 오르지 않음")
         self._s_seg([("rb=on", "켜기"), ("rb=off", "끔")], "rb=on" if b else "rb=off", RIGHT, y + 28)

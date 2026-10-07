@@ -1438,9 +1438,17 @@ class SoundManager:
         """오프닝 / 타이틀 / 로비 BGM 재생"""
         self.play_bgm(stage='menu')
 
+    def _sets_ready(self):
+        """세 단계(1/2/3) 모두 합성이 끝난 세트 수. 첫 실행처럼 뒤에서 아직 합성 중이면 완성된 세트만 고르게 해서, 한 판 안에서 단계마다 다른 세트가 섞이지 않게 함"""
+        counts = []
+        for st in (1, 2, 3):
+            raw = self.bgm_stages.get(st)
+            counts.append(len(raw) if isinstance(raw, list) else (1 if raw is not None else 0))
+        return max(1, min(counts))
+
     def roll_stage_set(self, pref="random"):
         """매 판 시작 시 스테이지(1/2/3단계) 배경음 세트를 하나 고름. pref: "random" 또는 세트 번호(문자열/정수)"""
-        n = len(STAGE_SET_NAMES)
+        n = min(len(STAGE_SET_NAMES), self._sets_ready())
         if pref == "random":
             self.current_set_idx = random.randrange(n)
         else:

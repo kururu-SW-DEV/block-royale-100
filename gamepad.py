@@ -269,6 +269,9 @@ class GamepadMapper:
     def translate(self, events, in_game):
         """이벤트 목록을 받아 패드 이벤트는 키 이벤트로 바꾼 새 목록을 돌려줌 (나머지는 그대로)"""
         if not self.enabled():
+            for e in events:                                   # 꺼 둔 동안에도 연결/해제는 기억해 둠 (안 그러면 나중에 켜도 이미 꽂힌 패드를 열지 못해 뽑았다 꽂아야 함)
+                if e.type in (pygame.JOYDEVICEADDED, pygame.JOYDEVICEREMOVED):
+                    self.on_device_event(e)
             return self.release_all() + [e for e in events if e.type not in PAD_EVENT_TYPES]      # 끄는 순간 눌려 있던 입력은 떼 줌 (안 그러면 블록이 계속 한쪽으로 움직임)
         out = []
         for e in events:

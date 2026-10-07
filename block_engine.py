@@ -35,6 +35,9 @@ I_KICKS = {
     (0, 3): [(0, 0), (-1, 0), (2, 0), (-1, 2), (2, -1)]
 }
 
+PIECE_TYPES = frozenset(TETROMINOES)
+
+
 class BlockEngine:
     def __init__(self, seed=None):
         self.rng = random.Random(seed)
@@ -599,7 +602,17 @@ class BlockEngine:
         }
 
     def load_snapshot(self, snap):
-        """snapshot()이 만든 상태를 이 엔진에 그대로 반영 (관전 화면에서 실제 플레이처럼 그리기 위함)"""
+        """snapshot()이 만든 상태를 이 엔진에 그대로 반영 (관전 화면에서 실제 플레이처럼 그리기 위함).
+        네트워크로 받은 값이라 먼저 모양/블록 종류를 검사하고, 맞지 않으면 아무것도 바꾸지 않고 ValueError"""
+        g, p0 = snap["g"], snap.get("p")
+        if not (isinstance(g, list) and len(g) == self.height and all(isinstance(r, str) and len(r) == self.width and set(r) <= set(".IJLOSTZG") for r in g)):
+            raise ValueError("snapshot grid")
+        if p0 and not (isinstance(p0, (list, tuple)) and len(p0) == 4 and p0[0] in PIECE_TYPES):
+            raise ValueError("snapshot piece")
+        for key in ("h", "n"):
+            v = snap.get(key)
+            if v and not all(c in PIECE_TYPES for c in v):
+                raise ValueError("snapshot " + key)
         self.grid = [[(ch if ch != "." else None) for ch in row] for row in snap["g"]]
         p = snap.get("p")
         if p:
@@ -615,6 +628,9 @@ class BlockEngine:
         self.game_over = bool(snap.get("go", 0))
         self.lock_timer = float(snap.get("lp", 0.0)) * self.lock_delay
         self.can_hold = True
+        self.lowest_y = self.current_y                 # 새로 받은 블록 위치 기준으로 조작 횟수 제한을 다시 셈
+        self.lock_resets = 0
+        self._refill_next_queue()                      # 스냅샷은 다음 블록을 3개만 담으므로 탐색에 필요한 만큼 채움
 
     def get_compact_grid(self):
         """

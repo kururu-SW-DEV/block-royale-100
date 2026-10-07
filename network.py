@@ -258,6 +258,7 @@ class NetworkManager:
         self.chat_log = []             # 채팅 기록 [{seq, id, name, text, sys, rx}] (최대 100개)
         self.chat_seq = 0              # (호스트) 채팅 순번
         self._chat_lock = threading.Lock()
+        self._last_start_msg = None    # (호스트) 마지막 GAME_START 패킷 내용 (유실된 참가자에게 다시 보내기 위함)
         self._chat_seen = set()        # (클라이언트) 이미 받은 채팅 순번 (중복 수신 방지)
         self.host_left = False         # (클라이언트) 호스트가 방을 닫았다는 통보를 받음
         self.taken_over = False        # (클라이언트) 오래 끊겨 호스트가 내 자리를 봇에게 넘겼다는 통보를 받음
@@ -287,6 +288,7 @@ class NetworkManager:
         self.left_events.clear()
         self.takeover_events.clear()           # 이전 방/경기의 봇 인계 대기열과 인계 기록이 새 방에 남지 않게
         self.taken_tokens.clear()
+        self._last_start_msg = None
         self.game_started = False
         self.room_settings = {
             "room_name": room_name,
@@ -448,8 +450,19 @@ class NetworkManager:
                         pass
 
                 elif mtype == MsgType.PING:
-                    if addr in self.clients:
-                        self.clients[addr]["last_seen"] = time.time()
+                    cinfo = self.clients.get(addr)
+                    if cinfo is not None:
+                        now_p = time.time()
+                        cinfo["last_seen"] = now_p
+                        # GAME_START가 UDP로 모두 유실돼 아직 대기실에 남은 참가자(경기 상태를 한 번도 못 보냄)에게 시작 신호를 다시 보냄 (1초에 한 번, 최대 10번)
+                        if (self.game_started and self._last_start_msg is not None and not cinfo.get("state")
+                                and now_p - cinfo.get("start_resend_t", 0.0) >= 1.0 and cinfo.get("start_resends", 0) < 10):
+                            cinfo["start_resend_t"] = now_p
+                            cinfo["start_resends"] = cinfo.get("start_resends", 0) + 1
+                            try:
+                                self.sock.sendto(json.dumps(self._last_start_msg).encode('utf-8'), addr)
+                            except Exception:
+                                pass
             except Exception:
                 # 패킷 깨짐 등 무시 (다만 곳별 횟수를 세고 처음 한 번은 error.log에 남김)
                 try:
@@ -564,6 +577,10 @@ class NetworkManager:
             "diff": self.room_settings.get("diff"),
             "start_time": time.time()
         }
+        self._last_start_msg = msg
+        for info in list(self.clients.values()):
+            info.pop("start_resends", None)
+            info.pop("start_resend_t", None)
         # UDP 유실 방지 3회 버스트 전송
         for _ in range(3):
             self._host_broadcast(msg)
@@ -571,9 +588,10 @@ class NetworkManager:
 
     def _append_chat(self, entry):
         entry["rx"] = time.time()
-        self.chat_log.append(entry)
-        if len(self.chat_log) > 100:
-            del self.chat_log[:len(self.chat_log) - 100]
+        with self._chat_lock:                              # 수신 스레드와 메인 스레드가 동시에 채팅 기록을 고치지 않게
+            self.chat_log.append(entry)
+            if len(self.chat_log) > 100:
+                del self.chat_log[:len(self.chat_log) - 100]
 
     def _host_publish_chat(self, pid, name, text, system=False, color=0):
         """(호스트) 채팅/시스템 메시지를 기록하고 모든 참가자에게 전송 (유실 대비 2회 전송, 순번으로 중복 제거)"""
@@ -1076,8 +1094,11 @@ class NetworkManager:
 
     def start_discovery_listener(self):
         """로컬 LAN에 열려있는 호스트 방들을 찾는 리스너 시작"""
-        disc_thread = threading.Thread(target=self._discovery_loop, daemon=True)
-        disc_thread.start()
+        old = getattr(self, "_disc_thread", None)
+        if old is not None and old.is_alive():
+            return                                         # 이미 돌고 있으면 또 만들지 않음
+        self._disc_thread = threading.Thread(target=self._discovery_loop, daemon=True)
+        self._disc_thread.start()
 
     def _handle_discovery_message(self, host_ip, msg):
         """LAN 방 알림 수신 처리: BEACON은 방 목록에 등록/갱신, BEACON_CLOSED는 그 방을 바로 삭제 (포트가 같을 때만)"""

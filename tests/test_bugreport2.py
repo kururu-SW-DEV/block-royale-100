@@ -173,6 +173,109 @@ def test_modifier_keys_do_not_start_or_close_cards():
     assert not app.rules_open
 
 
+def test_load_snapshot_validates_and_refills():
+    e = BlockEngine(seed=1)
+    snap = e.snapshot()
+    f = BlockEngine(seed=2)
+    f.load_snapshot(snap)
+    assert len(f.next_queue) >= 5, "스냅샷은 다음 블록 3개만 담으므로 탐색용으로 채워야 함"
+    bad_cases = [dict(snap, g=snap["g"][:5]), dict(snap, g=["Q" * 10] * 20), dict(snap, p=["X", 0, 3, 0]), dict(snap, n=["I", "?"])]
+    before = [row[:] for row in f.grid]
+    for bad in bad_cases:
+        try:
+            f.load_snapshot(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"잘못된 스냅샷을 받아들임: {bad}")
+    assert f.grid == before, "거부한 스냅샷이 보드를 바꿈"
+
+
+def test_gamepad_remembers_devices_while_disabled():
+    from gamepad import GamepadMapper
+    seen = []
+    m = GamepadMapper(lambda a: [], enabled=lambda: False)
+    m.on_device_event = lambda e: seen.append(e.type)
+    m.translate([pygame.event.Event(pygame.JOYDEVICEADDED, device_index=0)], False)
+    assert seen == [pygame.JOYDEVICEADDED], "꺼 둔 동안 연결된 패드를 기억하지 못함 (나중에 켜도 안 열림)"
+
+
+def test_stage_set_only_picks_finished_sets():
+    from sound_fx import SoundManager
+    sm = SoundManager.__new__(SoundManager)
+    sm.bgm_stages = {1: ["a", "b"], 2: ["a"], 3: ["a", "b", "c"]}      # 2단계는 세트 1개만 합성 끝남
+    sm.current_set_idx = 0
+    assert sm._sets_ready() == 1
+    for _ in range(30):
+        assert sm.roll_stage_set("random") == 0
+    assert sm.roll_stage_set(3) == 0
+    sm.bgm_stages = {1: ["a", "b", "c", "d", "e"], 2: ["a"] * 5, 3: ["a"] * 5}
+    assert sm._sets_ready() == 5 and sm.roll_stage_set(3) == 3
+
+
+def test_records_digit_keys_ignored_on_replay_tab():
+    app = _app()
+    app.state, app.records_mode = "RECORDS", "replay"
+    app.replay_view = None
+    app.replay_list = []
+    before = (app.records_size, app.records_diff)
+    app._handle_records_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_2, mod=0, unicode="2"))
+    app._handle_records_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_f, mod=0, unicode="f"))
+    assert (app.records_size, app.records_diff) == before, "리플레이 탭에서 보이지 않는 필터가 바뀜"
+
+
+def test_team_win_does_not_announce_final_duel_against_ally():
+    app = _app()
+    app.settings.set("rule_team", True)
+    app.start_game(mode="SOLO", total_players=20)
+    m = app.match
+    m.countdown_until = 0.0
+    me = m.local_player_id
+    allies = [p for p in m.players if p != me and m.is_ally(me, p)]
+    foes = [p for p in m.players if p != me and not m.is_ally(me, p)]
+    assert allies and foes
+    for pid in allies[1:]:
+        m._eliminate_player(pid)
+    for pid in foes[1:]:
+        m._eliminate_player(pid)
+    assert m.alive_count == 3 and not m.match_finished
+    m._eliminate_player(foes[0])                                 # 마지막 적: 남는 2명은 같은 편
+    assert m.match_finished and m.team_won
+    assert not m._final_announced and not any("FINAL DUEL" in f["text"] for f in m.floating_texts), "아군을 상대로 결승전 연출이 나옴"
+    assert m.winner_id == me
+    app.settings.set("rule_team", False)
+
+
+def test_lost_game_start_is_resent_to_waiting_client():
+    import time
+    import network as N
+    host, client = N.NetworkManager(), N.NetworkManager()
+    try:
+        assert host.start_host(port=20977, max_players=10)
+        client.start_client("127.0.0.1", 20977, "Guest")
+        t0 = time.time()
+        while not client.connected and time.time() - t0 < 3:
+            client.client_retry_join()
+            time.sleep(0.1)
+        assert client.connected
+        plist = [{"id": "HOST_P1", "name": "h", "is_ai": False}, {"id": client.my_player_id, "name": "Guest", "is_ai": False}]
+        host.host_send_start_game(plist)
+        t0 = time.time()
+        while not client.game_started and time.time() - t0 < 2:
+            time.sleep(0.05)
+        assert client.game_started
+        client.game_started = False                              # 세 번의 패킷이 모두 유실된 상황을 흉내
+        client._last_ping = 0.0
+        t0 = time.time()
+        while not client.game_started and time.time() - t0 < 4:
+            client._last_ping = 0.0
+            client.client_keepalive(interval=0.0)
+            time.sleep(0.2)
+        assert client.game_started, "시작 신호를 다시 받지 못해 대기실에 갇힘"
+    finally:
+        client.stop()
+        host.stop()
+
+
 if __name__ == "__main__":
     pygame.init()
     from settings_manager import SETTINGS_FILE

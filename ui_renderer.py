@@ -1643,10 +1643,8 @@ class UIRenderer:
             if age < 0.16:
                 alive_lock.append(lf)
                 a = int(150 * (1.0 - age / 0.16))
-                fl = pygame.Surface((cs, cs), pygame.SRCALPHA)
-                pygame.draw.rect(fl, (255, 255, 255, a), (1, 1, cs - 2, cs - 2), border_radius=5)
-                for cx_, cy_ in lf["cells"]:
-                    self.screen.blit(fl, (bx + cx_ * cs, by + cy_ * cs))
+                for cx_, cy_ in lf["cells"]:                       # 매 프레임 새 Surface를 만들지 않고 바로 반투명 사각형을 그림
+                    CANVAS.alpha_rect((bx + cx_ * cs + 1, by + cy_ * cs + 1, cs - 2, cs - 2), (255, 255, 255, a), radius=5)
         self.lock_flashes = alive_lock
 
         # 3-2. 라인 클리어 와이프
@@ -2942,9 +2940,7 @@ class UIRenderer:
                 b_sz = 14
                 tcx, tcy = t_center
                 a = int(180 + 75 * math.sin(now * 12.0))
-                b_surf = pygame.Surface((b_sz * 2 + 4, b_sz * 2 + 4), pygame.SRCALPHA)
-                pygame.draw.rect(b_surf, (70, 240, 185, a), (0, 0, b_sz * 2 + 4, b_sz * 2 + 4), 2, border_radius=6)
-                self.screen.blit(b_surf, (tcx - b_sz - 2, tcy - b_sz - 2))
+                CANVAS.alpha_rect((tcx - b_sz - 2, tcy - b_sz - 2, b_sz * 2 + 4, b_sz * 2 + 4), (70, 240, 185, a), width=2, radius=6)
 
             shown = 0
             for pid, p in match.players.items():

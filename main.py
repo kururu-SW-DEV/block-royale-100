@@ -285,6 +285,12 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                         self._confirm_quit_app()                 # 창 X 버튼도 바로 끄지 않고 확인
                     elif not any(b[0] == "quit_app" for b in self.modal["buttons"]):
                         self._pending_quit = True                # 떠 있는 다른 알림 창을 덮어쓰지 않고, 닫은 뒤에 종료 확인
+                elif (event.type == pygame.KEYDOWN and event.key in (pygame.K_F11, pygame.K_m) and self.modal is None and self.text_focus is None
+                      and self.rebinding_action is None and (self.rules_open or (self.state == "GAME" and self.match is not None and getattr(self.match, "brief_open", False)))):
+                    if event.key == pygame.K_F11:                # 안내 카드/규칙 카드가 열려 있어도 전체 화면(F11)·음소거(M)는 카드를 닫거나 경기를 시작하지 않고 동작
+                        self.toggle_fullscreen()
+                    else:
+                        self.toggle_mute()
                 elif (self.state == "GAME" and self.match is not None and getattr(self.match, "brief_open", False)
                       and event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION, pygame.MOUSEBUTTONUP, pygame.MOUSEWHEEL)):
                     self._handle_brief_event(event)

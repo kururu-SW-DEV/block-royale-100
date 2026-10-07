@@ -97,6 +97,11 @@ class AIBot:
             self.action_interval = 0.28
             self.error_chance = 0.22
 
+    def _at_spawn(self):
+        """T-스핀 이동 경로는 항상 스폰 위치에서 출발하는 상대 경로라, 블록이 이미 내려와 있으면(봇 인계 직후 등) 쓰지 않음"""
+        e = self.engine
+        return e.current_y == SPAWN_Y and e.current_rot == 0
+
     def _plan_brain(self):
         """탐색형 계획: 지금 블록/홀드/다음 블록들을 함께 보고 최선의 배치(와 필요하면 입력 경로)를 고름. 예산이 없으면 None"""
         left = bot_brain.budget_left()
@@ -112,7 +117,7 @@ class AIBot:
         t0 = time.perf_counter()
         results = bot_brain.plan(e.grid, e.current_piece, e.hold_piece, list(e.next_queue[:5]), e.can_hold,
                                  e.combo, e.b2b, e.incoming_garbage, depth=depth, beam=self.brain["beam"],
-                                 attack_style=self.brain["attack"], use_tspin=self.brain["tspin"], params=self.params)
+                                 attack_style=self.brain["attack"], use_tspin=self.brain["tspin"] and self._at_spawn(), params=self.params)
         cost = time.perf_counter() - t0
         bot_brain.spend(cost)
         _avg_cost[depth] = _avg_cost[depth] * 0.9 + cost * 0.1
@@ -138,7 +143,7 @@ class AIBot:
         e = self.engine
         rid = bot_pool.submit(bot_brain.rows_from_grid(e.grid), e.current_piece, e.hold_piece, list(e.next_queue[:5]),
                               e.can_hold, e.combo, e.b2b, e.incoming_garbage, self.depth, self.brain["beam"],
-                              self.brain["attack"], self.brain["tspin"], dict(self.params or bot_brain.PARAMS))
+                              self.brain["attack"], self.brain["tspin"] and self._at_spawn(), dict(self.params or bot_brain.PARAMS))
         if rid is None:
             return False
         self.pool_rid = rid

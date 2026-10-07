@@ -36,6 +36,7 @@ def default_workers():
 
 def _worker_main(req_q, res_q):
     import bot_brain
+    defaults = dict(bot_brain.PARAMS)                  # 일부 값만 덮어쓴 파라미터가 다음 요청에 남지 않게 기본값을 기억해 둠
     res_q.put((0, "hello"))
     last_ver = None
     while True:
@@ -44,6 +45,8 @@ def _worker_main(req_q, res_q):
             break
         rid, rows, cur, hold, qu, can_hold, combo, b2b, inc, depth, beam, atk, ts, (ver, blob) = item
         if ver != last_ver:                            # 파라미터는 바뀐 버전일 때만 풀어서 적용
+            bot_brain.PARAMS.clear()
+            bot_brain.PARAMS.update(defaults)
             bot_brain.PARAMS.update(pickle.loads(blob))
             last_ver = ver
         try:
