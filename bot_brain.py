@@ -19,6 +19,7 @@ H = BOARD_HEIGHT
 FULL = (1 << W) - 1
 
 SHAPES = {p: [list(shape) for shape in rots] for p, rots in TETROMINOES.items()}
+_MIN_DY = {p: [min(dy for _, dy in sh) for sh in rots] for p, rots in SHAPES.items()}
 SHAPE_SPAN = {p: [(min(dx for dx, _ in s), max(dx for dx, _ in s)) for s in rots] for p, rots in SHAPES.items()}
 
 # 행 전환 수 표: 양쪽 벽을 채워진 것으로 보고 이웃한 칸이 다른 횟수
@@ -169,8 +170,8 @@ def _tspin_kind(rows, x, y, rot, flag):
     return "mini"
 
 
-def t_placements(rows):
-    """T 블록의 도달 가능한 모든 고정 자리와 입력 경로: [(rot, px, py, kind, path)]
+def t_placements_ref(rows):
+    """(기준 구현) T 블록의 도달 가능한 모든 고정 자리와 입력 경로: [(rot, px, py, kind, path)]
     path는 'L','R','D','cw','ccw' 입력 목록(마지막 하드 드롭은 따로)."""
     cells_by_rot = SHAPES["T"]
     sx, sy, sr = 3, SPAWN_Y, 0
@@ -227,6 +228,101 @@ def t_placements(rows):
     return [(r, x, y, kind, path) for _rank, r, x, y, kind, path in best.values() if y >= 0]        # 숨김 구역에 걸치는 자리는 쓰지 않음 (_apply가 보이는 줄만 다룸)
 
 
+# T 블록: 회전(r)과 왼쪽 위 x마다 줄별 비트마스크를 미리 계산 (칸마다 파이썬 루프를 도는 충돌 검사 대신 줄 단위 AND 한 번). 벽 밖이면 None
+_T_ROT_CELLS = SHAPES["T"]
+_T_MASKS = [[None] * (W + 8) for _ in range(4)]            # _T_MASKS[r][x + 4] = ((dy, mask), ...)
+for _r in range(4):
+    for _x in range(-4, W + 4):
+        if all(0 <= _x + _dx < W for _dx, _dy in _T_ROT_CELLS[_r]):
+            _rowm = {}
+            for _dx, _dy in _T_ROT_CELLS[_r]:
+                _rowm[_dy] = _rowm.get(_dy, 0) | (1 << (_x + _dx))
+            _T_MASKS[_r][_x + 4] = tuple(sorted(_rowm.items()))
+_T_MAXDY = max(dy for r in range(4) for _dx, dy in _T_ROT_CELLS[r])
+_KICK_CW = [[(r + 1) % 4, JLSTZ_KICKS.get((r, (r + 1) % 4), [(0, 0)])] for r in range(4)]
+_KICK_CCW = [[(r - 1) % 4, JLSTZ_KICKS.get((r, (r - 1) % 4), [(0, 0)])] for r in range(4)]
+
+
+def t_placements(rows):
+    """T 블록의 도달 가능한 모든 고정 자리와 입력 경로: [(rot, px, py, kind, path)] (t_placements_ref와 같은 자리를 더 빨리 찾음)
+    - 충돌 검사를 줄 비트마스크로 함
+    - 스택 위가 충분히 비어 있으면 그 허공(어디서나 똑같이 움직일 수 있는 구간)은 건너뛰고 스택 가까이에서 탐색을 시작함 (경로 앞에 'D'를 붙임)"""
+    masks = _T_MASKS
+    top0 = _top(rows)
+    y0 = SPAWN_Y
+    air = top0 - (_T_MAXDY + 4) - SPAWN_Y                # 스택 위쪽 여유: 모양 높이 + 킥 이동폭(±2) + 여유
+    if air > 0:
+        y0 = SPAWN_Y + air
+    sx, sy, sr = 3, y0, 0
+    m0 = masks[sr][sx + 4]
+
+    def hit(r, x, y):
+        m = masks[r][x + 4] if -4 <= x < W + 4 else None
+        if m is None:
+            return True
+        for dy, mk in m:
+            yy = y + dy
+            if yy >= H or (yy >= 0 and rows[yy] & mk):
+                return True
+        return False
+
+    if hit(sr, sx, sy):
+        return []
+    start = (sx, sy, sr, 0)
+    parent = {start: None}
+    q = deque([start])
+    locks = []
+    while q:
+        st = q.popleft()
+        x, y, r, f = st
+        resting = hit(r, x, y + 1)
+        if resting:
+            locks.append(st)
+        if not hit(r, x - 1, y):
+            ns = (x - 1, y, r, 0)
+            if ns not in parent:
+                parent[ns] = (st, "L")
+                q.append(ns)
+        if not hit(r, x + 1, y):
+            ns = (x + 1, y, r, 0)
+            if ns not in parent:
+                parent[ns] = (st, "R")
+                q.append(ns)
+        if not resting:
+            ns = (x, y + 1, r, 0)
+            if ns not in parent:
+                parent[ns] = (st, "D")
+                q.append(ns)
+        for nr, kicks in (_KICK_CW[r], _KICK_CCW[r]):
+            name = "cw" if nr == (r + 1) % 4 else "ccw"
+            for ki, (kx, ky) in enumerate(kicks):
+                tx, ty = x + kx, y - ky
+                if not hit(nr, tx, ty):
+                    ns = (tx, ty, nr, 2 if ki == 4 else 1)
+                    if ns not in parent:
+                        parent[ns] = (st, name)
+                        q.append(ns)
+                    break
+    prefix = ["D"] * (y0 - SPAWN_Y)
+    best = {}
+    for st in locks:
+        x, y, r, f = st
+        if y < 0:
+            continue
+        kind = _tspin_kind(rows, x, y, r, f)
+        key = tuple(sorted((x + dx, y + dy) for dx, dy in _T_ROT_CELLS[r]))
+        rank = 2 if kind == "full" else (1 if kind == "mini" else 0)
+        if key not in best or rank > best[key][0]:
+            path = []
+            cur = st
+            while parent[cur] is not None:
+                cur, act = parent[cur][0], parent[cur][1]
+                path.append(act)
+            path.reverse()
+            best[key] = (rank, r, x, y, kind, prefix + path)
+    return [(r, x, y, kind, path) for _rank, r, x, y, kind, path in best.values() if y >= 0]
+
+
 def _apply(rows, piece, rot, px, py, top=None):
     """블록을 놓고 줄을 지운 결과: (새 행들, 지운 줄 수, 지워진 줄에 속한 블록 칸 수, 랜딩 높이, 새 최상단 행)"""
     if top is None:
@@ -271,7 +367,69 @@ def _attack(cleared, kind, combo_after, b2b_before, is_pc):
     return base + COMBO_BONUS[min(combo_after, len(COMBO_BONUS) - 1)], difficult
 
 
+WELL_VAL = [d * (d + 1) / 2.0 for d in range(H + 2)]       # 우물 깊이 d의 감점 d*(d+1)/2 (식과 같은 값을 미리 계산)
+_READY_TARGET = FULL ^ (1 << (W - 1))
+
+
 def board_eval(rows, incoming, attack_style, i_soon=True, t_soon=False, top=None):
+    """놓은 뒤 보드의 좋고 나쁨 (클수록 좋음). top: 가장 위 블록이 있는 행(모르면 None).
+    board_eval_ref와 같은 값을 내되 줄 훑기를 한 번으로 합치고 우물 계산을 표로 함"""
+    if top is None:
+        top = _top(rows)
+    seen = 0
+    holes = 0
+    heights = [0] * W
+    row_tr = 0
+    col_tr = 0
+    prev = 0
+    for y in range(top, H):
+        r = rows[y]
+        new = r & ~seen
+        if new:
+            hgt = H - y
+            for x in BITS[new]:
+                heights[x] = hgt
+        holes += (seen & ~r & FULL).bit_count()
+        seen |= r
+        row_tr += ROW_TRANS[r]
+        if y > top or top > 0:                                   # 세로 전환: 이웃한 두 줄의 XOR (맨 위 블록 줄은 위의 빈 줄과 비교, 보드가 꽉 찬 경우만 제외)
+            col_tr += (prev ^ r).bit_count()
+        prev = r
+    col_tr += (prev ^ FULL).bit_count() if top < H else (FULL ^ 0).bit_count()
+    wells = 0.0
+    hp = heights
+    for c in range(W):
+        left = hp[c - 1] if c > 0 else 99
+        right = hp[c + 1] if c < W - 1 else 99
+        d = (left if left < right else right) - hp[c]
+        if d > 0:
+            w = WELL_VAL[d]
+            if attack_style and c == W - 1:
+                w *= PARAMS["edge_well"]      # 오른쪽 끝 우물은 쿼드용으로 남겨 둠
+            wells += w
+    max_h = H - top
+    score = 0.0
+    if attack_style and incoming == 0 and max_h <= 12:       # 위협이 없을 때만 쿼드/T-스핀을 준비 (쓰레기가 오거나 높이 쌓이면 안전 운영)
+        ready = rows[top:].count(_READY_TARGET)       # 오른쪽 끝 한 칸만 비고 나머지가 찬 줄: I 블록 하나로 쿼드를 만들 수 있는 준비된 줄
+        score += PARAMS["ready"] * min(ready, 4) * (1.0 if i_soon else PARAMS["no_i"])   # 곧 나올 I 블록이 안 보이면 우물 준비를 덜 밀어붙임
+        for y in range(top if top > 1 else 1, H - 1):            # T-스핀 더블 자리: 3칸 빈 줄 + 그 아래 한 칸 우물 + 위쪽 처마
+            c = TSD_ROW.get(rows[y])
+            if c is not None and rows[y + 1] == FULL ^ (1 << (c + 1)):
+                if rows[y - 1] & ((1 << c) | (1 << (c + 2))):
+                    score += PARAMS["tslot"] * (1.0 if t_soon else 0.4)
+                else:
+                    score += PARAMS["tslot_partial"] * (1.0 if t_soon else 0.4)   # 처마만 아직 없는 절반 완성 자리
+                break
+    P = PARAMS
+    score = score - P["w_row"] * row_tr - P["w_col"] * col_tr - P["w_hole"] * holes - P["w_well"] * wells
+    eff = max_h + incoming
+    dh = P["danger_h"]
+    if eff > dh:
+        score -= (eff - dh) ** 2 * P["w_danger"]       # 쌓인 높이 + 곧 올라올 쓰레기가 위험선을 넘으면 크게 감점
+    return score
+
+
+def board_eval_ref(rows, incoming, attack_style, i_soon=True, t_soon=False, top=None):
     """놓은 뒤 보드의 좋고 나쁨 (클수록 좋음). top: 가장 위 블록이 있는 행(모르면 None)"""
     if top is None:
         top = _top(rows)
@@ -366,7 +524,7 @@ def _expand(rows, piece, combo, b2b, incoming, attack_style, use_tspin, soon=(Tr
         cands = [(rot, px, py, None, None) for rot, px, py in simple_placements(rows, piece, tops)]
     i_soon, t_soon = soon
     for rot, px, py, kind, path in cands:
-        if py + min(dy for _, dy in SHAPES[piece][rot]) < 0:
+        if py + _MIN_DY[piece][rot] < 0:
             continue
         new, cleared, eroded, landing, top = _apply(rows, piece, rot, px, py, top0)
         is_pc = cleared > 0 and top >= H

@@ -12,7 +12,7 @@ import pickle
 import queue
 import time
 
-MAX_WORKERS = 6
+MAX_WORKERS = 3                   # 측정: 2~3개면 6개와 프레임 시간이 같고 전체 CPU는 더 적음 (1개는 메인이 더 일해 p99가 나빠짐)
 MAX_INFLIGHT_PER_WORKER = 3            # 작업자 한 명당 동시에 맡길 수 있는 요청 수
 STALL_AFTER = 5.0                      # 맡긴 요청이 있는데 이 시간(초) 동안 어떤 결과도 오지 않으면 작업 프로세스가 멈춘 것으로 보고 끔 (죽지는 않았지만 응답이 없는 경우)
 STALE_AFTER = 8.0                      # 이 시간(초) 넘게 아무도 가져가지 않은 요청/결과는 정리 (탈락한 봇이 남긴 것)
