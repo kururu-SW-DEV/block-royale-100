@@ -34,10 +34,12 @@ class ReplayRecorder:
     def update(self, engine, elapsed):
         if self.finished:
             return
-        if engine is not self._engine:                         # 엔진이 바뀌면(재시작 등) 기준만 다시 잡음
+        if engine is not self._engine:                         # 엔진이 바뀌면(재시작 등) 기준을 다시 잡음
             self._engine = engine
-            engine.replay_log = []
-            return
+            if engine.replay_log is None:
+                engine.replay_log = []
+                return
+            # 이미 기록이 켜져 있으면(경기 시작과 함께 켠 경우) 첫 프레임에 고정된 블록을 버리지 않고 아래에서 그대로 옮김
         log = engine.replay_log
         if not log:
             return

@@ -2,7 +2,7 @@
 Block Royale 100 - Configuration & Constants
 """
 
-APP_VERSION = "1.4.19"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
+APP_VERSION = "1.4.20"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
 
 # 화면 해상도 설정
 SCREEN_WIDTH = 1366

@@ -466,24 +466,29 @@ class BlockEngine:
     def _push_garbage(self, count):
         """보드 하단에 구멍 1개가 뚫린 쓰레기 줄을 밀어 올림"""
         hole_x = self.garbage_rng.randint(0, self.width - 1)
-        self.garbage_pushed_total += count
+        rec = None
         if self.replay_log is not None:
-            self.replay_log.append({"k": "G", "n": int(count), "h": []})
+            rec = {"k": "G", "n": 0, "h": []}
+            self.replay_log.append(rec)
         for i in range(count):
             if i > 0 and self.garbage_rng.random() < GARBAGE_MESSINESS:      # 한 묶음 안에서도 가끔 구멍이 옮겨져 한 번에 복구되지 않음
                 hole_x = (hole_x + self.garbage_rng.randint(1, self.width - 1)) % self.width
-            self.push_holes.append(hole_x)
-            del self.push_holes[:-12]
-            if self.replay_log is not None:
-                self.replay_log[-1]["h"].append(int(hole_x))
-            # 맨 위 줄이 비어있지 않으면 밀려 올라가면서 게임오버
+            # 맨 위 줄이 비어있지 않으면 밀려 올라가면서 게임오버 (실제로 올라온 줄만 기록/집계)
             if any(self.grid[0]):
                 self.game_over = True
                 break
+            self.push_holes.append(hole_x)
+            del self.push_holes[:-12]
+            self.garbage_pushed_total += 1
+            if rec is not None:
+                rec["h"].append(int(hole_x))
+                rec["n"] = len(rec["h"])
             self.grid.pop(0)
             new_row = ['G'] * self.width
             new_row[hole_x] = None
             self.grid.append(new_row)
+        if rec is not None and not rec["h"]:
+            self.replay_log.remove(rec)                 # 한 줄도 올라오지 못했으면 기록하지 않음
 
         # 쓰레기 줄이 올라왔을 때 현재 조작 중인 피스가 겹치지 않도록 위로 보정
         if self.current_piece and not self.game_over:
@@ -522,7 +527,7 @@ class BlockEngine:
         taken, groups = 0, []
         for b in list(self._garbage):
             if ready_only and b[1] > self._clock:
-                break
+                continue                      # 아직 충전 중인 묶음은 건너뛰고, 뒤에 들어온 즉시(instant) 묶음은 꺼냄
             n = min(b[0], limit - taken)
             if n <= 0:
                 break

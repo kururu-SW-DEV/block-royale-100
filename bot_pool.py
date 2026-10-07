@@ -101,6 +101,7 @@ def stop():
     st["hello"] = 0
     st["last_res"] = 0.0
     st["req"] = st["res"] = None
+    st["started"] = False                              # 다시 start()하면 작업 프로세스가 새로 떠야 함
 
 
 def pump():
@@ -108,6 +109,14 @@ def pump():
     st = _state
     if not st["procs"]:
         return
+    now = time.time()
+    gap = now - st.get("last_pump", now)
+    st["last_pump"] = now
+    if gap > 1.0:                                      # 일시정지 등으로 pump가 오래 멈췄다면 그 시간은 '멈춘 작업자/오래된 요청' 판정에서 뺌
+        for rid in st["born"]:
+            st["born"][rid] += gap
+        if st["last_res"]:
+            st["last_res"] += gap
     try:
         while True:
             rid, res = st["res"].get_nowait()

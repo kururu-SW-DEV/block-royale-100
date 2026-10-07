@@ -58,7 +58,7 @@ class RulesMixin:
 
     def _handle_rules_event(self, event):
         """규칙 카드가 열려 있는 동안의 입력: 아무 키나 클릭으로 닫음"""
-        if event.type == pygame.KEYDOWN or (event.type == pygame.MOUSEBUTTONDOWN and event.button in (1, 3)):
+        if (event.type == pygame.KEYDOWN and event.key not in self._MODIFIER_KEYS) or (event.type == pygame.MOUSEBUTTONDOWN and event.button in (1, 3)):
             self._close_rules()
 
     # 조준 모드 한 줄 요약 (긴 설명은 게임 중 조준 칸 툴팁에 있음)
@@ -140,8 +140,14 @@ class BriefMixin:
             m.coach_until = max(getattr(m, "coach_until", 0.0), now + m.COUNTDOWN_SECS + 12.0)     # 첫 판 코치는 카드를 닫은 뒤부터 보이게
         self.sound_mgr.play('move')
 
+    # 단독으로 눌러도 창을 닫거나 경기를 시작하면 안 되는 수식키
+    _MODIFIER_KEYS = frozenset(getattr(pygame, n) for n in ("K_LSHIFT", "K_RSHIFT", "K_LCTRL", "K_RCTRL", "K_LALT", "K_RALT", "K_LMETA", "K_RMETA",
+                                                          "K_CAPSLOCK", "K_NUMLOCK", "K_SCROLLOCK", "K_MODE") if hasattr(pygame, n))
+
     def _handle_brief_event(self, event):
         if event.type == pygame.KEYDOWN:
+            if event.key in self._MODIFIER_KEYS:
+                return
             if event.key == pygame.K_ESCAPE:
                 self.return_to_menu()                                # ESC: 시작하지 않고 메뉴로
             else:

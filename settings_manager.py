@@ -4,6 +4,7 @@ Block Royale 100 - Settings Manager
 """
 
 import os
+import re
 import copy
 import json
 import pygame
@@ -234,6 +235,11 @@ def _valid_setting(key, value):
                 for k, v in value.items()):
             return True, value
         return False, None
+    if key == "pad_buttons":
+        return (value is None or isinstance(value, dict)), (value if (value is None or isinstance(value, dict)) else None)
+    if key == "resolution":
+        ok = isinstance(value, str) and (value == "auto" or re.fullmatch(r"\d{3,5}x\d{3,5}", value) is not None)
+        return ok, (value if ok else None)
     if isinstance(default, bool):
         return (isinstance(value, bool), value)
     if isinstance(default, int):
@@ -243,6 +249,8 @@ def _valid_setting(key, value):
             value = max(0, min(100, value))
         elif key == "target_player_count":
             value = max(2, min(100, value))
+        elif key == "drill_best":
+            value = max(0, min(86400, value))
         elif key == "name_color":
             from config import NAME_COLORS
             value = max(0, min(len(NAME_COLORS) - 1, value))

@@ -168,6 +168,8 @@ class LobbyMixin:
             self.net_mgr.reap_clients(lobby=True)              # 대기실에서 응답이 끊긴 참가자 정리
             diff, mode = self.settings.get("bot_difficulty", "mixed"), self.settings.get("game_mode", "battle")
             team = bool(self.settings.get("rule_team", False)) and mode != "survival"
+            if rs.get("max_players") != self.target_player_count and self.net_mgr.mode == "HOST":
+                rs["max_players"] = self.target_player_count         # 방 목록 표시와 입장 제한이 방장이 고른 인원을 따르게
             if rs.get("target") != self.target_player_count or rs.get("diff") != diff or rs.get("mode") != mode or rs.get("team") != team:
                 rs["target"], rs["diff"], rs["mode"], rs["team"] = self.target_player_count, diff, mode, team
                 self.net_mgr.host_broadcast_roster()           # 인원/난이도/모드가 바뀌면 참가자 대기실에도 바로 알림

@@ -4,7 +4,7 @@ BlockRoyaleApp(main.py)이 상속하는 믹스인. 모든 탭이 같은 '행' �
 키보드 탐색은 TAB_NAV 표 하나로 정의됨 (마우스 hit rect는 settings_buttons에 id로 등록)
 """
 
-from i18n import tr as _tr
+from i18n import tr as _tr, language as _language
 from app_common import (
     ACTION_NAMES,
     BGM_STAGE_SET_DESCS,
@@ -169,8 +169,12 @@ class SettingsMixin:
                     if moved:                                             # 다른 동작에 있던 키를 가져왔다면 알려 줌
                         names = dict(ACTION_NAMES)
                         kn = short_key_name(event.key)
-                        parts = [f"[{names.get(a, a).split(' (')[0]}]" + ("에 이 동작의 기존 키를 넘김" if sw else "에서 해제") for a, sw in moved]
-                        self.rebind_notice = (f"{kn} 키는 " + ", ".join(parts) + "했습니다", time.time() + 5.0)
+                        if _language() == "en":
+                            parts = [("old key moved to " if sw else "removed from ") + f"[{_tr(names.get(a, a).split(' (')[0])}]" for a, sw in moved]
+                            self.rebind_notice = (f"Key {kn}: " + ", ".join(parts), time.time() + 5.0)
+                        else:
+                            parts = [f"[{names.get(a, a).split(' (')[0]}]" + ("에 이 동작의 기존 키를 넘김" if sw else "에서 해제") for a, sw in moved]
+                            self.rebind_notice = (f"{kn} 키는 " + ", ".join(parts) + "했습니다", time.time() + 5.0)
                     self.rebinding_action = None
             return
 
@@ -940,7 +944,10 @@ class SettingsMixin:
         self.sound_mgr.play('rotate')
         names = {a: n for a, n, _f in PAD_LAYOUT}
         if moved:
-            self.rebind_notice = (f"{pad_button_label(name)} 버튼은 " + ", ".join(f"[{names.get(a, a)}]" for a in moved) + "에서 해제했습니다", time.time() + 5.0)
+            if _language() == "en":
+                self.rebind_notice = (f"Button {pad_button_label(name)}: removed from " + ", ".join(f"[{_tr(names.get(a, a))}]" for a in moved), time.time() + 5.0)
+            else:
+                self.rebind_notice = (f"{pad_button_label(name)} 버튼은 " + ", ".join(f"[{names.get(a, a)}]" for a in moved) + "에서 해제했습니다", time.time() + 5.0)
         else:
             self.rebind_notice = (f"[{names.get(action, action)}] = {pad_button_label(name)} 버튼", time.time() + 3.0)
 

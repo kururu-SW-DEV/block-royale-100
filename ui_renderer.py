@@ -1288,7 +1288,7 @@ class UIRenderer:
             self._draw_text("관전 중 · 조준은 사용할 수 없습니다", self.font_small, C_DIM, r2.centerx, r2.y + 37, "center")
             att_count = 0
         elif aim_on:
-            self._draw_text(f"● {name}" + ("  (사람)" if is_human else ""), self.font_hud,
+            self._draw_text(f"● {name}" + (f"  {_tr('(사람)')}" if is_human else ""), self.font_hud,
                             C_GREEN if is_human else C_TEXT, r2.x + 12, r2.y + 37, "midleft")
             if target_p:                                           # 대상의 위험도(쌓인 높이 + 곧 올라올 쓰레기): 한 방 더로 K.O.가 가능한지 한눈에
                 dg = min(1.0, match._danger(target_p) / float(BOARD_HEIGHT))
@@ -2675,8 +2675,8 @@ class UIRenderer:
                         budget -= 1
                         self.shards.append({"x": bx + x * cs + cs / 2, "y": by + y * cs + cs / 2, "vx": random.uniform(-40, 40), "vy": random.uniform(-60, 20),
                                             "col": (110, 116, 135), "sz": random.choice((3, 4)), "life": 0.0, "max": random.uniform(0.5, 0.9)})
-        else:
-            self._topout = None
+        elif not engine.game_over:
+            self._topout = None                  # 관전(S)으로 잠깐 나갔다 와도 붕괴 연출을 처음부터 다시 틀지 않음
 
         if match.match_finished and getattr(match, 'local_rank', 0) == 1 and not spectating and not match.practice:      # 우승 세리머니: 아래에서 위로 한 줄씩 금빛으로 터짐
             if self._vic_t0 is None:
@@ -3270,11 +3270,20 @@ class UIRenderer:
             self.result_restart_btn = pygame.Rect(bx + box_w // 2 - 318, btn_y, 200, 46)
             self.result_practice_btn = pygame.Rect(bx + box_w // 2 - 100, btn_y, 200, 46)
             self.result_return_btn = pygame.Rect(bx + box_w // 2 + 118, btn_y, 200, 46)
+        ids = ["restart", "return"] if net_on else ["restart", "practice", "return"]
+        if self.result_focus_id not in ids:
+            self.result_focus_id = ids[0]
+        st_moved = (mx, my) != getattr(self, "_standings_last_mouse", None)       # 마우스가 실제로 움직였을 때만 포커스가 따라감
+        self._standings_last_mouse = (mx, my)
+        if st_moved:
+            for bid, rect in (("restart", self.result_restart_btn), ("practice", self.result_practice_btn), ("return", self.result_return_btn)):
+                if rect and bid in ids and rect.collidepoint(mx, my):
+                    self.result_focus_id = bid
         self._button(self.result_restart_btn, "대기실로 돌아가기" if net_on else "재도전", "green",
-                     self.result_restart_btn.collidepoint(mx, my), "R")
+                     self.result_focus_id == "restart", "R")
         if self.result_practice_btn:
-            self._button(self.result_practice_btn, "연습하기", "blue", self.result_practice_btn.collidepoint(mx, my), "P")
-        self._button(self.result_return_btn, "메인 메뉴", "blue", self.result_return_btn.collidepoint(mx, my), "ESC")
+            self._button(self.result_practice_btn, "연습하기", "blue", self.result_focus_id == "practice", "P")
+        self._button(self.result_return_btn, "메인 메뉴", "blue", self.result_focus_id == "return", "ESC")
         if n > visible:
             self._draw_text("마우스 휠 / ↑ ↓ / PageUp·PageDown 으로 스크롤", self.font_tiny, C_DIM, bx + box_w // 2, by + box_h - 96, "midtop")
 

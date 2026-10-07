@@ -66,7 +66,7 @@ class CoreMixin:
         battle = self.settings.get("game_mode") != "survival"
         self.net_mgr.host_send_start_game(players_summary, attacks_enabled=battle,
                                           team=bool(self.settings.get("rule_team", False)) and battle and self.target_player_count >= 4)
-        self.start_game(mode="HOST", total_players=self.target_player_count, initial_players=players_summary)
+        self.start_game(mode="HOST", total_players=max(self.target_player_count, len(players_summary)), initial_players=players_summary)
 
     @staticmethod
     def _work_area():
@@ -174,6 +174,8 @@ class CoreMixin:
         self.sound_mgr.play_menu_bgm()
         self.logo.restart(fast=True)
         self._end_text(commit=False)
+        self.rebinding_action = None                     # 화면이 바뀌면 키 바인딩 대기/규칙 창을 닫음 (켜진 채 남으면 M/F1 키가 먹통)
+        self.rules_open = False
         self.net_mgr.stop()
         self.match = None
         self.is_paused = False
@@ -242,6 +244,8 @@ class CoreMixin:
     def start_game(self, mode="SOLO", total_players=100, initial_players=None, practice=False, daily=None, weekly=None, brief=True, quick=False):
         """practice=True: 연습 모드(혼자, 전적 없음). daily="YYYYMMDD": 오늘의 도전(같은 날은 같은 블록 순서/상대 구성, 100인 혼합 난이도 배틀로얄)"""
         self._end_text(commit=False)
+        self.rebinding_action = None                     # 화면이 바뀌면 키 바인딩 대기/규칙 창을 닫음 (켜진 채 남으면 M/F1 키가 먹통)
+        self.rules_open = False
         self.renderer.reset_standings()
         self._lobby_return_t0 = None
         self.renderer.lobby_return_left = None
@@ -329,6 +333,8 @@ class CoreMixin:
         self.match.log_enabled = bool(self.settings.get("match_log", False)) and not practice
         from replay import ReplayRecorder
         self.replay_rec = None if practice else ReplayRecorder({"mode": "survival" if not self.match.attacks_enabled else "battle", "custom": bool(self.match.custom_rules)})      # 내 보드 리플레이 (연습 제외)
+        if self.replay_rec is not None:
+            self.match.local_engine.replay_log = []        # 카운트다운 직후 첫 프레임에 고정된 블록도 기록에서 빠지지 않게 처음부터 켬
         lead = 0.0
         show_brief = bool(kind in ("daily", "weekly") and brief and getattr(self, "use_bot_pool", False))
         if show_brief:                                                   # 오늘의 도전/주간 변형: 규칙과 목표를 먼저 보여 주고, 아무 키나 누르면 카운트다운 시작
@@ -381,6 +387,8 @@ class CoreMixin:
         """네트워크 경기 종료 후 대기실로: 호스트는 방을 다시 열고(참가자 유지), 참가자는 호스트의 다음 시작을 기다림"""
         nm = self.net_mgr
         self._end_text(commit=False)
+        self.rebinding_action = None                     # 화면이 바뀌면 키 바인딩 대기/규칙 창을 닫음 (켜진 채 남으면 M/F1 키가 먹통)
+        self.rules_open = False
         self.match = None
         self.is_paused = False
         self.modal = None

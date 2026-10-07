@@ -145,10 +145,16 @@ class TextInputMixin:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and (in_lobby or in_settings):
             for idx, rect in enumerate(self.color_rects):
                 if rect.collidepoint(event.pos):
+                    if field:
+                        self._end_text()                      # 편집 중이던 글자를 먼저 확정 (안 그러면 색을 고르는 순간 입력이 사라짐)
                     self._set_name_color(idx)
                     return True
             for name, rect in self.text_rects.items():
                 if rect.collidepoint(event.pos):
+                    if field == name:
+                        return True                           # 이미 편집 중인 칸을 다시 클릭해도 입력한 글자를 지우지 않음
+                    if field:
+                        self._end_text()                      # 다른 칸을 편집 중이었다면 먼저 확정
                     self._begin_text(name)
                     return True
             if field:

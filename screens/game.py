@@ -89,22 +89,43 @@ class GameMixin:
                             self._pre_actions = (id(self.match), acts[-3:])
                             break
                 return
+            # 탈락 뒤 관전 중에 연 일시정지 창: 결과/관전 키가 가로채지 않게 일시정지 메뉴가 먼저 입력을 받음
+            if self.is_paused and (self.match.match_finished or not self.match.local_is_alive):
+                if event.key in (pygame.K_UP, pygame.K_DOWN):
+                    self.renderer.pause_focus = (self.renderer.pause_focus + (-1 if event.key == pygame.K_UP else 1)) % 4
+                    self.sound_mgr.play('move')
+                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                    self._activate_pause_focus()
+                elif event.key == pygame.K_r:
+                    self._activate_pause_focus(1)
+                elif event.key == pygame.K_ESCAPE or self.settings.is_action_key(event.key, "pause"):
+                    self._activate_pause_focus(0)                 # P/ESC로 다시 닫음
+                return
             # 탈락 또는 게임 종료 시 처리
             if self.match.match_finished:
-                # 최종 순위표: 스크롤 / 재도전 / 메인 메뉴
+                # 최종 순위표: 스크롤 / 버튼 포커스(←→) / 재도전 / 연습 / 메인 메뉴
                 if event.key in (pygame.K_UP, pygame.K_DOWN, pygame.K_PAGEUP, pygame.K_PAGEDOWN, pygame.K_HOME, pygame.K_END):
                     step = {pygame.K_UP: -1, pygame.K_DOWN: 1, pygame.K_PAGEUP: -8, pygame.K_PAGEDOWN: 8,
                             pygame.K_HOME: -999, pygame.K_END: 999}[event.key]
                     self.renderer.scroll_standings(step)
+                elif time.time() < self.result_lock_until:
+                    pass                                          # 우승 세리머니 동안은 R/P/Enter/클릭이 실수로 눌리지 않게 막음
+                elif event.key in (pygame.K_LEFT, pygame.K_RIGHT):
+                    ids = self._standings_button_ids()
+                    i = ids.index(self.renderer.result_focus_id) if self.renderer.result_focus_id in ids else 0
+                    self.renderer.result_focus_id = ids[(i + (-1 if event.key == pygame.K_LEFT else 1)) % len(ids)]
+                    self.sound_mgr.play('move')
                 elif event.key == pygame.K_r:
                     self.sound_mgr.play('move')
                     self._restart_after_match()
                 elif event.key == pygame.K_p and self.net_mgr.mode == "NONE":
                     self.sound_mgr.play('move')
                     self._practice_after_match()
-                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE, pygame.K_ESCAPE):
-                    if time.time() >= self.result_lock_until:
-                        self._request_menu_exit()
+                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                    ids = self._standings_button_ids()
+                    self._activate_result_focus(self.renderer.result_focus_id if self.renderer.result_focus_id in ids else ids[0])
+                elif event.key == pygame.K_ESCAPE:
+                    self._request_menu_exit()
                 return
             if self.match.match_finished or not self.match.local_is_alive:
                 if (event.key == pygame.K_f and self.net_mgr.mode == "NONE" and not self.match.match_finished
@@ -308,6 +329,8 @@ class GameMixin:
             
             # 게임 종료/탈락 시 결과 오버레이 버튼 클릭
             if self.match.match_finished or (not self.match.local_is_alive and not getattr(self.match, 'is_spectating', False)):
+                if self.match.match_finished and time.time() < self.result_lock_until:
+                    return                                       # 우승 세리머니 동안은 버튼 클릭 무시
                 if hasattr(self.renderer, 'result_restart_btn') and self.renderer.result_restart_btn and self.renderer.result_restart_btn.collidepoint(mx, my):
                     self.sound_mgr.play('move')
                     self._restart_after_match()
@@ -465,6 +488,10 @@ class GameMixin:
             return ["restart", "spectate", "practice", "return"]
         else:
             return ["restart", "practice", "return"]
+
+    def _standings_button_ids(self):
+        """최종 순위표(경기 종료)에 보이는 버튼 id 목록 (왼쪽부터). ui_renderer._render_standings_overlay와 맞춰야 함"""
+        return ["restart", "return"] if self.net_mgr.mode != "NONE" else ["restart", "practice", "return"]
 
     def _activate_result_focus(self, bid=None):
         """결과 화면(K.O.) 버튼 실행 (키보드 엔터/마우스 클릭 공용)"""

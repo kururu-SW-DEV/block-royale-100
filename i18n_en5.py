@@ -256,3 +256,23 @@ EXACT["쓰레기 · 초기화 · 압박 드릴"] = "Garbage · Reset · Pressure
 TEMPLATES.update({
     "기초 {#}/{#}": "Basic {}/{}", "중급 {#}/{#}": "Mid {}/{}", "고급 {#}/{#}": "Adv {}/{}", "마스터 {#}/{#}": "Master {}/{}",
 })
+
+# BUG_REPORT.md(2026-10-07)에서 확인된 영어 미번역: 반응 프리셋, 스테이지 음악 세트 0, 클리어 문구, 연결 끊김 알림, 보상 줄, 시스템 채팅 이름, 키 교체 안내
+EXACT.update({
+    "느긋": "Relaxed", "빠름": "Fast", "프로": "Pro",
+    "Cyber Rush (오리지널)": "Cyber Rush (Original)",
+    "오리지널 3부작: Cyber Rush → Hyperdrive Override → Apex Protocol": "Original trilogy: Cyber Rush → Hyperdrive Override → Apex Protocol",
+    "모든 난이도 클리어": "All difficulties cleared",
+    "(사람)": "(human)", "시스템": "System",
+})
+TEMPLATES.update({
+    "드릴 {#}초": "Drill {}s",
+    "{} 클리어! 모든 난이도 클리어": "{} cleared! All difficulties cleared",
+    "★ B2B x{#} 쿼드! ★": "★ B2B x{} Quad! ★",
+    "{} 연결 끊김 · 봇이 대신 플레이": "{} disconnected · a bot takes over",
+    "★ 새 스킨 해금!  {}": "★ New skin unlocked!  {}",
+    "★ 레벨 업! 칭호 '{}'": "★ Level up! Title '{}'",
+    "레벨 업! 칭호 '{}'": "Level up! Title '{}'",
+    "업적 달성!  {} 외 {#}개": "Achievement unlocked!  {} +{} more",
+    "★ 업적 달성!  {} 외 {#}개": "★ Achievement unlocked!  {} +{} more",
+})
