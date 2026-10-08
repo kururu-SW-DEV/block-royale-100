@@ -844,33 +844,50 @@ class GameMixin:
                 self.net_mgr.client_send_state(st)
             elif self.net_mgr.mode == "HOST":
                 # 전체 상태 취합 브로드캐스트
-                all_st = []
-                for pid, p in self.match.players.items():
-                    ps = self.match.player_stats(pid)
-                    all_st.append({
-                        "id": pid,
-                        "name": p["name"],
-                        "is_alive": p["is_alive"],
-                        "compact_grid": p["compact_grid"],
-                        "highest_y": p["highest_y"],
-                        "ko_count": p["ko_count"],
-                        "rank": p["rank"],
-                        "score": ps["score"],
-                        "lines": ps["lines"],
-                        "atk": ps["attacks"],
-                        "surv": p.get("survival"),
-                        "cg": "".join(p["cg"]) if len(p.get("cg") or []) == 20 else "",
-                        "cp": list(p["cpiece"]) if p.get("cpiece") else None,
-                        "nx": "".join(p.get("next") or []),
-                        "hd": p.get("hold") or "",
-                        "ig": p.get("ig", 0),
-                    })
+                all_st = self._collect_world_states()
                 details = {}
                 for sid in self.net_mgr.get_spectated_ids():         # 클라이언트가 관전 중인 대상만 상세 정보 전송
                     snap = self.match.snapshot_for(sid)
                     if snap:
                         details[sid] = snap
                 self.net_mgr.host_sync_world(all_st, details)
+
+    def _collect_world_states(self):
+        """(호스트) 모든 플레이어의 상태를 WORLD_SYNC로 보낼 목록으로 만듦. 탈락해 굳은 플레이어는 직렬화한 상태를 재사용"""
+        all_st = []
+        dead_cache = self.match.__dict__.setdefault("_dead_sync_cache", {})
+        for pid, p in self.match.players.items():
+            # 이미 탈락해 보드/점수가 굳은 플레이어는 직렬화한 상태를 재사용 (경기 중후반 절반 이상이 해당). 순위/K.O./보드가 바뀌면 다시 만듦
+            sig = None
+            if not p["is_alive"] and p.get("rank"):
+                sig = (p["rank"], p["ko_count"], p["name"], p.get("survival"), id(p.get("cg")), id(p["compact_grid"]), p["highest_y"])
+                hit = dead_cache.get(pid)
+                if hit is not None and hit[0] == sig:
+                    all_st.append(hit[1])
+                    continue
+            ps = self.match.player_stats(pid)
+            st = {
+                "id": pid,
+                "name": p["name"],
+                "is_alive": p["is_alive"],
+                "compact_grid": p["compact_grid"],
+                "highest_y": p["highest_y"],
+                "ko_count": p["ko_count"],
+                "rank": p["rank"],
+                "score": ps["score"],
+                "lines": ps["lines"],
+                "atk": ps["attacks"],
+                "surv": p.get("survival"),
+                "cg": "".join(p["cg"]) if len(p.get("cg") or []) == 20 else "",
+                "cp": list(p["cpiece"]) if p.get("cpiece") else None,
+                "nx": "".join(p.get("next") or []),
+                "hd": p.get("hold") or "",
+                "ig": p.get("ig", 0),
+            }
+            if sig is not None:
+                dead_cache[pid] = (sig, st)
+            all_st.append(st)
+        return all_st
 
     def _abort_match_with_record(self):
         """방장이 나가거나 연결이 끊겨 경기가 중단될 때: 그 시점의 순위로 전적/경험치를 남김 (그냥 사라지던 판이 기록됨).

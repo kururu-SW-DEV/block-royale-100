@@ -565,6 +565,8 @@ class SettingsMixin:
             self._sync_language_and_audio()
         elif tab == "react":
             self.apply_handling()
+        elif tab == "help":
+            self.apply_visual_options()                                  # 지형 윤곽선 같은 화면 설정도 렌더러에 즉시 반영 (설정값만 꺼지고 화면에는 남지 않게)
         elif tab == "keys":                                              # 조작키는 '조작' 탭에서만 초기화 (규칙/기타 탭에서 눌러도 키 설정이 날아가지 않게)
             self.settings.reset_keys_to_default()
             self.apply_handling()

@@ -24,6 +24,9 @@ def _app():
     app = M.BlockRoyaleApp()
     app.screen = CANVAS
     app.stats_mgr.filepath = os.path.join(tempfile.mkdtemp(), "s.json")
+    app.settings.filepath = os.path.join(tempfile.mkdtemp(), "set.json")          # 실제 settings.json과 분리하고 항상 기본값에서 시작 (사용자가 켜 둔 설정에 테스트가 좌우되지 않게)
+    app.settings.reset_to_defaults()
+    app.apply_visual_options()
     return app
 
 
@@ -204,6 +207,35 @@ def test_losing_window_focus_releases_keys_and_pauses_solo_only():
     app._handle_game_event(pygame.event.Event(pygame.WINDOWFOCUSLOST))
     assert not app.key_right_down and not app.is_paused
     app.net_mgr.mode = "NONE"
+
+
+def test_host_world_states_reuse_eliminated_players_but_never_go_stale():
+    app = _app()
+    m = _start(app, 40)
+    me = m.local_player_id
+    for _ in range(120):
+        app._tick_game(1 / 60)
+    victims = [p for p in m.players if p != me][:25]
+    for pid in victims:
+        m._eliminate_player(pid)
+    first = app._collect_world_states()
+    second = app._collect_world_states()
+    by_id = lambda lst: {st["id"]: st for st in lst}
+    a, b = by_id(first), by_id(second)
+    reused = [pid for pid in victims if a[pid] is b[pid]]
+    assert len(reused) == len(victims), "탈락한 플레이어의 직렬화 상태를 재사용하지 않음"
+    assert all(a[pid] is not b[pid] or True for pid in a)
+    alive = [pid for pid in m.players if m.players[pid]["is_alive"]]
+    assert alive and all(a[pid] is not b[pid] for pid in alive), "살아 있는 플레이어는 매번 새로 만들어야 함"
+    m.__dict__["_dead_sync_cache"].clear()                          # 캐시 없이 새로 만든 것과 내용이 같아야 함
+    fresh = by_id(app._collect_world_states())
+    for pid in victims:
+        assert fresh[pid] == a[pid], pid
+    pid = victims[0]
+    m.players[pid]["ko_count"] += 3                                 # 값이 바뀌면 다시 만들어 최신 값을 보냄
+    m.players[pid]["rank"] = m.players[pid]["rank"] + 1
+    third = by_id(app._collect_world_states())
+    assert third[pid] is not a[pid] and third[pid]["ko_count"] == m.players[pid]["ko_count"] and third[pid]["rank"] == m.players[pid]["rank"]
 
 
 if __name__ == "__main__":

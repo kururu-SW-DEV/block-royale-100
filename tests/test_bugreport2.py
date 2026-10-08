@@ -52,6 +52,9 @@ def _app():
     app = M.BlockRoyaleApp()
     app.screen = CANVAS
     app.stats_mgr.filepath = os.path.join(tempfile.mkdtemp(), "s.json")
+    app.settings.filepath = os.path.join(tempfile.mkdtemp(), "set.json")          # 실제 settings.json과 분리하고 항상 기본값에서 시작 (사용자가 켜 둔 설정에 테스트가 좌우되지 않게)
+    app.settings.reset_to_defaults()
+    app.apply_visual_options()
     return app
 
 

@@ -126,6 +126,9 @@ def test_scheduled_result_sounds_are_cleared_on_new_match_and_menu():
     app = M.BlockRoyaleApp()
     app.screen = CANVAS
     app.stats_mgr.filepath = os.path.join(tempfile.mkdtemp(), "s.json")
+    app.settings.filepath = os.path.join(tempfile.mkdtemp(), "set.json")          # 실제 settings.json과 분리하고 항상 기본값에서 시작 (사용자가 켜 둔 설정에 테스트가 좌우되지 않게)
+    app.settings.reset_to_defaults()
+    app.apply_visual_options()
     app.start_game(mode="SOLO", total_players=10)
     app._sound_due = [(time.time() + 1.5, "stamp"), (time.time() + 2.5, "levelup")]
     app.start_game(mode="SOLO", total_players=10)                # 재도전

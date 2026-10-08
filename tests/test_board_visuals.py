@@ -23,6 +23,9 @@ def _app(players=30):
     app = M.BlockRoyaleApp()
     app.screen = CANVAS
     app.stats_mgr.filepath = os.path.join(tempfile.mkdtemp(), "s.json")
+    app.settings.filepath = os.path.join(tempfile.mkdtemp(), "set.json")          # 실제 settings.json과 분리하고 항상 기본값에서 시작 (사용자가 켜 둔 설정에 테스트가 좌우되지 않게)
+    app.settings.reset_to_defaults()
+    app.apply_visual_options()
     app.start_game(mode="SOLO", total_players=players)
     m = app.match
     m.countdown_until = 0.0
@@ -189,8 +192,9 @@ def test_skyline_is_off_by_default_and_toggles_from_settings():
     assert not calls
     app.settings.set("board_skyline", True)
     app.settings_tab = "help"
-    app._reset_current_tab()                                         # 이 탭 기본값으로 -> 다시 꺼짐
-    assert app.settings.get("board_skyline") is False
+    app.renderer.skyline = True
+    app._reset_current_tab()                                         # 이 탭 기본값으로 -> 설정값뿐 아니라 화면(렌더러)도 꺼져야 함
+    assert app.settings.get("board_skyline") is False and r.skyline is False, "기본값으로 되돌렸는데 윤곽선이 화면에 남음"
 
 
 if __name__ == "__main__":
