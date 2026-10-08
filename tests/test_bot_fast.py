@@ -14,6 +14,7 @@ os.environ["SDL_AUDIODRIVER"] = "dummy"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import bot_brain as B
+import bot_reference as R
 from block_engine import JLSTZ_KICKS
 from config import SPAWN_Y
 
@@ -41,16 +42,16 @@ def _boards(n, seed):
 def _replay(rows, path):
     x, y, r = 3, SPAWN_Y, 0
     for a in path:
-        if a == "L" and not B._collide(rows, T[r], x - 1, y):
+        if a == "L" and not R._collide(rows, T[r], x - 1, y):
             x -= 1
-        elif a == "R" and not B._collide(rows, T[r], x + 1, y):
+        elif a == "R" and not R._collide(rows, T[r], x + 1, y):
             x += 1
-        elif a == "D" and not B._collide(rows, T[r], x, y + 1):
+        elif a == "D" and not R._collide(rows, T[r], x, y + 1):
             y += 1
         elif a in ("cw", "ccw"):
             nr = (r + 1) % 4 if a == "cw" else (r - 1) % 4
             for kx, ky in JLSTZ_KICKS.get((r, nr), [(0, 0)]):
-                if not B._collide(rows, T[nr], x + kx, y - ky):
+                if not R._collide(rows, T[nr], x + kx, y - ky):
                     x, y, r = x + kx, y - ky, nr
                     break
     return x, y, r
@@ -60,7 +61,7 @@ def test_t_placements_matches_reference_and_paths_are_valid():
     boards = _boards(600, 7) + [[0] * H]
     paths = 0
     for rows in boards:
-        ref = {(r, x, y, k) for r, x, y, k, _p in B.t_placements_ref(rows)}
+        ref = {(r, x, y, k) for r, x, y, k, _p in R.t_placements_ref(rows)}
         new = B.t_placements(rows)
         assert {(r, x, y, k) for r, x, y, k, _p in new} == ref, [format(v, "010b") for v in rows]
         for r, x, y, k, p in new:
@@ -77,7 +78,7 @@ def test_board_eval_matches_reference_exactly():
             for atk in (True, False):
                 for i_soon, t_soon in ((True, False), (False, True)):
                     for tp in (None, top):
-                        assert B.board_eval(rows, inc, atk, i_soon, t_soon, tp) == B.board_eval_ref(rows, inc, atk, i_soon, t_soon, tp), (rows, inc, atk, i_soon, t_soon, tp)
+                        assert B.board_eval(rows, inc, atk, i_soon, t_soon, tp) == R.board_eval_ref(rows, inc, atk, i_soon, t_soon, tp), (rows, inc, atk, i_soon, t_soon, tp)
                         n += 1
     assert n > 20000
 
@@ -99,7 +100,7 @@ def test_incremental_eval_matches_full_eval_for_every_placement():
                     if cleared:
                         assert fast is None
                         continue
-                    assert fast[0] == B.board_eval_ref(new, inc, atk, i_soon, t_soon, top), (piece, rot, px, py, [format(v, "010b") for v in rows])
+                    assert fast[0] == R.board_eval_ref(new, inc, atk, i_soon, t_soon, top), (piece, rot, px, py, [format(v, "010b") for v in rows])
                     assert B.H - (4 * py + fast[1]) / 4.0 == landing
                     assert B._mat((rows, piece, rot, px, py)) == new
                     n += 1
@@ -118,7 +119,7 @@ def test_plan_best_move_unchanged_on_sample_positions():
         cur, nxt = rnd.choice("IJLOSTZ"), [rnd.choice("IJLOSTZ") for _ in range(4)]
         hold = rnd.choice([None, "T", "I"])
         a = B.plan_rows(rows, cur, hold, nxt, True, 0, False, 0, depth=2, beam=3, attack_style=True, use_tspin=True)
-        B.t_placements = B.t_placements_ref
+        B.t_placements = R.t_placements_ref
         try:
             b = B.plan_rows(rows, cur, hold, nxt, True, 0, False, 0, depth=2, beam=3, attack_style=True, use_tspin=True)
         finally:

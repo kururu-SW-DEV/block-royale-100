@@ -226,6 +226,7 @@ class UIRenderer:
         self.mini_board_rects = {}
         self.target_chip_rects = {}      # 상단 조준 모드 칩의 클릭 영역 {모드: Rect} (프레임마다 갱신)
         self.mini_focus = False          # 미니 보드 집중 보기: 나를 노리는 상대/조준 대상/위기 카드가 아닌 카드는 어둡게 (설정에서 변경)
+        self.skyline = False             # 메인 보드 지형 윤곽선 (설정에서 변경, 기본 꺼짐)
         self.mini_detailed = True        # 미니 보드 자세히 보기 (설정에서 변경): 조작 중 블록/착지 위치/홀드/다음 블록
         self.line_clear_flashes = []
         self.lock_flashes = []
@@ -597,6 +598,7 @@ class UIRenderer:
         CANVAS.display.fill((0, 0, 0))
         self.next_visible = (getattr(match, "mutator", None) or {}).get("next_visible", 5)      # 주간 변형 '안개 속': NEXT가 1개만 보임
         self._update_stage_theme(match)
+        self._render_phase_vignette(match)
         self._render_bg_pulses(match, ox, oy)
 
         self._render_mini_boards(match, ox, oy)
@@ -1465,12 +1467,104 @@ class UIRenderer:
                 sh_h = max(sc(2), inner.h // 5)
                 sh = pygame.Rect(inner.x + sc(1), inner.bottom - sh_h - sc(1), inner.w - 2 * sc(1), sh_h)
                 pygame.draw.rect(surf, _mix(color, (0, 0, 0), 0.22), sh, border_radius=sc(1))
+        if piece_type == "G" and size >= 10:                                      # 쓰레기 칸: 어두운 사선 해칭으로 일반 블록과 한눈에 구분
+            hatch = pygame.Surface((n, n), pygame.SRCALPHA)
+            step = max(sc(4), n // 3)
+            for i in range(-n, n, step):
+                pygame.draw.line(hatch, (0, 0, 0, 78), (i, n), (i + n, 0), max(1, sc(1)))
+            hatch.blit(surf, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)          # 블록 모양(둥근 모서리) 밖에는 그리지 않음
+            surf.blit(hatch, (0, 0))
         if alpha is not None:
             surf.set_alpha(alpha)
         elif dim:
             surf.set_alpha(120)
         self._cell_cache[key] = surf
         return surf
+
+    SETTLED_DIM = 0.88                      # 바닥에 굳은 블록은 조작 중인 블록보다 12% 어둡게 (스택과 내 블록이 섞여 보이지 않게)
+
+    def _settled_surface(self, piece_type, size):
+        """굳은 블록용 셀: 일반 셀을 한 번만 어둡게 만들어 캐시"""
+        self._check_ver()
+        key = ("settled", piece_type, size, self.block_skin)
+        surf = self._cell_cache.get(key)
+        if surf is None:
+            base = self._cell_surface(piece_type, size)
+            surf = CANVAS.make_surface(size, size)
+            surf.blit(base, (0, 0))
+            v = int(255 * self.SETTLED_DIM)
+            surf.fill((v, v, v, 255), special_flags=pygame.BLEND_RGBA_MULT)
+            self._cell_cache[key] = surf
+        return surf
+
+    def _draw_settled_cell(self, x, y, size, piece_type):
+        self.screen.blit(self._settled_surface(piece_type, int(size)), (int(x), int(y)))
+
+    def _skyline_surface(self, grid, bw, bh, cs):
+        """스택의 '지형 윤곽': 위에서 도달할 수 있는 빈칸과 맞닿은 블록의 변을 밝은 선으로 이음 (구멍이나 지붕 아래 갇힌 빈칸 쪽 변은 제외).
+        위에서 닿을 수 있는 쓰레기 줄의 구멍은 옅게 표시. 보드가 바뀔 때만 다시 만들고 한 장만 캐시"""
+        self._check_ver()
+        key = (tuple(tuple(r) for r in grid), cs, bw, bh, CANVAS.S)
+        cached = getattr(self, "_sky_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        W, H = BOARD_WIDTH, BOARD_HEIGHT
+        air = set()
+        stack = [(x, 0) for x in range(W) if not grid[0][x]]
+        air.update(stack)
+        while stack:
+            x, y = stack.pop()
+            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if 0 <= nx < W and 0 <= ny < H and (nx, ny) not in air and not grid[ny][nx]:
+                    air.add((nx, ny))
+                    stack.append((nx, ny))
+        segs = []
+        for y in range(H):
+            for x in range(W):
+                if not grid[y][x]:
+                    continue
+                x0, y0 = x * cs, y * cs
+                if y == 0 or (x, y - 1) in air:
+                    segs.append(((x0, y0), (x0 + cs, y0)))
+                if x > 0 and (x - 1, y) in air:
+                    segs.append(((x0, y0), (x0, y0 + cs)))
+                if x < W - 1 and (x + 1, y) in air:
+                    segs.append(((x0 + cs, y0), (x0 + cs, y0 + cs)))
+                if y < H - 1 and (x, y + 1) in air:
+                    segs.append(((x0, y0 + cs), (x0 + cs, y0 + cs)))
+        base = pygame.Surface((bw, bh), pygame.SRCALPHA)
+        for y in range(H):                                                       # 위에서 닿을 수 있는 쓰레기 구멍: 옅은 초록 표시
+            row = grid[y]
+            if any(c == "G" for c in row):
+                holes = [x for x in range(W) if not row[x]]
+                if len(holes) == 1 and (holes[0], y) in air:
+                    pygame.draw.rect(base, (120, 255, 190, 34), (holes[0] * cs + 1, y * cs + 1, cs - 2, cs - 2), border_radius=3)
+                    pygame.draw.rect(base, (150, 255, 205, 120), (holes[0] * cs + 1, y * cs + 1, cs - 2, cs - 2), 1, border_radius=3)
+        for a_, b_ in segs:                                                      # 은은한 번짐 + 밝은 선
+            pygame.draw.line(base, (110, 215, 255, 60), a_, b_, 5)
+        for a_, b_ in segs:
+            pygame.draw.line(base, (205, 245, 255, 235), a_, b_, 2)
+        tw, th = CANVAS.length(bw, 1), CANVAS.length(bh, 1)
+        if abs(CANVAS.S - 1.0) >= 1e-3:
+            try:
+                base = pygame.transform.smoothscale(base, (tw, th))
+            except ValueError:
+                base = pygame.transform.scale(base, (tw, th))
+        self._sky_cache = (key, base)
+        return base
+
+    def _draw_active_rim(self, cells, piece_type, bx, by, cs, board_rect):
+        """조작 중인 블록의 바깥 가장자리에 밝은 테두리 (블록끼리 맞닿은 안쪽 변은 제외): 어두워진 스택과 구별되어 시선이 내 블록을 따라감"""
+        col = _mix(PIECE_COLORS.get(piece_type, (200, 200, 220)), (255, 255, 255), 0.55)
+        cellset = set(cells)
+        CANVAS.display.set_clip(CANVAS.rect(board_rect))
+        for (cx, cy) in cells:
+            x0, y0 = bx + cx * cs, by + cy * cs
+            for (dx, dy), a_, b_ in (((0, -1), (x0, y0), (x0 + cs, y0)), ((0, 1), (x0, y0 + cs), (x0 + cs, y0 + cs)),
+                                     ((-1, 0), (x0, y0), (x0, y0 + cs)), ((1, 0), (x0 + cs, y0), (x0 + cs, y0 + cs))):
+                if (cx + dx, cy + dy) not in cellset:
+                    pygame.draw.line(self.screen, col, a_, b_, 2)
+        CANVAS.display.set_clip(None)
 
     def _ghost_surface(self, piece_type, size):
         self._check_ver()
@@ -1528,6 +1622,22 @@ class UIRenderer:
                 pygame.draw.rect(self.screen, col, (bar_x + 1, cy0 + top_gap, 6, cs - 1 - top_gap), border_radius=2)
                 i += 1
 
+    def _draw_rise_line(self, bx, by, bw, cs, highest, n):
+        """곧 올라올 쓰레기 n줄 때문에 가장 높은 블록(highest 행)이 밀려 올라갈 높이에 붉은 점선과 옅은 영역을 그림 (위로 넘치면 천장에 실선)"""
+        pulse = 0.75 + 0.25 * math.sin(time.time() * 6.0)
+        target = highest - n
+        top_out = target <= 0
+        line_y = int(by + max(0, target) * cs)
+        stack_y = int(by + min(highest, BOARD_HEIGHT) * cs)
+        if stack_y > line_y:
+            CANVAS.alpha_rect((bx, line_y, bw, stack_y - line_y), (255, 60, 70, int(26 * pulse)))      # 이 구간이 쓰레기로 채워질 자리
+        col = (255, 90, 100, int(210 * pulse))
+        if top_out:
+            CANVAS.alpha_rect((bx, line_y, bw, 3), (255, 70, 80, int(235 * pulse)))                       # 천장에 닿거나 넘는 경우: 실선
+        else:
+            for x in range(0, bw, 14):
+                CANVAS.alpha_rect((bx + x, line_y - 1, min(8, bw - x), 3), col)
+
     def _draw_cell(self, x, y, size, piece_type):
         self.screen.blit(self._cell_surface(piece_type, int(size)), (int(x), int(y)))
 
@@ -1561,11 +1671,16 @@ class UIRenderer:
         def _build_glow(surf):
             pygame.draw.rect(surf, (*border_col, 26), (0, 0, bw + 24, bh + 24), border_radius=18)
         self._blit_overlay(("board_glow", bw, bh, border_col), (bw + 24, bh + 24), _build_glow, (bx - 12, by - 12))
+        if not spectating and engine is not None:
+            self._render_board_aura(match, engine, bx, by, bw, bh)
         pygame.draw.rect(self.screen, (10, 12, 22), board_rect, border_radius=6)
+        grid_col = (22, 27, 44)
+        if getattr(match, "phase", 1) >= 3:                           # 결승권(TOP 10): 격자선이 심장 박동에 맞춰 붉게 미세하게 빛남
+            grid_col = _mix(grid_col, (74, 28, 44), 0.55 * self._heartbeat(match))
         for x in range(1, BOARD_WIDTH):
-            pygame.draw.line(self.screen, (22, 27, 44), (bx + x * cs, by + 2), (bx + x * cs, by + bh - 2))
+            pygame.draw.line(self.screen, grid_col, (bx + x * cs, by + 2), (bx + x * cs, by + bh - 2))
         for y in range(1, BOARD_HEIGHT):
-            pygame.draw.line(self.screen, (22, 27, 44), (bx + 2, by + y * cs), (bx + bw - 2, by + y * cs))
+            pygame.draw.line(self.screen, grid_col, (bx + 2, by + y * cs), (bx + bw - 2, by + y * cs))
         ph = min(3, max(1, getattr(match, "phase", 1)))
         if ph >= 2:                                                    # 단계별 아주 옅은 바탕 무늬 (2단계 사선, 3단계 붉은 격자 사선)
             def _build_pat(ps, ph=ph):
@@ -1620,9 +1735,13 @@ class UIRenderer:
             for x in range(BOARD_WIDTH):
                 piece = row[x]
                 if piece:
-                    self._draw_cell(bx + x * cs, yy, cs, 'G' if gray else piece)
+                    self._draw_settled_cell(bx + x * cs, yy, cs, 'G' if gray else piece)
         if r_rem > 0:
             CANVAS.display.set_clip(None)
+
+        # 3-0a. 스카이라인 윤곽선 (줄 내려앉기/쓰레기 상승/탑아웃/우승 연출 중에는 그리지 않음: 칸이 움직이는 동안 선이 어긋나 보이지 않게)
+        if self.skyline and settle is None and rise is None and gray_to < 0 and vic_row >= BOARD_HEIGHT and not engine.game_over:
+            CANVAS.display.blit(self._skyline_surface(engine.grid, bw, bh, cs), (CANVAS.X(bx), CANVAS.Y(by)))
 
         # 3-0. 쓰레기 줄 구멍 깜빡임 (색에 기대지 않게 흰 테두리 포함)
         alive_h = []
@@ -1662,8 +1781,14 @@ class UIRenderer:
                 self.screen.blit(fs, (bx - 8, by + fl["row"] * cs - spread))
         self.line_clear_flashes = alive_flashes
 
-        # 4. 위험 경고 (유입 쓰레기 4줄 이상 또는 블록이 천장 근처)
+        # 3-3. 예상 상승선: 곧 올라올 준비가 끝난 쓰레기 줄이 있으면, 이번에 줄을 못 지울 때 가장 높은 블록이 어디까지 밀려 올라오는지 붉은 점선으로 보여 줌
+        #      (옆 게이지를 보지 않아도 보드를 보며 가늠할 수 있게). 천장을 넘으면 맨 위에 실선으로 표시
         highest = engine.get_highest_block_row()
+        ready_n = getattr(engine, "ready_garbage", 0) if not spectating else 0
+        if ready_n > 0 and not engine.game_over and vic_row >= BOARD_HEIGHT:
+            self._draw_rise_line(bx, by, bw, cs, highest, ready_n)
+
+        # 4. 위험 경고 (유입 쓰레기 4줄 이상 또는 블록이 천장 근처)
         is_danger = (incoming >= 4) or (not engine.game_over and highest <= 5)
         if is_danger and not spectating:
             pulse = int(50 + 40 * math.sin(time.time() * 8.0))
@@ -1701,6 +1826,8 @@ class UIRenderer:
             cur_cells = [(px, py) for px, py in engine._get_blocks(engine.current_piece, engine.current_rot, engine.current_x, engine.current_y) if 0 <= py < BOARD_HEIGHT]
             for px, py in cur_cells:
                 self._draw_cell(bx + px * cs, by + py * cs, cs, engine.current_piece)
+            if cur_cells and self.skyline:                                  # 조작 블록 테두리도 지형 윤곽선 설정과 함께 켜고 끔
+                self._draw_active_rim(cur_cells, engine.current_piece, bx, by, cs, board_rect)
             if not spectating and cur_cells and engine.current_piece == 'T' and engine._is_touching_ground() and engine._detect_tspin():
                 self._render_tspin_hint(cur_cells, bx, by, cs)            # 지금 고정하면 T-스핀: 윤곽이 반짝이고 "T-SPIN" 글자가 뜸
 
@@ -2261,6 +2388,10 @@ class UIRenderer:
         # 지금 나를 노리고 있는 생존자 집합 (프레임당 한 번만 계산: 카드마다 다시 세지 않음)
         attackers_of_me = set() if (spectating or not aim_on) else {q for q, pp in match.players.items()
                                                      if pp["is_alive"] and pp.get("target_id") == match.local_player_id and q != match.local_player_id}
+        leader_id, leader_ko = None, 1                             # 킬 리더: 살아 있는 상대 중 K.O.가 가장 많은 한 명 (2개 이상일 때만, 동률이면 먼저 나온 카드)
+        for q, pp in match.players.items():
+            if pp["is_alive"] and q != match.local_player_id and pp.get("ko_count", 0) > leader_ko:
+                leader_id, leader_ko = q, pp.get("ko_count", 0)
 
         for idx, (pid, p) in enumerate(player_list):
             r, c = divmod(idx, cols)
@@ -2290,6 +2421,12 @@ class UIRenderer:
 
             is_spec = (pid == spec_id)
             is_ally = bool(getattr(match, "teams", None)) and match.is_ally(match.local_player_id, pid)
+            is_leader = is_alive and pid == leader_id
+            # 집중 모드: 지금 신경 쓸 상대(조준 대상/나를 노리는 상대/킬 리더/위기/사람/같은 편/현상금·결승·라이벌)만 또렷한 카드로, 나머지는
+            # 테두리와 이름표 없이 배경에 녹는 '실루엣'으로 그림 (빽빽한 상자 벽 대신 교전 상대만 눈에 들어오게)
+            silhouette = (self.mini_focus and is_alive and not (is_targeted or is_spec or in_danger or is_human or is_ally or is_bounty or is_leader
+                                                                or pid in attackers_of_me or pid == getattr(match, "final_opp_id", None)
+                                                                or pid == getattr(match, "rival_id", None)))
             if not is_alive:
                 bg_color, border_color, thick = (10, 11, 16), (28, 31, 40), 1
             elif is_ally and not is_spec:                                    # 팀전: 같은 편 카드는 초록 테두리 (공격 대상이 아님)
@@ -2302,6 +2439,10 @@ class UIRenderer:
                 bg_color, border_color, thick = (17, 21, 35), (170, 55, 65), 1
             elif is_human:
                 bg_color, border_color, thick = (17, 21, 35), C_GOLD, 2
+            elif is_leader:                                                  # 킬 리더: 금빛 얇은 테두리
+                bg_color, border_color, thick = (17, 21, 35), (214, 176, 84), 1
+            elif silhouette:
+                bg_color, border_color, thick = (13, 16, 28), (13, 16, 28), 1      # 테두리가 바탕과 같은 색: 테두리 없는 실루엣
             else:
                 bg_color, border_color, thick = (17, 21, 35), (52, 68, 104), 1
             # 카드 프레임(바탕+테두리)은 상태별로 한 번만 만들어 재사용 (프레임마다 도형을 새로 그리지 않음)
@@ -2325,7 +2466,7 @@ class UIRenderer:
                 self._draw_text("연결 불안정", self.font_tiny, (255, 190, 90), board_rect.centerx, board_rect.centery, "center")
             # 이름/K.O. 알약/홀드 아이콘 계산(글자 폭 측정 포함)은 카드 내용이 바뀔 때만 다시 함
             is_rival = (pid == getattr(match, "rival_id", None))
-            sig = (p["name"], is_ally, is_rival, is_bounty, is_human, is_alive, is_targeted, is_spec, colors.get(pid, 0), p.get("ko_count", 0), bw, show_names, detailed,
+            sig = (p["name"], is_ally, is_rival, is_bounty, is_leader, is_human, is_alive, is_targeted, is_spec, colors.get(pid, 0), p.get("ko_count", 0), bw, show_names, detailed,
                    strip_w, p.get("hold"), id(self.font_small), id(self.font_tiny), self._ver)
             info = self._card_info.get(pid) if self.mini_fast else None
             if info is not None and info[0] == sig:
@@ -2342,6 +2483,8 @@ class UIRenderer:
                     name_str, name_col = f"${p['name'][:maxc]}", (255, 215, 80)
                 elif is_rival and is_alive:                        # 라이벌 봇(나를 자주 탈락시킨 상대): 금빛 ◆ 표식
                     name_str, name_col = f"◆{p['name'][:maxc]}", (255, 190, 80)
+                elif is_leader:
+                    name_str, name_col = p["name"][:max(6, maxc)], (236, 198, 100)
                 elif not is_alive:
                     name_str, name_col = p["name"][:max(6, maxc)], (86, 92, 112)
                 else:
@@ -2392,10 +2535,11 @@ class UIRenderer:
                         self._render_preview_piece(hold_icon, icon_cx, icon_cy, scale=2)
 
             # 이름표(이름/판/K.O. 알약/홀드 아이콘)는 내용이 바뀔 때만 다시 그림
-            self._blit_card_layer((pid, "tag"), (board_rect.x, board_rect.y, board_rect.w, tag_y, name_str, tuple(name_col), is_spec, ko, ko_w,
-                                                 hold_icon, hold_w, id(tag_font), bw >= 46),
-                                  board_rect.x - 3, tag_y - 8, board_rect.w + 6, tag_font.get_height() + 12, draw_tag,
-                                  lkey=(board_rect.w, name_str, tuple(name_col), is_spec, ko, ko_w, hold_icon, hold_w, id(tag_font), bw >= 46, tag_y - board_rect.y))
+            if not silhouette:
+                self._blit_card_layer((pid, "tag"), (board_rect.x, board_rect.y, board_rect.w, tag_y, name_str, tuple(name_col), is_spec, ko, ko_w,
+                                                     hold_icon, hold_w, id(tag_font), bw >= 46),
+                                      board_rect.x - 3, tag_y - 8, board_rect.w + 6, tag_font.get_height() + 12, draw_tag,
+                                      lkey=(board_rect.w, name_str, tuple(name_col), is_spec, ko, ko_w, hold_icon, hold_w, id(tag_font), bw >= 46, tag_y - board_rect.y))
 
             # 블록: 쌓인 블록은 보드별 캐시 서피스 한 장으로 붙임 (고정/쓰레기/줄 제거로 모양이 바뀔 때만 다시 그림)
             cg = p.get("cg")
@@ -2521,7 +2665,7 @@ class UIRenderer:
                 gw = 2 if bw < 46 else 3
                 CANVAS.display.fill((255, 84, 94) if ig >= 4 else (255, 165, 70), CANVAS.rect_f(cbx + 1, cby + ccp * BOARD_HEIGHT - gh - 1, gw, gh))
 
-            if self.mini_focus and is_alive and not (is_targeted or is_spec or in_danger or is_human or pid in attackers_of_me):
+            if silhouette:
                 self._blit_overlay(("mini_dim", board_rect.w, board_rect.h), (board_rect.w, board_rect.h),
                                    lambda surf: surf.fill((9, 11, 20, 255)), board_rect.topleft, alpha=96)      # 신호 대 잡음: 지금 신경 쓸 필요 없는 카드는 한 단계 어둡게
 
@@ -2891,6 +3035,58 @@ class UIRenderer:
                 pygame.draw.circle(self.screen, col, (int(bp["x"] + ox), int(bp["y"] + oy)), int(60 + 620 * _ease_out(k)), 3)
         self._bg_pulses = alive
 
+    def _heartbeat(self, match):
+        """심장 박동 0~1 (72회/분의 쿵-쿵). 진동 효과를 끈 설정(흔들림 0)이면 맥박 없이 고정값"""
+        if getattr(match, "shake_scale", 1.0) <= 0:
+            return 0.4
+        t = (time.time() * 1.2) % 1.0
+        g = lambda c, w: math.exp(-(((t - c) / w) ** 2))
+        return max(g(0.06, 0.05), 0.65 * g(0.30, 0.06))
+
+    def _render_phase_vignette(self, match):
+        """결승권(3단계, TOP 10): 화면 가장자리가 어두운 진홍색으로 심장 박동처럼 숨 쉼. 위기 때의 선명한 붉은 경고와 구분되도록 어둡고 약하게"""
+        if getattr(match, "phase", 1) < 3 or getattr(match, "practice", False) or self._theme_to != 3:
+            return
+        prog = min(1.0, (time.time() - self._theme_t0) / 1.4)
+        w, h = self.width, self.height
+
+        def _build(ps):
+            edge = 150
+            for i in range(0, edge, 3):
+                a = int(120 * (1.0 - i / edge) ** 2.2)
+                _orig_rect(ps, (140, 14, 34, a), (i, i, w - 2 * i, h - 2 * i), 3)
+        k = 0.30 + 0.70 * self._heartbeat(match)
+        self._blit_overlay(("vignette3", w, h), (w, h), _build, (0, 0), alpha=max(0, min(255, int(255 * k * prog))))
+
+    AURA_COLORS = {1: (90, 170, 255), 2: (170, 110, 255), 3: (255, 200, 90)}
+
+    def _render_board_aura(self, match, engine, bx, by, bw, bh):
+        """연속 클리어 보상 오라: 3콤보 이상(파랑) -> B2B 유지 또는 5콤보 이상(보라) -> B2B 3연속 이상 또는 8콤보 이상(금색)이 보드 테두리 뒤에서 맥동"""
+        combo = getattr(engine, "combo", -1)
+        b2b = bool(getattr(engine, "b2b", False))
+        chain = getattr(engine, "b2b_chain", 0)
+        level = 0
+        if combo >= 2:
+            level = 1
+        if b2b or combo >= 4:
+            level = 2
+        if (b2b and chain >= 3) or combo >= 7:
+            level = 3
+        if level == 0 or engine.game_over:
+            return
+        col = self.AURA_COLORS[level]
+        pad = 30
+
+        def _build(ps):
+            for k in range(5):
+                r = pygame.Rect(pad - 4 - k * 5, pad - 4 - k * 5, bw + 8 + k * 10, bh + 8 + k * 10)
+                _orig_rect(ps, (*col, int(120 - k * 22)), r, 3, border_radius=10 + k * 3)
+        if getattr(match, "shake_scale", 1.0) > 0:
+            pulse = 0.55 + 0.45 * math.sin(time.time() * (3.0 + level * 1.2))
+        else:
+            pulse = 0.7
+        self._blit_overlay(("aura", level, bw, bh), (bw + pad * 2, bh + pad * 2), _build, (bx - pad, by - pad), alpha=int(255 * pulse))
+
     def _render_danger_breath(self, engine, highest, bx, by, bw, bh, cs, pulse):
         """위기 때 쌓인 블록이 맥박에 맞춰 붉게 숨 쉬고 화면 가장자리에 붉은 비네트. 색약 모드는 주황 + 점선 테두리"""
         cb = is_colorblind()
@@ -3002,24 +3198,42 @@ class UIRenderer:
             self._fade_text(f"+{n['n']}", font, col, tx, ty, 255 * fa, "center")
 
     def _draw_targeting_laser(self, p1, p2, color, pulse_speed, is_incoming=False):
-        """조준선: 점선이 흐르는 락온 레이저"""
+        """조준선: 살짝 휘어진 곡선(2차 베지어) 위로 점선이 흐르는 락온 레이저. 곡선은 두 점의 위치로 정해져 프레임마다 같음"""
         dx, dy = p2[0] - p1[0], p2[1] - p1[1]
         dist = math.hypot(dx, dy)
         if dist < 8:
             return
-        ux, uy = dx / dist, dy / dist
-
+        bend = min(60.0, dist * 0.14)                            # 가운데를 선에 수직으로 밀어 휘게 함 (아래쪽 -> 위쪽 방향이 일정해 선이 흔들리지 않음)
+        nx, ny = -dy / dist, dx / dist
+        if ny > 0:
+            nx, ny = -nx, -ny                                    # 항상 위쪽으로 볼록하게
+        cx, cy = (p1[0] + p2[0]) / 2.0 + nx * bend, (p1[1] + p2[1]) / 2.0 + ny * bend
+        n = max(10, min(40, int(dist / 14)))
+        pts = []
+        for i in range(n + 1):
+            t = i / n
+            u = 1.0 - t
+            pts.append((u * u * p1[0] + 2 * u * t * cx + t * t * p2[0], u * u * p1[1] + 2 * u * t * cy + t * t * p2[1]))
         dash_len, gap_len = 10.0, 14.0
         cycle = dash_len + gap_len
-        offset = (time.time() * pulse_speed) % cycle
+        phase = (time.time() * pulse_speed) % cycle
         thick = 2 if is_incoming else 1
-        curr = offset
-        while curr < dist:
-            end = min(dist, curr + dash_len)
-            pygame.draw.line(self.screen, color,
-                             (int(p1[0] + ux * curr), int(p1[1] + uy * curr)),
-                             (int(p1[0] + ux * end), int(p1[1] + uy * end)), thick)
-            curr += cycle
+        run = -phase                                             # 곡선을 따라 잰 거리: 점선 무늬가 곡선을 따라 흐름
+        for (ax, ay), (bx_, by_) in zip(pts, pts[1:]):
+            seg = math.hypot(bx_ - ax, by_ - ay)
+            if seg <= 0:
+                continue
+            s0, s1 = run, run + seg
+            k = math.floor(s0 / cycle)
+            while k * cycle < s1:
+                d0 = max(s0, k * cycle)
+                d1 = min(s1, k * cycle + dash_len)
+                if d1 > d0:
+                    f0, f1 = (d0 - s0) / seg, (d1 - s0) / seg
+                    pygame.draw.line(self.screen, color, (int(ax + (bx_ - ax) * f0), int(ay + (by_ - ay) * f0)),
+                                     (int(ax + (bx_ - ax) * f1), int(ay + (by_ - ay) * f1)), thick)
+                k += 1
+            run = s1
 
     def _draw_energy_laser_beam(self, p1, p2, eff, travel_t, progress, is_local_sender, is_local_target):
         """공격 발사체: 빔 + 탄두 + 착탄 링"""

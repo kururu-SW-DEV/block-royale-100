@@ -106,16 +106,17 @@ def test_bot_fast_search_matches_reference():
     """빠르게 고친 배치 탐색/평가가 느린 기준 구현과 같은 결과를 내는지 (무작위 보드 다수)"""
     import random as _r
     import bot_brain as BB
+    import bot_reference as R
     from block_engine import BlockEngine
 
     def ref_placements(rows, piece):                                    # 한 칸씩 내려 보며 충돌을 검사하는 원래 방식
         out, seen = [], set()
         for rot, cells in enumerate(BB.SHAPES[piece]):
-            lo, hi = BB.SHAPE_SPAN[piece][rot]
+            lo, hi = R.SHAPE_SPAN[piece][rot]
             for px in range(-lo, BB.W - hi):
-                if BB._collide(rows, cells, px, 0):
+                if R._collide(rows, cells, px, 0):
                     continue
-                py = BB._drop(rows, cells, px, 0)
+                py = R._drop(rows, cells, px, 0)
                 key = tuple(sorted((px + dx, py + dy) for dx, dy in cells))
                 if key not in seen:
                     seen.add(key)

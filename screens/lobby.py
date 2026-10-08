@@ -108,12 +108,29 @@ class LobbyMixin:
     def _handle_join_menu_event(self, event):
         """접속 화면(IP 입력/방 목록) 입력 처리 (키보드/마우스)"""
         if event.type == pygame.KEYDOWN:
+            rows = getattr(self, "join_rows", None) or []
             if event.key == pygame.K_ESCAPE:
+                self.join_sel = None
                 self.state = "MENU"
+            elif event.key in (pygame.K_UP, pygame.K_DOWN) and rows:
+                cur = getattr(self, "join_sel", None)           # ↑↓(패드 십자키): 방 목록 선택, 첫 줄에서 ↑이면 선택 해제(주소 입력 상태로)
+                if event.key == pygame.K_DOWN:
+                    cur = 0 if cur is None else min(len(rows) - 1, cur + 1)
+                else:
+                    cur = None if (cur is None or cur <= 0) else cur - 1
+                self.join_sel = cur
+                self.sound_mgr.play('move')
             elif event.key == pygame.K_BACKSPACE:
+                self.join_sel = None
                 self.join_ip_input = self.join_ip_input[:-1]
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                self._join_by_input()
+                sel = getattr(self, "join_sel", None)
+                if sel is not None and sel < len(rows):
+                    self._join_row(rows[sel])                   # 고른 방에 참가
+                elif not self.join_ip_input.strip() and rows:
+                    self._join_row(rows[0])                     # 주소를 안 적었으면 목록의 첫 방 (패드 A만으로도 참가)
+                else:
+                    self._join_by_input()
             elif event.key == pygame.K_v and (event.mod & pygame.KMOD_CTRL):
                 try:                                    # Ctrl+V 붙여넣기 (클립보드의 IP 주소)
                     pygame.scrap.init()
@@ -124,6 +141,7 @@ class LobbyMixin:
                     pass
             else:
                 if len(self.join_ip_input) < 40 and (event.unicode.isalnum() or event.unicode in ".:-"):
+                    self.join_sel = None
                     self.join_ip_input += event.unicode
                     
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -142,10 +160,14 @@ class LobbyMixin:
             for row in getattr(self, "join_rows", []):
                 rect = row.get("rect")
                 if rect and rect.collidepoint(mx, my):
-                    self.sound_mgr.play('move')
-                    self.join_ip_input = row["host"] if row["port"] == self.host_port else f"{row['host']}:{row['port']}"
-                    self._join_by_input()
+                    self._join_row(row)
                     break
+
+    def _join_row(self, row):
+        """방 목록의 한 줄에 참가 (마우스 클릭/키보드·패드 선택 공용)"""
+        self.sound_mgr.play('move')
+        self.join_ip_input = row["host"] if row["port"] == self.host_port else f"{row['host']}:{row['port']}"
+        self._join_by_input()
 
     def _handle_client_lobby_event(self, event):
         """참가자 대기실 입력 처리 (키보드/마우스)"""
@@ -207,7 +229,8 @@ class LobbyMixin:
         elif self.net_mgr.join_rejected and not self._notice_shown:
             self._notice_shown = True
             why = {"full": "방이 가득 찼습니다.", "started": "이미 경기가 진행 중입니다. 다음 경기를 기다려 주세요.",
-                   "version": "게임 버전이 호스트와 달라 입장할 수 없습니다. 같은 버전으로 맞춰 주세요."}[self.net_mgr.join_rejected]
+                   "version": "게임 버전이 호스트와 달라 입장할 수 없습니다. 같은 버전으로 맞춰 주세요.",
+                   "unresolved": "입력한 주소를 찾을 수 없습니다. 주소를 다시 확인해 주세요."}[self.net_mgr.join_rejected]
             self._open_modal("입장할 수 없습니다", [why], [("ok_menu", "메인 메뉴로", "blue", "ENTER")])
         elif self.net_mgr.connected and not self._notice_shown and self.net_mgr.seconds_since_host_packet() > 8.0:
             self._notice_shown = True                   # 호스트가 사라졌는데 대기실에 영원히 남는 것 방지
@@ -436,7 +459,7 @@ class LobbyMixin:
         for i, row in enumerate(self.join_rows):
             r_rect = pygame.Rect(box_x + 32, box_y + 186 + i * 62, box_w - 64, 54)
             row["rect"] = r_rect
-            hover = r_rect.collidepoint(mx, my)
+            hover = r_rect.collidepoint(mx, my) or getattr(self, "join_sel", None) == i        # 키보드/패드로 고른 줄도 같은 강조
             ok = row["ok"]
             pygame.draw.rect(self.screen, (34, 46, 76) if hover else (24, 32, 54), r_rect, border_radius=10)
             pygame.draw.rect(self.screen, C_ACCENT if hover else ((52, 90, 108) if ok else (46, 56, 86)), r_rect,

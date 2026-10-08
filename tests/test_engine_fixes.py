@@ -88,19 +88,23 @@ def test_garbage_charging():
 
 
 def test_garbage_hole_variation():
-    """쓰레기 줄은 항상 구멍이 정확히 1개이고, 여러 줄이 한 번에 올라올 때 가끔 구멍 위치가 옮겨짐(전부 같은 열이 아님)"""
-    moved = 0
+    """쓰레기 줄은 항상 구멍이 정확히 1개이고, 한 번의 공격(묶음)은 모두 같은 열에 구멍이 있음 (v1.4.24부터. 이전에는 줄마다 25% 확률로 옮겨졌음).
+    서로 다른 공격 묶음끼리는 구멍 열이 독립적으로 정해짐"""
+    different = 0
     for seed in range(30):
         e = _empty_engine('O')
         e.garbage_delay = 0.0
         e.garbage_rng.seed(seed)
-        e.queue_garbage(8)
+        e.queue_garbage(4, source="A")
+        e.queue_garbage(4, source="B")
         e.hard_drop()
         rows = [row for row in e.grid if 'G' in row]
         assert len(rows) == 8 and all(sum(1 for c in row if c is None) == 1 for row in rows)
-        holes = {row.index(None) for row in rows}
-        moved += len(holes) > 1
-    assert moved >= 20, moved                     # 25%/줄 확률이라 8줄이면 거의 항상 한 번은 옮겨짐
+        a_hole = {row.index(None) for row in rows[:4]}
+        b_hole = {row.index(None) for row in rows[4:]}
+        assert len(a_hole) == 1 and len(b_hole) == 1, (a_hole, b_hole)       # 묶음 안에서는 일직선
+        different += a_hole != b_hole
+    assert different >= 15, different                                         # 묶음끼리는 대부분 다른 열 (우연히 같을 수는 있음)
     print("  OK garbage hole variation")
 
 

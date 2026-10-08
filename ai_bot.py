@@ -66,11 +66,7 @@ class AIBot:
         self.target_x = 3
         self.target_rot = 0
         
-        # 배틀로얄 통계
-        self.ko_count = 0
-        self.target_player_id = None
-        self.is_alive = True
-        self.rank = 0
+        self.is_alive = True                     # K.O./순위/조준 대상 같은 배틀로얄 통계는 BattleRoyaleMatch.players[pid]가 관리
         if self.brain:
             self.adjust_for_alive_count(100)     # 시작은 초반(인원 많음) 속도: 생존자가 줄수록 빨라짐
 

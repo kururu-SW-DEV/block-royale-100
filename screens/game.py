@@ -24,14 +24,8 @@ class GameMixin:
         """게임 화면의 입력 처리 (키보드/마우스/창 포커스)"""
         # 창 포커스를 잃으면 눌린 키 상태를 비우고, 싱글 플레이는 자동 일시정지
         if event.type == pygame.WINDOWFOCUSLOST:
-            self.key_left_down = self.key_right_down = self.key_down_down = False
-            self.h_dir = 0
-            if (self.match and self.net_mgr.mode == "NONE" and not self.is_paused
-                    and self.match.local_is_alive and not self.match.match_finished):
-                self.is_paused = True
-                self.match.is_paused = True
-                self.renderer.pause_focus = 0
-                self.sound_mgr.pause_bgm()
+            self._clear_input_state()
+            self._auto_pause_solo()
             return
         if event.type == pygame.WINDOWFOCUSGAINED:
             self._resync_held_keys()
@@ -39,18 +33,17 @@ class GameMixin:
         # 인게임 조작
         if event.type == pygame.KEYDOWN:
             # T: 설정 열기 (싱글은 자동 일시정지, 네트워크는 게임 진행). 조작키로 T를 배정한 경우는 조작키가 우선
-            if event.key == pygame.K_t and self.text_focus is None and not any(
-                    pygame.K_t in self.settings.get_action_keys(a) for a, _n in ACTION_NAMES):
+            if event.key == pygame.K_t and self.text_focus is None and not self.settings.is_bound_key(pygame.K_t, ACTION_NAMES):
                 self._open_settings_from_game()
                 return
             # 첫 경기 코치 마크: Enter로 바로 닫기 (조작키로 쓰고 있지 않을 때만)
             if (event.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and getattr(self.match, "coach_until", 0.0) > time.time()
-                    and self.text_focus is None and not any(event.key in self.settings.get_action_keys(a) for a, _n in ACTION_NAMES)):
+                    and self.text_focus is None and not self.settings.is_bound_key(event.key, ACTION_NAMES)):
                 self.match.coach_until = 0.0
                 return
             # 연습 모드: G = 쓰레기 줄 받기(Shift+G는 8줄), B = 보드 초기화, V = 드릴, N = 과제 선택, Y = 타임어택. 조작키로 쓰고 있는 키는 조작키가 우선
             if (self.match.practice and event.key in (pygame.K_g, pygame.K_b, pygame.K_v, pygame.K_n, pygame.K_y) and self.text_focus is None
-                    and not any(event.key in self.settings.get_action_keys(a) for a, _n in ACTION_NAMES)):
+                    and not self.settings.is_bound_key(event.key, ACTION_NAMES)):
                 if event.key == pygame.K_n:
                     self.match.practice_next_task(-1 if (event.mod & pygame.KMOD_SHIFT) else 1)
                     self.sound_mgr.play('rotate')
@@ -232,15 +225,19 @@ class GameMixin:
                 if self.match.local_engine.move(0, 1, soft=True):
                     self.sound_mgr.play('move')
             elif self.settings.is_action_key(event.key, "rotate_cw"):
+                self._flush_das_before_action()
                 if self.match.local_engine.rotate(clockwise=True):
                     self.sound_mgr.play('rotate')
             elif self.settings.is_action_key(event.key, "rotate_ccw"):
+                self._flush_das_before_action()
                 if self.match.local_engine.rotate(clockwise=False):
                     self.sound_mgr.play('rotate')
             elif self.settings.is_action_key(event.key, "rotate_180"):
+                self._flush_das_before_action()
                 if self.match.local_engine.rotate180():
                     self.sound_mgr.play('rotate')
             elif self.settings.is_action_key(event.key, "hard_drop"):
+                self._flush_das_before_action()
                 cleared = self.match.local_engine.hard_drop()
                 self._hard_drop_pending = True      # 착지 소리는 프레임 루프에서 잠금 이벤트와 함께 재생
                 if cleared > 0:
@@ -262,8 +259,7 @@ class GameMixin:
                 mode = self.match.cycle_target_mode()
                 self.settings.set("target_mode", mode, autosave=False)          # 조작 중에는 디스크에 쓰지 않음 (메뉴로 나갈 때/종료할 때 저장)
                 self.sound_mgr.play('rotate')
-            elif event.key in self.TARGET_NUM_KEYS and not any(
-                    event.key in self.settings.get_action_keys(a) for a, _n in ACTION_NAMES):
+            elif event.key in self.TARGET_NUM_KEYS and not self.settings.is_bound_key(event.key, ACTION_NAMES):
                 self.settings.set("target_mode", self.match.set_target_mode(TARGET_MODES[self.TARGET_NUM_KEYS[event.key]]), autosave=False)      # 1~5: 자동/K.O./반격/배지/랜덤 바로 선택 (다음 경기에도 유지)
                 self.sound_mgr.play('rotate')
             elif event.key == pygame.K_ESCAPE:
@@ -428,17 +424,18 @@ class GameMixin:
             kind = m.challenge_kind
             key = m.daily if kind == "daily" else (m.weekly if kind == "weekly" else None)
             self.stats_mgr.mark_challenges(kind, key, ids)
-            for aid in [a for a in self.stats_mgr.achievements_done() if a not in before]:
-                from stats_manager import ACHIEVEMENTS
-                title = next((a[1] for a in ACHIEVEMENTS if a[0] == aid), aid)
-                m.add_floating_text(f"★ 업적 달성!  {title}", (255, 215, 90), duration=3.2, size=26, category="action")
+            self._toast_new_achievements(before)
         if m.challenge_kind == "practice" and m.ta_bests:
             before = set(self.stats_mgr.achievements_done())
             if self.stats_mgr.save_time_attack(m.ta_bests):
-                from stats_manager import ACHIEVEMENTS
-                for aid in [a for a in self.stats_mgr.achievements_done() if a not in before]:
-                    title = next((a[1] for a in ACHIEVEMENTS if a[0] == aid), aid)
-                    m.add_floating_text(f"★ 업적 달성!  {title}", (255, 215, 90), duration=3.2, size=26, category="action")
+                self._toast_new_achievements(before)
+
+    def _toast_new_achievements(self, before):
+        """before(이전에 달성한 업적 id 집합)에 없던 새 업적마다 '업적 달성' 알림을 띄움"""
+        from stats_manager import ACHIEVEMENTS
+        for aid in [a for a in self.stats_mgr.achievements_done() if a not in before]:
+            title = next((a[1] for a in ACHIEVEMENTS if a[0] == aid), aid)
+            self.match.add_floating_text(f"★ 업적 달성!  {title}", (255, 215, 90), duration=3.2, size=26, category="action")
 
     TIPS = [
         ("garbage", "받은 공격은 잠시 '차징' 중이에요. 그 사이에 줄을 지우면 먼저 깎입니다! (초록→빨강으로 차오르면 위험)"),
@@ -535,12 +532,8 @@ class GameMixin:
 
     def _open_settings_from_game(self):
         self.sound_mgr.play('move')
-        self.key_left_down = self.key_right_down = self.key_down_down = False
-        self.h_dir = 0
-        if self.net_mgr.mode == "NONE" and self.match and not self.match.match_finished and self.match.local_is_alive                 and not self.is_paused:
-            self.is_paused = True
-            self.match.is_paused = True
-            self.sound_mgr.pause_bgm()
+        self._clear_input_state()
+        self._auto_pause_solo()
         self._end_text(commit=False)
         self.previous_state = "GAME"
         self.state = "SETTINGS"
@@ -621,6 +614,67 @@ class GameMixin:
         except Exception as e:
             print(f"[MatchLog] 저장 실패: {e}")
 
+    def _das_step(self, dt):
+        """방향키를 누르고 있는 동안의 DAS/ARR 연속 좌우 이동을 dt초만큼 진행"""
+        if dt <= 0:
+            return
+        if (self.h_dir == -1 and self.key_left_down) or (self.h_dir == 1 and self.key_right_down):
+            direction = self.h_dir
+        else:
+            direction = -1 if self.key_left_down else (1 if self.key_right_down else 0)
+        lock_n = self.match.local_engine.lock_events
+        if lock_n != self._dcd_lock_seen:                        # 새 블록이 나옴: DCD가 켜져 있으면 잠깐 DAS 충전을 막음
+            self._dcd_lock_seen = lock_n
+            self.dcd_left = self.DCD_DELAY
+        if direction != 0 and self.dcd_left > 0:
+            self.dcd_left = max(0.0, self.dcd_left - dt)
+            self.das_timer = 0.0
+            self.arr_timer = 0.0
+            self.das_fired = False
+        elif direction != 0:
+            self.das_timer += dt
+            if self.das_timer >= self.DAS_DELAY:
+                over = self.das_timer - self.DAS_DELAY          # DAS가 프레임 중간에 끝났으면 남은 시간을 반복에 이어 줌
+                self.das_timer = self.DAS_DELAY
+                moved = False
+                if not self.das_fired:
+                    self.das_fired = True
+                    self.arr_timer = self.ARR_INTERVAL           # DAS가 끝나는 순간 첫 자동 이동
+                if self.ARR_INSTANT:                             # ARR 0: 막힐 때까지 한 번에 이동
+                    while self.match.local_engine.move(direction, 0):
+                        moved = True
+                    self.arr_timer = 0.0
+                else:
+                    self.arr_timer += over
+                    while self.arr_timer >= self.ARR_INTERVAL:
+                        self.arr_timer -= self.ARR_INTERVAL
+                        if self.match.local_engine.move(direction, 0):
+                            moved = True
+                        else:
+                            self.arr_timer = 0.0
+                            break
+                if moved:
+                    self.sound_mgr.play('move')                  # 한 프레임에 여러 칸 움직여도 소리는 한 번
+        else:
+            self.das_timer = 0.0
+            self.arr_timer = 0.0
+            self.das_fired = False
+
+    def _flush_das_before_action(self):
+        """하드드롭/회전 같은 입력이 프레임 중간에 들어오면, 그 시점까지 지난 DAS/ARR 이동을 먼저 반영 (이벤트가 업데이트보다 먼저 처리돼
+        방향키를 꾹 눌러 벽으로 보내다 하드드롭하면 벽 앞 칸에 떨어지던 미스드롭 방지). 반영한 시간은 같은 프레임 업데이트에서 다시 세지 않음"""
+        m = self.match
+        t0 = getattr(self, "_frame_t0", None)
+        if m is None or t0 is None or not m.local_is_alive or m.local_engine.game_over or m.countdown_left() > 0:
+            return
+        if not (self.key_left_down or self.key_right_down):
+            return
+        el = min(max(0.0, time.perf_counter() - t0), getattr(self, "_frame_dt", 1 / 60.0))
+        fresh = el - getattr(self, "_das_credit", 0.0)
+        if fresh > 0:
+            self._das_credit = el
+            self._das_step(fresh)
+
     def _update_game(self, dt):
         if not self.match:
             return
@@ -649,48 +703,10 @@ class GameMixin:
             self._apply_pre_actions()
 
         # 1. DAS / ARR 연속 좌우 이동 및 초고속 소프트드롭
+        self._frame_t0 = time.perf_counter()                       # 이번 업데이트 시작 시각 (다음 프레임의 이벤트가 '그 사이에 지난 시간'을 셀 기준)
+        credit, self._das_credit = getattr(self, "_das_credit", 0.0), 0.0
         if self.match.local_is_alive and not self.match.local_engine.game_over:
-            if (self.h_dir == -1 and self.key_left_down) or (self.h_dir == 1 and self.key_right_down):
-                direction = self.h_dir
-            else:
-                direction = -1 if self.key_left_down else (1 if self.key_right_down else 0)
-            lock_n = self.match.local_engine.lock_events
-            if lock_n != self._dcd_lock_seen:                        # 새 블록이 나옴: DCD가 켜져 있으면 잠깐 DAS 충전을 막음
-                self._dcd_lock_seen = lock_n
-                self.dcd_left = self.DCD_DELAY
-            if direction != 0 and self.dcd_left > 0:
-                self.dcd_left = max(0.0, self.dcd_left - dt)
-                self.das_timer = 0.0
-                self.arr_timer = 0.0
-                self.das_fired = False
-            elif direction != 0:
-                self.das_timer += dt
-                if self.das_timer >= self.DAS_DELAY:
-                    over = self.das_timer - self.DAS_DELAY          # DAS가 프레임 중간에 끝났으면 남은 시간을 반복에 이어 줌
-                    self.das_timer = self.DAS_DELAY
-                    moved = False
-                    if not self.das_fired:
-                        self.das_fired = True
-                        self.arr_timer = self.ARR_INTERVAL           # DAS가 끝나는 순간 첫 자동 이동
-                    if self.ARR_INSTANT:                             # ARR 0: 막힐 때까지 한 번에 이동
-                        while self.match.local_engine.move(direction, 0):
-                            moved = True
-                        self.arr_timer = 0.0
-                    else:
-                        self.arr_timer += over
-                        while self.arr_timer >= self.ARR_INTERVAL:
-                            self.arr_timer -= self.ARR_INTERVAL
-                            if self.match.local_engine.move(direction, 0):
-                                moved = True
-                            else:
-                                self.arr_timer = 0.0
-                                break
-                    if moved:
-                        self.sound_mgr.play('move')                  # 한 프레임에 여러 칸 움직여도 소리는 한 번
-            else:
-                self.das_timer = 0.0
-                self.arr_timer = 0.0
-                self.das_fired = False
+            self._das_step(max(0.0, dt - credit))                  # 하드드롭/회전 직전에 이미 반영한 시간은 빼고 셈
 
             if self.key_down_down and self.SOFT_DROP_INSTANT:
                 while self.match.local_engine.move(0, 1, soft=True):      # 소프트드롭 '즉시': 바닥까지 한 번에 (고정은 락 딜레이가 처리)

@@ -637,19 +637,31 @@ class BattleRoyaleMatch:
             return self.net_mgr.remote_players_state.get(pid, {}).get("snap")
         return None
 
+    SPECTATE_SWITCH_DELAY = 1.2        # 관전 대상이 탈락한 뒤 다음 대상으로 넘기기까지 (탈락 장면을 볼 시간)
+
     def _check_spectate_target(self, now):
-        """관전 중인 상대가 탈락하면 패배를 알리고, 다음 생존자(플레이어 순서상 바로 뒤)로 자동 전환"""
+        """관전 중인 상대가 탈락하면 1.2초 뒤 패배를 알리고, 그 상대를 처치한 생존자(없으면 플레이어 순서상 다음 생존자)로 자동 전환"""
         if not getattr(self, "is_spectating", False) or self.match_finished:
             return
         tid = self.spectate_target_id
         if tid not in self.players or self.players[tid]["is_alive"]:
+            self._spec_dead = None
+            return
+        if getattr(self, "_spec_dead", None) is None or self._spec_dead[0] != tid:
+            self._spec_dead = (tid, now)                     # 대상이 탈락한 순간: 바로 넘기지 않고 탈락 장면을 잠깐 보여 줌
+        if now - self._spec_dead[1] < self.SPECTATE_SWITCH_DELAY:
             return
         ids = [pid for pid in self.players if pid != self.local_player_id]
         alive = [pid for pid in ids if self.players[pid]["is_alive"]]
         if not alive:
             return
-        after = ids[ids.index(tid) + 1:] + ids[:ids.index(tid)] if tid in ids else ids
-        nxt = next((pid for pid in after if self.players[pid]["is_alive"]), alive[0])
+        killer = self.players[tid].get("ko_by")
+        if killer in alive:
+            nxt = killer                                     # 그 상대를 처치한 쪽을 이어서 봄
+        else:
+            after = ids[ids.index(tid) + 1:] + ids[:ids.index(tid)] if tid in ids else ids
+            nxt = next((pid for pid in after if self.players[pid]["is_alive"]), alive[0])
+        self._spec_dead = None
         dead_name = self.players[tid]["name"]
         self.spectate_target_id = nxt
         self.spectate_notice = {"text": f"{dead_name} 패배!", "sub": f"관전 대상을 {self.players[nxt]['name']}(으)로 전환합니다", "t0": now}
@@ -963,6 +975,7 @@ class BattleRoyaleMatch:
                 self.ko_orbs.append({"victim": victim_id, "t0": time.time(), "gold": gold})
                 new_lvl, _, new_pct = get_badge_info(self.local_ko_count)
                 self.trigger_screen_shake(10.0, (0, 1))
+                self.trigger_impact(0.4)                                   # K.O. 결정타: 약한 번쩍임 (첫 K.O.는 아래에서 더 강하게)
                 victim_name = self.players.get(victim_id, {}).get("name", "상대")
                 self.add_floating_text(f"[K.O. 처치!] +1 배지 획득 >> {victim_name}", (255, 220, 50), duration=2.5, size=24, category="ko")
                 # 보상을 두 번에 나눠 줌: 처치 순간(위) + 구슬이 K.O. 칸에 도착하는 순간(소리와 배지 승급, 0.7초 뒤)
@@ -1357,6 +1370,7 @@ class BattleRoyaleMatch:
                 self.trigger_impact(0.8)
                 self.add_floating_text(f"{prefix}T-스핀 트리플! ★", (255, 130, 255), duration=2.5, size=32, category="action", tier=3)
             elif cleared == 2:
+                self.trigger_impact(0.45)                                  # 쿼드·T-스핀 더블도 약하게 번쩍임 (트리플/퍼펙트는 더 강하게)
                 self.add_floating_text(f"{prefix}T-스핀 더블! ★", (255, 150, 255), duration=2.2, size=30, category="action", tier=2)
             elif cleared == 1:
                 self.add_floating_text(f"{prefix}T-스핀 싱글! ★", (255, 180, 255), duration=1.8, size=26, category="action", tier=1)
@@ -1364,6 +1378,7 @@ class BattleRoyaleMatch:
                 self.add_floating_text("★ T-스핀 보너스! ★", (255, 180, 255), duration=1.4, size=22, category="action")
         elif cleared >= 4:
             self.trigger_screen_shake(14.0, (0, 1))
+            self.trigger_impact(0.45)
             if is_b2b:
                 self.add_floating_text(f"★ B2B x{chain} 쿼드! ★" if chain >= 1 else "★ B2B 쿼드! ★", (255, 235, 80), duration=2.4, size=34, category="action", tier=2)
             else:

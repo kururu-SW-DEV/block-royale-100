@@ -194,9 +194,17 @@ class Canvas:
         r = self.rect(rect)
         if r.w <= 0 or r.h <= 0:
             return
-        surf = pygame.Surface(r.size, pygame.SRCALPHA)
         w = 0 if width == 0 else self.length(width, 1)
-        self._orig["rect"](surf, color, (0, 0, r.w, r.h), w, border_radius=int(round(radius * self.S)))
+        rad = int(round(radius * self.S))
+        key = (r.w, r.h, tuple(color), w, rad, self.version)          # 같은 크기/색/모양이면 서피스를 다시 만들지 않고 재사용 (프레임당 수십 번 호출됨)
+        cache = self.__dict__.setdefault("_alpha_rect_cache", {})
+        surf = cache.get(key)
+        if surf is None:
+            if len(cache) >= 128:
+                cache.clear()
+            surf = pygame.Surface(r.size, pygame.SRCALPHA)
+            self._orig["rect"](surf, color, (0, 0, r.w, r.h), w, border_radius=rad)
+            cache[key] = surf
         self.display.blit(surf, r.topleft)
 
     def overlay(self, color):

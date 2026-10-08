@@ -109,6 +109,7 @@ class SoundManager:
         self.active_channel = None
         self.bgm_volume = 0.60
         self._pending_bgm = None       # 합성 중이라 대기 중인 BGM 단계
+        self._bgm_paused = False       # pause_bgm으로 멈춘 상태 (일시정지된 채널도 get_busy()가 True라 이 플래그로 따로 기억)
         self._results_due = None       # 순위표 곡을 시작할 시각(승/패 음악이 끝난 뒤)
         self._bgm_bake = 0.60          # BGM 합성 시 곡 자체에 반영하는 기준 음량 (재생 음량 설정과 무관하게 항상 동일)
         self._bgm_thread = None
@@ -239,7 +240,7 @@ class SoundManager:
     def _bgm_then_save(self):
         self._generate_all_bgm_stages()
         th = self._sfx_ready_wait()
-        if th and all(k in self.bgm_stages for k in ('menu', 'results', 1, 2, 3)) and isinstance(self.bgm_stages.get(1), list) and len(self.bgm_stages[1]) >= 5:
+        if th and all(k in self.bgm_stages for k in ('menu', 'results', 'lobby', 1, 2, 3)) and isinstance(self.bgm_stages.get(1), list) and len(self.bgm_stages[1]) >= 5:
             self._save_audio_cache()
 
     def _sfx_ready_wait(self):
@@ -279,6 +280,8 @@ class SoundManager:
         self._layer_level = max(0, min(2, int(level)))
 
     def _tick_layer(self):
+        if self._bgm_paused:
+            return                                              # 일시정지 중에는 콤보 층을 다시 켜거나 볼륨을 바꾸지 않음
         target = (0.0, 0.10, 0.17)[self._layer_level] * (self.bgm_volume / 0.6) if (self.enabled and self.bgm_enabled) else 0.0
         if abs(self._layer_vol - target) < 1e-4 and not (target > 0 and not self._layer_busy()):
             return
@@ -398,7 +401,7 @@ class SoundManager:
         c4 = np.sin(2 * np.pi * 1318.51 * t5) * np.exp(-t5 * 15.0) * 0.30
         clear_mono = crunch + sweep5 + c1 + c2 + c3 + c4
         c_left = clear_mono.copy()
-        c_right = np.roll(clear_mono, int(sr * 0.012))
+        c_right = self._delayed(clear_mono, int(sr * 0.012))
         self.sounds['clear'] = self._pack_stereo(c_left, c_right)
         
         # 6. 쿼드 (4줄 클리어): ★ 초대형 폭발 콰광---!! + 축제 팡파레 챠라랑!!
@@ -419,7 +422,7 @@ class SoundManager:
         splash = (np.random.rand(len(t6)) * 2 - 1) * np.exp(-t6 * 4.5) * 0.35
         quad_mono = sub_boom + big_crunch + arp + splash
         t_left = quad_mono.copy()
-        t_right = np.roll(quad_mono, int(sr * 0.015))
+        t_right = self._delayed(quad_mono, int(sr * 0.015))
         self.sounds['quad'] = self._pack_stereo(t_left, t_right)
         
         # 7. Attack Sent: 활기찬 레이저 빔 타격음
@@ -800,7 +803,7 @@ class SoundManager:
 
         delay_s = int(sr * 0.018)
         left = master_mono.copy()
-        right = master_mono * 0.70 + np.roll(master_mono, delay_s) * 0.30
+        right = master_mono * 0.70 + self._delayed(master_mono, delay_s) * 0.30
 
         return self._pack_stereo(left * 0.85, right * 0.85)
 
@@ -1050,7 +1053,7 @@ class SoundManager:
                 ['A#3', 'D4', 'F4'], ['C4', 'E4', 'G4'], ['D4', 'F4', 'A4'], ['F3', 'A3', 'C4'],
                 ['A#3', 'D4', 'F4'], ['C4', 'E4', 'G4'], ['D4', 'F4', 'A4'], ['D4', 'F4', 'A4']
             ]
-            self.bgm_stages[1] = self._synth_cyberpunk_track(128, m1, b1, c1, is_chill=False)
+            self.bgm_stages[1] = [self._synth_cyberpunk_track(128, m1, b1, c1, is_chill=False)]       # 처음부터 리스트: 메인 스레드가 읽는 도중 타입이 바뀌지 않게
 
             # ----------------------------------------------------
             # 2. Stage 2: "Hyperdrive Override" (142 BPM, Em / G) - 50~21 생존
@@ -1090,7 +1093,7 @@ class SoundManager:
                 ['C4', 'E4', 'G4'], ['D4', 'F#4', 'A4'], ['E4', 'G4', 'B4'], ['G3', 'B3', 'D4'],
                 ['C4', 'E4', 'G4'], ['D4', 'F#4', 'A4'], ['E4', 'G4', 'B4'], ['E4', 'G4', 'B4']
             ]
-            self.bgm_stages[2] = self._synth_cyberpunk_track(142, m2, b2, c2, is_chill=False)
+            self.bgm_stages[2] = [self._synth_cyberpunk_track(142, m2, b2, c2, is_chill=False)]
 
             # ----------------------------------------------------
             # 3. Stage 3: "Apex Protocol" (156 BPM, F#m / A) - 20인 이하 최후의 결전
@@ -1130,7 +1133,7 @@ class SoundManager:
                 ['D4', 'F#4', 'A4'], ['E4', 'G#4', 'B4'], ['F#4', 'A4', 'C#5'], ['A3', 'C#4', 'E4'],
                 ['D4', 'F#4', 'A4'], ['E4', 'G#4', 'B4'], ['F#4', 'A4', 'C#5'], ['F#4', 'A4', 'C#5']
             ]
-            self.bgm_stages[3] = self._synth_cyberpunk_track(156, m3, b3, c3, is_chill=False)
+            self.bgm_stages[3] = [self._synth_cyberpunk_track(156, m3, b3, c3, is_chill=False)]
 
             # ======================================================
             # 스테이지 배경음 추가 4세트 (총 5세트, 설정에서 선택/랜덤 가능)
@@ -1193,9 +1196,9 @@ class SoundManager:
                 ('Eb5', 0.5), ('F5', 0.5), ('A5', 0.5), ('C6', 1.0), ('G5', 1.0), ('D5', 0.5),
                 ('Bb5', 0.5), ('G5', 1.0), ('D5', 0.5), ('Bb5', 0.5),
             ]
-            self.bgm_stages[1] = [self.bgm_stages[1], self._synth_cyberpunk_track(124, m4_1, b4, c4, is_chill=False)]
-            self.bgm_stages[2] = [self.bgm_stages[2], self._synth_cyberpunk_track(138, m4_2, b4, c4, is_chill=False)]
-            self.bgm_stages[3] = [self.bgm_stages[3], self._synth_cyberpunk_track(152, m4_3, b4, c4, is_chill=False)]
+            self.bgm_stages[1].append(self._synth_cyberpunk_track(124, m4_1, b4, c4, is_chill=False))
+            self.bgm_stages[2].append(self._synth_cyberpunk_track(138, m4_2, b4, c4, is_chill=False))
+            self.bgm_stages[3].append(self._synth_cyberpunk_track(152, m4_3, b4, c4, is_chill=False))
 
             # ---- 세트2: "Pulse Overdrive" (Cm/Ab/Eb/Bb, 130/144/158 BPM) ----
             b5 = [
@@ -1474,6 +1477,8 @@ class SoundManager:
         self._results_due = None
         if not self.bgm_ch_a or not self.bgm_ch_b:
             return
+        if stage in (1, "menu", "lobby"):
+            self.stop_stingers()                       # 새 판/메뉴 음악이 시작되면 이전 판의 팡파레(승리/패배/탈락)가 겹쳐 울리지 않게
         if self.current_bgm_stage != stage:
             self.reset_duck()                          # 곡이 바뀌면(경기 시작/단계 전환/결과) 덕킹 해제: 위기 중이면 다음 프레임에 다시 걸림
 
@@ -1488,12 +1493,16 @@ class SoundManager:
             
         if self.is_bgm_playing and self.current_bgm_stage == stage:
             if self.active_channel and self.active_channel.get_busy():
+                if self._bgm_paused:
+                    self.unpause_bgm()                 # 일시정지 중 '다시 시작': 멈춘 채널은 busy로 보이므로 여기서 재개하지 않으면 다음 단계까지 무음
                 return
                 
         crossfade_ms = 1800
         old_channel = self.active_channel
         new_channel = self.bgm_ch_b if old_channel == self.bgm_ch_a else self.bgm_ch_a
         
+        if self._bgm_paused:
+            self.unpause_bgm()                         # 멈춰 있던 채널이 남지 않게 (곡 전환 때 이전 채널이 페이드아웃되려면 재생 상태여야 함)
         new_channel.set_volume(self._bgm_eff_volume())
 
         if not self.is_bgm_playing:
@@ -1548,6 +1557,7 @@ class SoundManager:
             self.bgm_ch_b.stop()
         self.is_bgm_playing = False
         self.current_bgm_stage = None
+        self._bgm_paused = False
         self.reset_duck()
         self._layer_level = 0                                  # 콤보 층도 함께 정리
         self._layer_vol = 0.0
@@ -1556,15 +1566,33 @@ class SoundManager:
         except Exception:
             pass
 
+    def stop_stingers(self):
+        """승리/패배 팡파레(채널 5)와 탈락 소리(채널 4)를 멈춤 (새 판/메뉴 음악이 시작될 때)"""
+        for n in (4, 5):
+            try:
+                pygame.mixer.Channel(n).stop()
+            except Exception:
+                pass
+
     def pause_bgm(self):
-        """배경음악 일시정지"""
+        """배경음악 일시정지 (콤보 하이햇 층도 함께: 안 그러면 멜로디만 멈추고 드럼만 혼자 울림)"""
+        self._bgm_paused = True
         if self.bgm_ch_a:
             self.bgm_ch_a.pause()
         if self.bgm_ch_b:
             self.bgm_ch_b.pause()
+        try:
+            pygame.mixer.Channel(3).pause()
+        except Exception:
+            pass
 
     def unpause_bgm(self):
         """배경음악 재개"""
+        self._bgm_paused = False
+        try:
+            pygame.mixer.Channel(3).unpause()
+        except Exception:
+            pass
         if not (self.enabled and self.bgm_enabled):
             return
         if self.bgm_ch_a:
@@ -1597,7 +1625,7 @@ class SoundManager:
             out += (pad * np.minimum(t / 0.05, 1.0) * np.exp(-t * 1.7) * 0.08).astype(np.float32)
         delay = int(sr * 0.018)
         left = out
-        right = out * 0.78 + np.roll(out, delay) * 0.22
+        right = out * 0.78 + self._delayed(out, delay) * 0.22
         return self._pack_stereo(left * 0.9, right * 0.9)
 
     def _generate_defeat_jingle(self, sr=44100):
@@ -1617,7 +1645,7 @@ class SoundManager:
             out += (pad * env * 0.10).astype(np.float32)
         delay = int(sr * 0.021)
         left = out
-        right = out * 0.8 + np.roll(out, delay) * 0.2
+        right = out * 0.8 + self._delayed(out, delay) * 0.2
         return self._pack_stereo(left * 0.9, right * 0.9)
 
     def _schedule_results_bgm(self, sting_name):
@@ -1648,15 +1676,13 @@ class SoundManager:
         self.current_bgm_stage = 'results'
         self.is_bgm_playing = True
 
-    def play_defeat(self):
-        """경기 종료(내가 우승하지 못함): 전투 BGM을 멈추고 종료 음악 재생 (이어서 순위표 곡)"""
-        if not (self.enabled and self.sfx_enabled):
-            self.stop_bgm()
-            self._schedule_results_bgm('defeat')
-            return
+    def _play_ending_sting(self, name):
+        """경기 종료 음악(승리/패배): 전투 BGM을 멈추고 채널 5에서 재생한 뒤 이어서 순위표 곡을 예약"""
         self.stop_bgm()
-        self._schedule_results_bgm('defeat')
-        snd = self.sounds.get('defeat')
+        self._schedule_results_bgm(name)
+        if not (self.enabled and self.sfx_enabled):
+            return
+        snd = self.sounds.get(name)
         if snd:
             try:
                 ch = pygame.mixer.Channel(5)
@@ -1666,23 +1692,13 @@ class SoundManager:
                 snd.set_volume(self.sfx_volume)
                 snd.play()
 
+    def play_defeat(self):
+        """경기 종료(내가 우승하지 못함): 전투 BGM을 멈추고 종료 음악 재생 (이어서 순위표 곡)"""
+        self._play_ending_sting('defeat')
+
     def play_victory(self):
         """1위 최종 우승 시 전투 BGM을 즉시 정지하고 화려한 챔피언 빅토리 팡파레 재생"""
-        if not (self.enabled and self.sfx_enabled):
-            self.stop_bgm()
-            self._schedule_results_bgm('victory')
-            return
-        self.stop_bgm()
-        self._schedule_results_bgm('victory')
-        snd = self.sounds.get('victory')
-        if snd:
-            try:
-                ch = pygame.mixer.Channel(5)
-                ch.set_volume(self.sfx_volume)
-                ch.play(snd)
-            except Exception:
-                snd.set_volume(self.sfx_volume)
-                snd.play()
+        self._play_ending_sting('victory')
 
     def play_gameover(self):
         """탈락 시 전투 BGM 볼륨을 낮추고 게임 오버 사운드 재생"""
@@ -1705,6 +1721,16 @@ class SoundManager:
     # 콤보 단계별 음높이 사다리 (장음계): 콤보가 이어질수록 소리가 한 음씩 올라감 (최대 8콤보 단계)
     COMBO_LADDER = [0, 2, 4, 5, 7, 9, 11, 12, 14]
 
+    @staticmethod
+    def _delayed(mono, n):
+        """mono를 n샘플 늦춤 (앞은 0으로 채움). np.roll은 끝 소리를 맨 앞으로 돌려 붙여 오른쪽 채널 첫 순간에 '틱'이 났음"""
+        n = int(n)
+        if n <= 0:
+            return mono.copy()
+        out = np.zeros_like(mono)
+        out[n:] = mono[:-n]
+        return out
+
     def _pitch_variant(self, snd, semitones):
         """Sound를 반음 단위로 음높이 변경 (재생 속도 변경 방식: 높이면 짧아지고 낮추면 길어짐)"""
         arr = pygame.sndarray.array(snd).astype(np.float32)
@@ -1714,13 +1740,17 @@ class SoundManager:
         n_out = max(2, int(len(arr) / factor))
         x_old = np.arange(len(arr), dtype=np.float32)
         x_new = np.linspace(0, len(arr) - 1, n_out, dtype=np.float32)
-        out = np.column_stack([np.interp(x_new, x_old, arr[:, ch]) for ch in range(arr.shape[1])])
+        if arr.shape[1] == 2 and np.array_equal(arr[:, 0], arr[:, 1]):
+            ch0 = np.interp(x_new, x_old, arr[:, 0])                   # 좌우가 같은 소리는 한 채널만 계산해 복사 (결과는 같고 계산은 절반)
+            out = np.column_stack((ch0, ch0))
+        else:
+            out = np.column_stack([np.interp(x_new, x_old, arr[:, ch]) for ch in range(arr.shape[1])])
         return pygame.mixer.Sound(buffer=np.clip(out, -32767, 32767).astype(np.int16).tobytes())
 
     def _generate_pitched_variants(self):
         """블록별 착지/락 소리 + 콤보 단계별 삭제음/차임 생성"""
         for piece, st in self.PIECE_SEMITONES.items():
-            for base in ('lock', 'lock2', 'land'):
+            for base in ('lock', 'lock2', 'lock3', 'land'):
                 self.sounds[f"{base}_{piece}"] = self._pitch_variant(self.sounds[base], st)
         for name in ('clear', 'quad', 'tspin'):
             for i, st in enumerate(self.COMBO_LADDER):
@@ -1736,6 +1766,19 @@ class SoundManager:
 
     WARN_SOUNDS = frozenset({'warning', 'hit_1', 'hit_2', 'hit_3', 'heartbeat'})
 
+    def _dedicated_channel(self, name):
+        """예약해 두고 쓰지 않던 채널 0~2: 0 = 줄 삭제/쿼드/T-스핀, 1 = 경보/피격, 2 = 로봇 아나운서. 해당 없으면 None (빈 채널에서 재생)"""
+        try:
+            if name.startswith(("clear_c", "quad_c", "tspin_c")) or name in ("clear", "quad", "tspin"):
+                return pygame.mixer.Channel(0)
+            if name in self.WARN_SOUNDS:
+                return pygame.mixer.Channel(1)
+            if name.startswith("vo_"):
+                return pygame.mixer.Channel(2)
+        except Exception:
+            pass
+        return None
+
     def set_warn_scale(self, scale):
         self.warn_scale = max(0.0, min(1.0, float(scale)))
 
@@ -1743,7 +1786,7 @@ class SoundManager:
         """효과음 재생. piece: 블록 종류에 따라 음높이 변경(lock/land), combo: 콤보 단계에 따라 음높이 변경(clear/quad/tspin)"""
         if piece and sound_name in ('lock', 'land'):
             if sound_name == 'lock':
-                sound_name = random.choice(['lock', 'lock2']) + f"_{piece}"
+                sound_name = random.choice(['lock', 'lock2', 'lock3']) + f"_{piece}"
             else:
                 sound_name = f"land_{piece}"
         elif combo is not None and sound_name in ('clear', 'quad', 'tspin'):
@@ -1771,7 +1814,11 @@ class SoundManager:
         if snd:
             try:
                 snd.set_volume(vol)
-                snd.play()
+                ch = self._dedicated_channel(sound_name)
+                if ch is not None:
+                    ch.play(snd)                                      # 예약 채널: 같은 계열의 앞 소리는 끊고 새 소리를 바로 냄
+                else:
+                    snd.play()
             except Exception:
                 pass
 

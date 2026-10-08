@@ -173,6 +173,7 @@ DEFAULT_SETTINGS = {
     "title": "",                 # 칭호: 달성한 업적 id 중 하나(메인 메뉴 프로필에 표시), 비어 있으면 없음
     "drill_best": 0,             # 연습 모드 압박 드릴에서 가장 오래 버틴 시간(초)
     "tips_replay": False,        # 팁 다시 보기를 눌렀다면 True: 숙련자(10판 이상)에게도 아직 안 본 팁을 보여 줌 (다 보면 꺼짐)
+    "board_skyline": False,      # 메인 보드의 지형 윤곽선(쌓인 블록 윗면을 따라 밝은 선): 기본은 꺼짐
     "block_skin": "classic",     # 블록 모양: BLOCK_SKIN_OPTIONS 중 하나
     "match_log": False,          # 사람 테스트용 경기 로그를 저장할지 (경기마다 JSON 한 개, 기본 끔)
     "onboard_done": False,       # 첫 실행 기본값(50인 쉬움 봇)을 이미 적용했는지. 전적이 있는 사용자는 설정을 바꾸지 않고 표시만 함
@@ -297,12 +298,25 @@ def _valid_setting(key, value):
     return True, value
 
 
+def _bumps_keys(fn):
+    """설정을 바꾸는 메서드가 끝나면 조작키 캐시를 무효화 (is_bound_key가 쓰는 '배정된 모든 키' 집합)"""
+    def wrapper(self, *args, **kwargs):
+        try:
+            return fn(self, *args, **kwargs)
+        finally:
+            self._keys_ver = getattr(self, "_keys_ver", 0) + 1
+    wrapper.__name__ = fn.__name__
+    wrapper.__doc__ = fn.__doc__
+    return wrapper
+
+
 class SettingsManager:
     def __init__(self, filepath=SETTINGS_FILE):
         self.filepath = filepath
         self.data = copy.deepcopy(DEFAULT_SETTINGS)
         self.load()
 
+    @_bumps_keys
     def load(self):
         """settings.json 파일에서 설정 불러오기"""
         if os.path.exists(self.filepath):
@@ -336,11 +350,13 @@ class SettingsManager:
     def get(self, key, default=None):
         return self.data.get(key, default if default is not None else DEFAULT_SETTINGS.get(key))
 
+    @_bumps_keys
     def set(self, key, value, autosave=True):
         self.data[key] = value
         if autosave:
             self.save()
 
+    @_bumps_keys
     def reset_to_defaults(self):
         self.data = copy.deepcopy(DEFAULT_SETTINGS)
         self.save()
@@ -420,6 +436,7 @@ class SettingsManager:
         i = names.index(cur) if cur in names else 1
         self.apply_handling_preset(i + (1 if direction > 0 else -1))
 
+    @_bumps_keys
     def reset_values(self, keys):
         """지정한 설정 키들만 기본값으로 되돌림 (설정 화면의 '이 탭 기본값으로')"""
         for k in keys:
@@ -474,10 +491,22 @@ class SettingsManager:
             
         return KEY_PRESETS["arcade"].get(action, [])
 
+    def is_bound_key(self, event_key, actions):
+        """event_key가 actions(ACTION_NAMES 같은 (동작, 이름) 목록) 중 어느 동작에든 배정돼 있는가. 배정된 모든 키의 집합을 캐시해 키를 누를 때마다 전체 동작을 훑지 않음"""
+        cache = getattr(self, "_bound_cache", None)
+        ver = getattr(self, "_keys_ver", 0)
+        if cache is None or cache[0] != ver or cache[1] is not actions:
+            keys = set()
+            for act, _n in actions:
+                keys.update(self.get_action_keys(act))
+            cache = self._bound_cache = (ver, actions, keys)
+        return event_key in cache[2]
+
     def is_action_key(self, event_key, action):
         """이벤트 발생 키가 해당 액션에 할당된 키인지 검사"""
         return event_key in self.get_action_keys(action)
 
+    @_bumps_keys
     def set_action_key(self, action, key_code):
         """특정 액션의 단축키를 새 키 코드로 변경 (커스텀 프리셋으로 전환)"""
         custom = self.get("custom_keys")
@@ -505,6 +534,7 @@ class SettingsManager:
         self.save()
         return moved
 
+    @_bumps_keys
     def set_key_preset(self, preset_name):
         """프리셋 변경 ('arcade' / 'wasd' / 'gamepad'). 게임패드 프리셋은 패드 입력도 켬"""
         if preset_name in KEY_PRESETS:
@@ -544,6 +574,7 @@ class SettingsManager:
         self.data["pad_buttons"] = None
         self.save()
 
+    @_bumps_keys
     def reset_keys_to_default(self):
         """조작키를 아케이드 표준 기본값으로 초기화"""
         self.set_key_preset("arcade")

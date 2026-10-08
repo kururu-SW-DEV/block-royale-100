@@ -30,8 +30,7 @@ class TextInputMixin:
         elif field == "initials":
             self.initials_input = ""                 # 3글자 칸이라 이어 쓰지 않고 새로 입력 (비워 둔 채 끝내면 기존 값 유지)
         self.chat_comp = ""
-        self.key_left_down = self.key_right_down = self.key_down_down = False
-        self.h_dir = 0
+        self._clear_input_state()
         try:
             pygame.key.start_text_input()
             rect = self.text_rects.get(field)

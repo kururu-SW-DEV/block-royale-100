@@ -9,9 +9,7 @@ from app_common import CANVAS, C_ACCENT, C_DANGER, C_DIM, C_TEXT, SCREEN_HEIGHT,
 class ModalMixin:
     def _confirm_leave_network_game(self):
         """네트워크 게임 중 ESC: 바로 나가지 않고 확인 창을 띄움 (게임은 계속 진행됨)"""
-        for k in ("key_left_down", "key_right_down", "key_down_down"):
-            setattr(self, k, False)
-        self.h_dir = 0
+        self._clear_input_state()
         if self.net_mgr.mode == "NONE":
             lines = ["진행 중인 경기는 저장되지 않고 메인 메뉴로 돌아갑니다.", "정말 나가시겠습니까?"]
         elif self.net_mgr.mode == "HOST":
@@ -22,14 +20,8 @@ class ModalMixin:
                          [("stay", "계속 플레이", "blue", "ESC"), ("leave", "나가기", "red", "Y")])
 
     def _confirm_quit_app(self):
-        for k in ("key_left_down", "key_right_down", "key_down_down"):
-            setattr(self, k, False)
-        self.h_dir = 0
-        if (self.state == "GAME" and self.match is not None and self.net_mgr.mode == "NONE" and not self.is_paused
-                and not self.match.match_finished and self.match.local_is_alive):
-            self.is_paused = True                              # 솔로 게임은 확인 창이 떠 있는 동안 멈춤
-            self.match.is_paused = True
-            self.sound_mgr.pause_bgm()
+        self._clear_input_state()
+        self._auto_pause_solo()                                # 솔로 게임은 확인 창이 떠 있는 동안 멈춤
         self._open_modal("게임을 종료할까요?", ["프로그램을 완전히 종료합니다."],
                          [("stay", "취소", "blue", "ESC"), ("quit_app", "종료", "red", "Y")])
 

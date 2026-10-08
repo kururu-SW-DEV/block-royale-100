@@ -276,3 +276,13 @@ TEMPLATES.update({
     "업적 달성!  {} 외 {#}개": "Achievement unlocked!  {} +{} more",
     "★ 업적 달성!  {} 외 {#}개": "★ Achievement unlocked!  {} +{} more",
 })
+
+# 지형 윤곽선 설정
+EXACT.update({
+    "지형 윤곽선": "Stack outline",
+    "쌓인 블록 윗면을 따라 밝은 선을 그림 (메인 보드)": "Bright line along the top of the stack (main board)",
+    "켜면 메인 보드에 쌓인 블록의 윗면을 따라 밝은 선이 이어져 지형의 높낮이와 구멍 위치가 한눈에 보입니다. 기본은 꺼짐이며, 줄이 내려앉는 순간에는 잠시 숨습니다.":
+        "Draws a bright line along the top of your stack on the main board so heights and holes read at a glance. Off by default; it hides briefly while rows are settling.",
+})
+
+EXACT.update({"입력한 주소를 찾을 수 없습니다. 주소를 다시 확인해 주세요.": "Could not find that address. Please check it and try again."})

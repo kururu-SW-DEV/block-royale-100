@@ -67,12 +67,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         
         self.sound_mgr = SoundManager(enabled=True)
         # 저장된 오디오 환경설정 적용
-        self.sound_mgr.set_bgm_enabled(self.settings.get("bgm_enabled", True))
-        self.sound_mgr.set_sfx_enabled(self.settings.get("sfx_enabled", True))
-        self.sound_mgr.set_bgm_volume(self.settings.get("bgm_volume", 60) / 100.0)
-        self.sound_mgr.set_sfx_volume(self.settings.get("sfx_volume", 70) / 100.0)
-        self.sound_mgr.set_warn_scale(self.settings.get("warn_volume", 100) / 100.0)
-        self.sound_mgr.set_announcer(self.settings.get("announcer", False))
+        self._apply_sound_settings()
         from gamepad import GamepadMapper
         self.gamepad = GamepadMapper(lambda action: self.settings.get_action_keys(action), lambda: bool(self.settings.get("gamepad", True)),
                                      lambda: self.settings.get_pad_map())
@@ -222,15 +217,9 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
     LONG_FRAME_PAUSE = 0.5               # 이 이상 멈췄다면 솔로 경기는 자동 일시정지
 
     def _on_long_frame(self, raw_dt):
-        self.key_left_down = self.key_right_down = self.key_down_down = False
-        self.h_dir = 0
-        if (raw_dt >= self.LONG_FRAME_PAUSE and self.state == "GAME" and self.match is not None
-                and self.net_mgr.mode == "NONE" and not self.is_paused
-                and self.match.local_is_alive and not self.match.match_finished):
-            self.is_paused = True
-            self.match.is_paused = True
-            self.renderer.pause_focus = 0
-            self.sound_mgr.pause_bgm()
+        self._clear_input_state()
+        if raw_dt >= self.LONG_FRAME_PAUSE:
+            self._auto_pause_solo()
 
     def _transition_check(self):
         """state가 바뀌면 화면 전환 와이프를 시작. 게임과 그 위에 겹쳐 여는 설정 사이, 시작 직후의 첫 화면은 제외. 흔들림 '끔'이면 짧은 페이드"""

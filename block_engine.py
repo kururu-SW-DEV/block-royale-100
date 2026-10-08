@@ -43,6 +43,7 @@ class BlockEngine:
         self.rng = random.Random(seed)
         # 쓰레기 구멍 위치 전용 RNG (피스 시퀀스 RNG와 분리하여 시드 재현성 유지)
         self.garbage_rng = random.Random()
+        self._take_holes = []                    # 마지막으로 꺼낸 쓰레기 묶음들의 구멍 열 (_take_garbage가 채움)
         self.width = BOARD_WIDTH
         self.height = BOARD_HEIGHT
 
@@ -431,8 +432,9 @@ class BlockEngine:
         # (차징이 끝난 묶음만 올라옴. 묶음마다 구멍 위치가 따로 정해짐)
         if cleared_lines == 0 and self._garbage and not self.game_over:
             self.current_piece = None                            # 방금 고정한 블록은 이미 보드에 있음: 남겨 두면 _push_garbage가 그 자리를 '조작 중 블록'으로 보고 충돌 보정을 해 억울하게 탈락시킴
-            for group in self._take_garbage(MAX_GARBAGE_PER_LOCK, ready_only=True):
-                self._push_garbage(group)
+            groups = self._take_garbage(MAX_GARBAGE_PER_LOCK, ready_only=True)
+            for group, hole in zip(groups, self._take_holes):
+                self._push_garbage(group, hole)
                 if self.game_over:
                     break
 
@@ -466,16 +468,15 @@ class BlockEngine:
             self.score += (100 * cleared * cleared)
         return cleared
 
-    def _push_garbage(self, count):
-        """보드 하단에 구멍 1개가 뚫린 쓰레기 줄을 밀어 올림"""
-        hole_x = self.garbage_rng.randint(0, self.width - 1)
+    def _push_garbage(self, count, hole_x=None):
+        """보드 하단에 구멍 1개가 뚫린 쓰레기 줄을 밀어 올림. 한 번에 올라오는 줄은 모두 같은 열에 구멍이 있음 (hole_x가 없으면 무작위)"""
+        if hole_x is None:
+            hole_x = self.garbage_rng.randint(0, self.width - 1)
         rec = None
         if self.replay_log is not None:
             rec = {"k": "G", "n": 0, "h": []}
             self.replay_log.append(rec)
         for i in range(count):
-            if i > 0 and self.garbage_rng.random() < GARBAGE_MESSINESS:      # 한 묶음 안에서도 가끔 구멍이 옮겨져 한 번에 복구되지 않음
-                hole_x = (hole_x + self.garbage_rng.randint(1, self.width - 1)) % self.width
             # 맨 위 줄이 비어있지 않으면 밀려 올라가면서 게임오버 (실제로 올라온 줄만 기록/집계)
             if any(self.grid[0]):
                 self.game_over = True
@@ -526,8 +527,11 @@ class BlockEngine:
         return [(b[0], b[1] <= self._clock, b[2]) for b in self._garbage]
 
     def _take_garbage(self, limit, ready_only):
-        """대기 쓰레기를 오래된 묶음부터 최대 limit줄 꺼냄. 반환: 묶음별 줄 수 목록 (같은 묶음은 같은 구멍을 씀)"""
+        """대기 쓰레기를 오래된 묶음부터 최대 limit줄 꺼냄. 반환: 묶음별 줄 수 목록 (같은 묶음은 같은 구멍을 씀).
+        ready_only일 때는 묶음마다 구멍 열을 하나 정해 두고(self._take_holes에 같은 순서로) 한 번에 다 못 올라와 나뉘어도 같은 열을 씀:
+        한 번의 공격(쿼드 4줄 등)은 일직선 구멍으로 올라와 I 블록 하나로 되받아칠 수 있음. 다른 공격 묶음끼리는 구멍이 무작위"""
         taken, groups = 0, []
+        self._take_holes = []
         for b in list(self._garbage):
             if ready_only and b[1] > self._clock:
                 continue                      # 아직 충전 중인 묶음은 건너뛰고, 뒤에 들어온 즉시(instant) 묶음은 꺼냄
@@ -537,6 +541,10 @@ class BlockEngine:
             b[0] -= n
             taken += n
             groups.append(n)
+            if ready_only:
+                if len(b) < 4:
+                    b.append(self.garbage_rng.randint(0, self.width - 1))
+                self._take_holes.append(b[3])
             if b[0] <= 0:
                 self._garbage.remove(b)
         self._ig_total = sum(b[0] for b in self._garbage)

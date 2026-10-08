@@ -41,19 +41,19 @@ class RulesMixin:
         if self.rules_open:
             return
         self.rules_open = True
-        self.key_left_down = self.key_right_down = self.key_down_down = False
-        self.h_dir = 0
-        # 혼자 하는 경기는 규칙을 읽는 동안 멈춤
-        if (self.state == "GAME" and self.match is not None and self.net_mgr.mode == "NONE" and not self.is_paused
-                and not self.match.match_finished and self.match.local_is_alive):
-            self.is_paused = True
-            self.match.is_paused = True
-            self.renderer.pause_focus = 0
-            self.sound_mgr.pause_bgm()
+        self._clear_input_state()
+        if self._auto_pause_solo():                      # 혼자 하는 경기는 규칙을 읽는 동안 멈춤
+            self._paused_by_rules = True                 # 규칙 카드가 멈춘 것: 닫으면 다시 이어서 진행
         self.sound_mgr.play('move')
 
     def _close_rules(self):
         self.rules_open = False
+        if getattr(self, "_paused_by_rules", False):     # 규칙 카드를 열려고 자동으로 멈춘 경기는 닫을 때 일시정지 창에 갇히지 않고 바로 재개
+            self._paused_by_rules = False
+            if self.is_paused and self.match is not None and self.state == "GAME":
+                self.is_paused = False
+                self.match.is_paused = False
+                self.sound_mgr.unpause_bgm()
         self.sound_mgr.play('move')
 
     def _handle_rules_event(self, event):

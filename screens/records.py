@@ -348,14 +348,9 @@ class RecordsMixin:
             pygame.draw.rect(self.screen, c_bg, c_rect, border_radius=8)
             pygame.draw.rect(self.screen, c_col, c_rect, 1, border_radius=8)
             
-            t_surf = self.font_small.render(c_title, True, (210, 230, 255))
-            self.screen.blit(t_surf, (cx + 12, card_y + 10))
-            
-            v_surf = self.font_menu.render(c_val, True, c_col)
-            self.screen.blit(v_surf, (cx + 12, card_y + 34))
-            
-            s_surf = self.font_tiny.render(c_sub, True, (160, 190, 220))
-            self.screen.blit(s_surf, (cx + 12, card_y + 68))
+            self._t(c_title, self.font_small, (210, 230, 255), cx + 12, card_y + 10)          # 글자 이미지는 캐시된 그리기 헬퍼로 (정적인 화면에서 매 프레임 글꼴 렌더링을 하지 않음)
+            self._t(c_val, self.font_menu, c_col, cx + 12, card_y + 34)
+            self._t(c_sub, self.font_tiny, (160, 190, 220), cx + 12, card_y + 68)
             
         # 4. 최근 경기 매치 히스토리 테이블
         tbl_y = box_y + 130
@@ -848,18 +843,31 @@ class RecordsMixin:
         self._t("PgUp / PgDn · 휠", self.font_tiny, C_DIM, box_x + box_w - 25, ny + 15, "midright")
 
     def _wrap_text(self, text, font, max_w):
-        """글자 단위 줄바꿈 (한글 포함). 번역된 글자로 나눔"""
-        from i18n import tr
-        text = tr(text)
-        lines, cur = [], ""
-        for ch in text:
-            if cur and font.size(cur + ch)[0] > max_w:
+        """줄바꿈: 한국어는 글자 단위, 영어 등은 단어 단위(한 단어가 폭보다 길 때만 글자 단위로 나눔: "Elimin/ate"처럼 단어 중간에서 끊기지 않게).
+        매 프레임 글자마다 폭을 재지 않도록 결과를 캐시 (글꼴 크기/해상도/언어가 바뀌면 다른 키)"""
+        from i18n import tr, language
+        lang = language()
+        key = (id(font), getattr(font, "size_pt", None), text, max_w, lang, getattr(self.renderer, "_ver", 0))
+        cache = self.__dict__.setdefault("_wrap_cache", {})
+        hit = cache.get(key)
+        if hit is not None:
+            return list(hit)
+        if lang != "ko":
+            lines = self.renderer._wrap_words(text, font, max_w)
+        else:
+            text = tr(text)
+            lines, cur = [], ""
+            for ch in text:
+                if cur and font.size(cur + ch)[0] > max_w:
+                    lines.append(cur)
+                    cur = ch
+                else:
+                    cur += ch
+            if cur:
                 lines.append(cur)
-                cur = ch
-            else:
-                cur += ch
-        if cur:
-            lines.append(cur)
+        if len(cache) > 600:
+            cache.clear()
+        cache[key] = tuple(lines)
         return lines
 
     def _records_bottom_buttons(self, mx, my, box_x, box_y, box_w):

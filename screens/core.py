@@ -23,6 +23,7 @@ class CoreMixin:
         skin = self.settings.get("block_skin")
         stats = getattr(self, "stats_mgr", None)                  # 앱 초기화 중에는 전적이 아직 없을 수 있음
         self.renderer.block_skin = skin if (stats is None or skin in unlocked_skin_ids(stats.data)) else "classic"      # 잠긴 스킨(전적 초기화 등)은 기본으로
+        self.renderer.skyline = bool(self.settings.get("board_skyline", False))      # 지형 윤곽선 (기본 꺼짐)
         boost = 2 if self.settings.get("text_size") == "large" else 0
         self.renderer.set_text_boost(boost)
         for name, base in getattr(self, "_menu_font_base", {}).items():       # 메뉴/설정/로비의 작은 글씨도 같이 키움
@@ -150,6 +151,33 @@ class CoreMixin:
         self.settings.set("fullscreen", self.is_fullscreen)
         self._create_window()
 
+    def _apply_sound_settings(self):
+        """저장된/초기화된 오디오 설정(음악·효과음 켜기와 음량, 경보 음량, 아나운서)을 사운드 매니저에 반영"""
+        s, sm = self.settings, self.sound_mgr
+        sm.set_bgm_enabled(s.get("bgm_enabled", True))
+        sm.set_sfx_enabled(s.get("sfx_enabled", True))
+        sm.set_bgm_volume(s.get("bgm_volume", 60) / 100.0)
+        sm.set_sfx_volume(s.get("sfx_volume", 70) / 100.0)
+        sm.set_warn_scale(s.get("warn_volume", 100) / 100.0)
+        sm.set_announcer(s.get("announcer", False))
+
+    def _clear_input_state(self):
+        """눌려 있던 방향/소프트드롭 입력 상태를 모두 비움 (화면이 바뀌거나 창/입력 초점이 바뀔 때)"""
+        self.key_left_down = self.key_right_down = self.key_down_down = False
+        self.h_dir = 0
+
+    def _auto_pause_solo(self):
+        """혼자 하는 경기가 진행 중이면 일시정지로 만들고 True (네트워크 경기/끝난 경기/탈락 뒤에는 아무것도 하지 않음)"""
+        m = self.match
+        if (self.state == "GAME" and m is not None and self.net_mgr.mode == "NONE" and not self.is_paused
+                and not m.match_finished and m.local_is_alive):
+            self.is_paused = True
+            m.is_paused = True
+            self.renderer.pause_focus = 0
+            self.sound_mgr.pause_bgm()
+            return True
+        return False
+
     def toggle_mute(self):
         self.sound_mgr.toggle_sound()
 
@@ -164,10 +192,7 @@ class CoreMixin:
         self.settings.save()                     # 경기 중 바꾼 조준 모드 등 (조작 중에는 저장하지 않고 여기서 한 번에)
         self.victory_played = False
         self.gameover_played = False
-        self.key_left_down = False
-        self.key_right_down = False
-        self.key_down_down = False
-        self.h_dir = 0
+        self._clear_input_state()
         self.das_timer = 0.0
         self.arr_timer = 0.0
         self.soft_drop_timer = 0.0
@@ -176,6 +201,8 @@ class CoreMixin:
         self._end_text(commit=False)
         self.rebinding_action = None                     # 화면이 바뀌면 키 바인딩 대기/규칙 창을 닫음 (켜진 채 남으면 M/F1 키가 먹통)
         self.rules_open = False
+        self._sound_due = []                             # 이전 판 결과 화면에 예약된 효과음(도장/레벨 업)이 새 판 카운트다운이나 메뉴에서 터지지 않게
+        self._paused_by_rules = False
         self.net_mgr.stop()
         self.match = None
         self.is_paused = False
@@ -246,6 +273,8 @@ class CoreMixin:
         self._end_text(commit=False)
         self.rebinding_action = None                     # 화면이 바뀌면 키 바인딩 대기/규칙 창을 닫음 (켜진 채 남으면 M/F1 키가 먹통)
         self.rules_open = False
+        self._sound_due = []                             # 이전 판 결과 화면에 예약된 효과음(도장/레벨 업)이 새 판 카운트다운이나 메뉴에서 터지지 않게
+        self._paused_by_rules = False
         self.renderer.reset_standings()
         self._lobby_return_t0 = None
         self.renderer.lobby_return_left = None
@@ -265,10 +294,7 @@ class CoreMixin:
         self._last_garbage_rows = 0
         self._was_touching = False
         self.match_start_time = time.time()
-        self.key_left_down = False
-        self.key_right_down = False
-        self.key_down_down = False
-        self.h_dir = 0
+        self._clear_input_state()
         self.das_timer = 0.0
         self.arr_timer = 0.0
         self.soft_drop_timer = 0.0
@@ -389,14 +415,15 @@ class CoreMixin:
         self._end_text(commit=False)
         self.rebinding_action = None                     # 화면이 바뀌면 키 바인딩 대기/규칙 창을 닫음 (켜진 채 남으면 M/F1 키가 먹통)
         self.rules_open = False
+        self._sound_due = []                             # 이전 판 결과 화면에 예약된 효과음(도장/레벨 업)이 새 판 카운트다운이나 메뉴에서 터지지 않게
+        self._paused_by_rules = False
         self.match = None
         self.is_paused = False
         self.modal = None
         self._notice_shown = False
         self._lobby_return_t0 = None
         self.renderer.lobby_return_left = None
-        self.key_left_down = self.key_right_down = self.key_down_down = False
-        self.h_dir = 0
+        self._clear_input_state()
         self.sound_mgr.play_menu_bgm()
         self.logo.restart(fast=True)
         if nm.mode == "HOST":

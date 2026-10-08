@@ -20,7 +20,6 @@ FULL = (1 << W) - 1
 
 SHAPES = {p: [list(shape) for shape in rots] for p, rots in TETROMINOES.items()}
 _MIN_DY = {p: [min(dy for _, dy in sh) for sh in rots] for p, rots in SHAPES.items()}
-SHAPE_SPAN = {p: [(min(dx for dx, _ in s), max(dx for dx, _ in s)) for s in rots] for p, rots in SHAPES.items()}
 
 # 행 전환 수 표: 양쪽 벽을 채워진 것으로 보고 이웃한 칸이 다른 횟수
 ROW_TRANS = []
@@ -82,29 +81,6 @@ def spend(seconds):
 
 def rows_from_grid(grid):
     return [sum(1 << x for x, c in enumerate(row) if c is not None) for row in grid]
-
-
-def _collide(rows, cells, px, py):
-    for dx, dy in cells:
-        x = px + dx
-        y = py + dy
-        if x < 0 or x >= W or y >= H:
-            return True
-        if y >= 0 and (rows[y] >> x) & 1:
-            return True
-    return False
-
-
-def _drop(rows, cells, px, py):
-    """py에서 한 칸씩 내려 막히기 직전 y를 돌려줌 (_collide를 반복 호출하던 것과 같은 결과를 호출 단계 없이 계산: 봇 계산에서 가장 많이 불리는 함수)"""
-    while True:
-        ny = py + 1
-        for dx, dy in cells:
-            x = px + dx
-            y = ny + dy
-            if x < 0 or x >= W or y >= H or (y >= 0 and (rows[y] >> x) & 1):
-                return py
-        py = ny
 
 
 def _top(rows):
@@ -170,64 +146,6 @@ def _tspin_kind(rows, x, y, rot, flag):
     return "mini"
 
 
-def t_placements_ref(rows):
-    """(기준 구현) T 블록의 도달 가능한 모든 고정 자리와 입력 경로: [(rot, px, py, kind, path)]
-    path는 'L','R','D','cw','ccw' 입력 목록(마지막 하드 드롭은 따로)."""
-    cells_by_rot = SHAPES["T"]
-    sx, sy, sr = 3, SPAWN_Y, 0
-    if _collide(rows, cells_by_rot[sr], sx, sy):
-        return []
-    start = (sx, sy, sr, 0)
-    parent = {start: None}
-    q = deque([start])
-    locks = []
-    while q:
-        st = q.popleft()
-        x, y, r, f = st
-        cells = cells_by_rot[r]
-        resting = _collide(rows, cells, x, y + 1)
-        if resting:
-            locks.append(st)
-        for dx, name in ((-1, "L"), (1, "R")):
-            if not _collide(rows, cells, x + dx, y):
-                ns = (x + dx, y, r, 0)
-                if ns not in parent:
-                    parent[ns] = (st, name)
-                    q.append(ns)
-        if not resting:
-            ns = (x, y + 1, r, 0)
-            if ns not in parent:
-                parent[ns] = (st, "D")
-                q.append(ns)
-        for cw, name in ((True, "cw"), (False, "ccw")):
-            nr = (r + 1) % 4 if cw else (r - 1) % 4
-            for ki, (kx, ky) in enumerate(JLSTZ_KICKS.get((r, nr), [(0, 0)])):
-                tx, ty = x + kx, y - ky
-                if not _collide(rows, cells_by_rot[nr], tx, ty):
-                    ns = (tx, ty, nr, 2 if ki == 4 else 1)
-                    if ns not in parent:
-                        parent[ns] = (st, name)
-                        q.append(ns)
-                    break
-    best = {}
-    for st in locks:
-        x, y, r, f = st
-        if y < 0:
-            continue
-        kind = _tspin_kind(rows, x, y, r, f)
-        key = tuple(sorted((x + dx, y + dy) for dx, dy in cells_by_rot[r]))
-        rank = 2 if kind == "full" else (1 if kind == "mini" else 0)
-        if key not in best or rank > best[key][0]:
-            path = []
-            cur = st
-            while parent[cur] is not None:
-                cur, act = parent[cur][0], parent[cur][1]
-                path.append(act)
-            path.reverse()
-            best[key] = (rank, r, x, y, kind, path)
-    return [(r, x, y, kind, path) for _rank, r, x, y, kind, path in best.values() if y >= 0]        # 숨김 구역에 걸치는 자리는 쓰지 않음 (_apply가 보이는 줄만 다룸)
-
-
 # T 블록: 회전(r)과 왼쪽 위 x마다 줄별 비트마스크를 미리 계산 (칸마다 파이썬 루프를 도는 충돌 검사 대신 줄 단위 AND 한 번). 벽 밖이면 None
 _T_ROT_CELLS = SHAPES["T"]
 _T_MASKS = [[None] * (W + 8) for _ in range(4)]            # _T_MASKS[r][x + 4] = ((dy, mask), ...)
@@ -244,7 +162,7 @@ _KICK_CCW = [[(r - 1) % 4, JLSTZ_KICKS.get((r, (r - 1) % 4), [(0, 0)])] for r in
 
 
 def t_placements(rows):
-    """T 블록의 도달 가능한 모든 고정 자리와 입력 경로: [(rot, px, py, kind, path)] (t_placements_ref와 같은 자리를 더 빨리 찾음)
+    """T 블록의 도달 가능한 모든 고정 자리와 입력 경로: [(rot, px, py, kind, path)] (최적화 전 기준 구현은 tests/bot_reference.py의 t_placements_ref)
     - 충돌 검사를 줄 비트마스크로 함
     - 스택 위가 충분히 비어 있으면 그 허공(어디서나 똑같이 움직일 수 있는 구간)은 건너뛰고 스택 가까이에서 탐색을 시작함 (경로 앞에 'D'를 붙임)"""
     masks = _T_MASKS
@@ -373,7 +291,7 @@ _READY_TARGET = FULL ^ (1 << (W - 1))
 
 def board_eval(rows, incoming, attack_style, i_soon=True, t_soon=False, top=None):
     """놓은 뒤 보드의 좋고 나쁨 (클수록 좋음). top: 가장 위 블록이 있는 행(모르면 None).
-    board_eval_ref와 같은 값을 내되 줄 훑기를 한 번으로 합치고 우물 계산을 표로 함"""
+    tests/bot_reference.py의 board_eval_ref와 같은 값을 내되 줄 훑기를 한 번으로 합치고 우물 계산을 표로 함"""
     if top is None:
         top = _top(rows)
     seen = 0
@@ -411,65 +329,6 @@ def board_eval(rows, incoming, attack_style, i_soon=True, t_soon=False, top=None
     score = 0.0
     if attack_style and incoming == 0 and max_h <= 12:       # 위협이 없을 때만 쿼드/T-스핀을 준비 (쓰레기가 오거나 높이 쌓이면 안전 운영)
         ready = rows[top:].count(_READY_TARGET)       # 오른쪽 끝 한 칸만 비고 나머지가 찬 줄: I 블록 하나로 쿼드를 만들 수 있는 준비된 줄
-        score += PARAMS["ready"] * min(ready, 4) * (1.0 if i_soon else PARAMS["no_i"])   # 곧 나올 I 블록이 안 보이면 우물 준비를 덜 밀어붙임
-        for y in range(top if top > 1 else 1, H - 1):            # T-스핀 더블 자리: 3칸 빈 줄 + 그 아래 한 칸 우물 + 위쪽 처마
-            c = TSD_ROW.get(rows[y])
-            if c is not None and rows[y + 1] == FULL ^ (1 << (c + 1)):
-                if rows[y - 1] & ((1 << c) | (1 << (c + 2))):
-                    score += PARAMS["tslot"] * (1.0 if t_soon else 0.4)
-                else:
-                    score += PARAMS["tslot_partial"] * (1.0 if t_soon else 0.4)   # 처마만 아직 없는 절반 완성 자리
-                break
-    P = PARAMS
-    score = score - P["w_row"] * row_tr - P["w_col"] * col_tr - P["w_hole"] * holes - P["w_well"] * wells
-    eff = max_h + incoming
-    dh = P["danger_h"]
-    if eff > dh:
-        score -= (eff - dh) ** 2 * P["w_danger"]       # 쌓인 높이 + 곧 올라올 쓰레기가 위험선을 넘으면 크게 감점
-    return score
-
-
-def board_eval_ref(rows, incoming, attack_style, i_soon=True, t_soon=False, top=None):
-    """놓은 뒤 보드의 좋고 나쁨 (클수록 좋음). top: 가장 위 블록이 있는 행(모르면 None)"""
-    if top is None:
-        top = _top(rows)
-    seen = 0
-    holes = 0
-    heights = [0] * W
-    row_tr = 0
-    for y in range(top, H):
-        r = rows[y]
-        new = r & ~seen
-        if new:
-            hgt = H - y
-            for x in BITS[new]:
-                heights[x] = hgt
-        holes += (seen & ~r & FULL).bit_count()
-        seen |= r
-        row_tr += ROW_TRANS[r]
-    col_tr = (rows[H - 1] ^ FULL).bit_count()
-    for y in range(top - 1 if top > 0 else 0, H - 1):
-        d = rows[y] ^ rows[y + 1]
-        if d:
-            col_tr += d.bit_count()
-    wells = 0.0
-    for c in range(W):
-        left = heights[c - 1] if c > 0 else 99
-        right = heights[c + 1] if c < W - 1 else 99
-        d = (left if left < right else right) - heights[c]
-        if d > 0:
-            w = d * (d + 1) / 2.0
-            if attack_style and c == W - 1:
-                w *= PARAMS["edge_well"]      # 오른쪽 끝 우물은 쿼드용으로 남겨 둠
-            wells += w
-    max_h = H - top
-    score = 0.0
-    if attack_style and incoming == 0 and max_h <= 12:       # 위협이 없을 때만 쿼드/T-스핀을 준비 (쓰레기가 오거나 높이 쌓이면 안전 운영)
-        ready = 0                                            # 오른쪽 끝 한 칸만 비고 나머지가 찬 줄: I 블록 하나로 쿼드를 만들 수 있는 준비된 줄
-        target = FULL ^ (1 << (W - 1))
-        for y in range(top, H):
-            if rows[y] == target:
-                ready += 1
         score += PARAMS["ready"] * min(ready, 4) * (1.0 if i_soon else PARAMS["no_i"])   # 곧 나올 I 블록이 안 보이면 우물 준비를 덜 밀어붙임
         for y in range(top if top > 1 else 1, H - 1):            # T-스핀 더블 자리: 3칸 빈 줄 + 그 아래 한 칸 우물 + 위쪽 처마
             c = TSD_ROW.get(rows[y])

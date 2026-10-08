@@ -168,6 +168,7 @@ def test_numpy_is_lazy_in_sound_module():
 
 def test_bot_drop_matches_collide_loop():
     import bot_brain as B
+    import bot_reference as R
     from config import TETROMINOES
     rng = random.Random(4)
     shapes = [TETROMINOES[k][r] for k in TETROMINOES for r in range(4)]
@@ -177,12 +178,12 @@ def test_bot_drop_matches_collide_loop():
         for y in range(B.H - rng.randint(0, B.H - 1), B.H):
             rows[y] = rng.getrandbits(B.W)
         cells, px, py = rng.choice(shapes), rng.randint(-2, B.W), rng.randint(-3, 6)
-        if B._collide(rows, cells, px, py):
+        if R._collide(rows, cells, px, py):
             continue
         ref = py
-        while not B._collide(rows, cells, px, ref + 1):
+        while not R._collide(rows, cells, px, ref + 1):
             ref += 1
-        assert B._drop(rows, cells, px, py) == ref
+        assert R._drop(rows, cells, px, py) == ref
         n += 1
     assert n > 1000
     print("  OK 봇 낙하 계산 동등")

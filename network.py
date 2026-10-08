@@ -5,6 +5,7 @@ Block Royale 100 - Serverless UDP Network Engine
 
 import socket
 import threading
+import ipaddress
 import json
 import time
 import zlib
@@ -782,14 +783,21 @@ class NetworkManager:
     # ----------------------------------------------------
     # 클라이언트(Client) 모드 시작
     # ----------------------------------------------------
-    def start_client(self, host_ip, host_port=DEFAULT_UDP_PORT, player_name="Player"):
+    @staticmethod
+    def _is_ip_literal(text):
         try:
-            host_ip = socket.gethostbyname(host_ip)      # 호스트 이름으로 입력해도 접속되도록 IP로 바꿔 저장 (수신 패킷의 IP와 비교하기 때문)
-        except Exception:
-            print(f"[Network] Cannot resolve host: {host_ip}")
+            ipaddress.ip_address(text)
+            return True
+        except ValueError:
+            return False
+
+    def start_client(self, host_ip, host_port=DEFAULT_UDP_PORT, player_name="Player"):
+        host_ip = (host_ip or "").strip()
+        pending = not self._is_ip_literal(host_ip)       # 호스트 이름(DNS 조회가 필요)은 백그라운드에서 해석: 틀린 주소를 넣어도 창이 멈추지 않게. IP는 바로 사용
+        if not host_ip:
             return False
         self.mode = "CLIENT"
-        self.server_addr = (host_ip, host_port)
+        self.server_addr = None if pending else (host_ip, host_port)
         self.connected = False
         self.incoming_attacks.clear()
         self.remote_players_state.clear()
@@ -823,20 +831,10 @@ class NetworkManager:
 
             # 참가 요청 패킷 전송 (최대 5회 시도)
             self.session_token = secrets.token_hex(8)
-            join_msg = {
-                "type": MsgType.JOIN_REQ,
-                "name": player_name,
-                "color": self.my_color,
-                "proto": PROTOCOL_VERSION,
-                "app": APP_VERSION,
-                "tok": self.session_token
-            }
-            data = json.dumps(join_msg).encode('utf-8')
-            for _ in range(5):
-                self.sock.sendto(data, self.server_addr)
-                time.sleep(0.1)
-                if self.connected:
-                    break
+            if pending:
+                threading.Thread(target=self._resolve_then_join, args=(host_ip, host_port), daemon=True).start()
+                return True                                  # 해석 결과는 대기실이 join_rejected("unresolved")나 접속 성공으로 알게 됨
+            self._send_join_burst()
 
             print(f"[Network] Client connected to {host_ip}:{host_port} with ID: {self.my_player_id}")
             return True
@@ -858,9 +856,38 @@ class NetworkManager:
         except Exception:
             pass
 
+    def _send_join_burst(self):
+        """참가 요청을 최대 5회(0.1초 간격) 보냄 (응답이 오면 중단)"""
+        data = json.dumps({"type": MsgType.JOIN_REQ, "name": getattr(self, "_join_name", "Player"), "color": self.my_color,
+                           "proto": PROTOCOL_VERSION, "app": APP_VERSION, "tok": self.session_token}).encode('utf-8')
+        for _ in range(5):
+            if self.server_addr is None or not self.running:
+                return
+            self.sock.sendto(data, self.server_addr)
+            time.sleep(0.1)
+            if self.connected:
+                break
+
+    def _resolve_then_join(self, host, port):
+        """(백그라운드) 호스트 이름을 IP로 바꾼 뒤 참가 요청을 보냄. 실패하면 대기실에 알림"""
+        try:
+            ip = socket.gethostbyname(host)              # 수신 패킷의 IP와 비교하므로 IP로 바꿔 저장
+        except Exception:
+            print(f"[Network] Cannot resolve host: {host}")
+            if self.running and self.mode == "CLIENT":
+                self.join_rejected = "unresolved"
+            return
+        if not self.running or self.mode != "CLIENT":
+            return
+        self.server_addr = (ip, port)
+        try:
+            self._send_join_burst()
+        except Exception:
+            pass
+
     def client_retry_join(self):
         """아직 호스트의 응답(JOIN_ACK)을 못 받았다면 참가 요청을 다시 전송 (대기실에서 주기적으로 호출)"""
-        if self.mode != "CLIENT" or not self.running or self.connected or not self.sock or self.join_rejected:
+        if self.mode != "CLIENT" or not self.running or self.connected or not self.sock or self.join_rejected or self.server_addr is None:
             return
         try:
             data = json.dumps({"type": MsgType.JOIN_REQ, "name": getattr(self, "_join_name", "Player"), "color": self.my_color, "proto": PROTOCOL_VERSION, "app": APP_VERSION, "tok": self.session_token}).encode('utf-8')
@@ -880,7 +907,7 @@ class NetworkManager:
                 continue
             try:
                 # 호스트가 아닌 주소에서 온 패킷은 무시
-                if addr[0] != self.server_addr[0] or addr[1] != self.server_addr[1]:
+                if self.server_addr is None or addr[0] != self.server_addr[0] or addr[1] != self.server_addr[1]:
                     continue
                 if data[:1] == b"Z":                         # 압축된 패킷 (압축 해제 크기 제한으로 폭탄 방지)
                     dec = zlib.decompressobj()

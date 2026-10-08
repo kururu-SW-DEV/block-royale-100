@@ -59,6 +59,7 @@ TAB_NAV = {
     "help": [("title", None, "title_prev", "title_next"), ("rules", "open_rules", None, None), ("tips_replay", "tips_replay", None, None),
              ("matchlog", "matchlog_toggle", "matchlog=off", "matchlog=on"),
              ("ghost", "ghost_toggle", "ghost=off", "ghost=on"),
+             ("skyline", "skyline_toggle", "skyline=off", "skyline=on"),
              ("errlog", "open_errlog", None, None)],
     "general": [("fs", "toggle_fs", "fs=window", "fs=full"), ("res", "res_next", "res_prev", "res_next"),
                 ("mini", "mini_detail", "mini_detail=detailed", "mini_detail=simple"),
@@ -111,6 +112,7 @@ HELP = {
     "key_hints": "게임 화면 아래의 조작 키 안내 바입니다. '처음 10판'은 익숙해지면 저절로 사라지고, '끔'은 화면이 더 넓어 보입니다. (T 설정/ESC는 그대로 사용 가능)",
     "announcer": "쿼드·T-스핀·콤보·퍼펙트 클리어·TOP 10·결승·골든 타깃 같은 큰 순간에 짧은 로봇 목소리가 외칩니다. 합성한 소리라 발음은 어설프며, 기본은 꺼짐입니다. 효과음이 꺼져 있으면 나오지 않습니다.",
     "warn": "피격 경보음과 위기 때 나는 심장 박동 소리만 따로 줄이거나 끕니다. 효과음 음량에는 영향이 없습니다.",
+    "skyline": "켜면 메인 보드에 쌓인 블록의 윗면을 따라 밝은 선이 이어져 지형의 높낮이와 구멍 위치가 한눈에 보입니다. 기본은 꺼짐이며, 줄이 내려앉는 순간에는 잠시 숨습니다.",
     "block_skin": "게임 화면 블록의 모양을 바꿉니다. 색은 위의 '블록 색상' 설정을 따르며, 로고와 미니 보드는 그대로입니다.",
     "bgm": "배경음악 켜기/끄기와 음량. 생존자가 줄수록(100인 → 50인 → 20인) 곡이 더 긴박해집니다.",
     "stage_bgm": "경기 중(1/2/3단계) 배경음 세트를 고릅니다. '랜덤'이면 경기를 시작할 때마다 5가지 중 하나가 무작위로 재생됩니다.",
@@ -136,7 +138,7 @@ HELP = {
 # 탭별 '기본값으로' 대상 설정 키
 TAB_DEFAULT_KEYS = {
     "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake", "language"],
-    "help": ["match_log", "ghost_race"],
+    "help": ["match_log", "ghost_race", "board_skyline"],
     "general": ["fullscreen", "resolution", "mini_detail", "color_mode", "text_size", "block_skin", "key_hints"],
     "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume", "warn_volume", "announcer"],
     "keys": ["gamepad"],
@@ -480,6 +482,13 @@ class SettingsMixin:
             if new != cur:
                 self.sound_mgr.play('rotate')
                 self.settings.set("gamepad", new)
+        elif btn_id in ("skyline=on", "skyline=off", "skyline_toggle"):
+            cur = bool(self.settings.get("board_skyline", False))
+            new = (btn_id.endswith("=on")) if "=" in btn_id else (not cur)
+            if new != cur:
+                self.sound_mgr.play('rotate')
+                self.settings.set("board_skyline", new)
+                self.renderer.skyline = new
         elif btn_id in ("ghost=on", "ghost=off", "ghost_toggle"):
             cur = bool(self.settings.get("ghost_race", False))
             new = (btn_id.endswith("=on")) if "=" in btn_id else (not cur)
@@ -552,10 +561,7 @@ class SettingsMixin:
             self.apply_visual_options()
             self._sync_fullscreen_from_settings()
         elif tab == "audio":
-            self.sound_mgr.set_bgm_enabled(self.settings.get("bgm_enabled"))
-            self.sound_mgr.set_sfx_enabled(self.settings.get("sfx_enabled"))
-            self.sound_mgr.set_bgm_volume(self.settings.get("bgm_volume") / 100.0)
-            self.sound_mgr.set_sfx_volume(self.settings.get("sfx_volume") / 100.0)
+            self._apply_sound_settings()
             self._sync_language_and_audio()
         elif tab == "react":
             self.apply_handling()
@@ -586,10 +592,7 @@ class SettingsMixin:
         self.room_name_input = ""
         self._sync_fullscreen_from_settings()
         self.bot_difficulty = self.settings.get("bot_difficulty")
-        self.sound_mgr.set_bgm_enabled(self.settings.get("bgm_enabled"))
-        self.sound_mgr.set_sfx_enabled(self.settings.get("sfx_enabled"))
-        self.sound_mgr.set_bgm_volume(self.settings.get("bgm_volume") / 100.0)
-        self.sound_mgr.set_sfx_volume(self.settings.get("sfx_volume") / 100.0)
+        self._apply_sound_settings()
         self._sync_language_and_audio()
         self.target_player_count = self.settings.get("target_player_count")
         try:
@@ -801,6 +804,10 @@ class SettingsMixin:
         _b = best_replay(load_replays_cached(), mode="battle")
         self._s_row("ghost", y, 50, "고스트 레이스", (f"내 최고 판({_b['score']:,}점)이 경기 옆에 함께 달립니다 (혼자 하는 경기)" if _b else "내 최고 판이 경기 옆에 함께 달립니다 (아직 저장된 리플레이 없음)"))
         self._s_seg([("ghost=off", "끔"), ("ghost=on", "켜기")], "ghost=on" if gh_on else "ghost=off", RIGHT, y + 25)
+        y += 50
+        sky_on = bool(self.settings.get("board_skyline", False))
+        self._s_row("skyline", y, 50, "지형 윤곽선", "쌓인 블록 윗면을 따라 밝은 선을 그림 (메인 보드)")
+        self._s_seg([("skyline=off", "끔"), ("skyline=on", "켜기")], "skyline=on" if sky_on else "skyline=off", RIGHT, y + 25)
         y += 50
         self._s_row("errlog", y, 50, "오류 기록", "문제를 알릴 때 error.log를 함께 보내 주세요")
         self._s_btn("open_errlog", pygame.Rect(RIGHT - 200, y + 7, 200, 36), "error.log 폴더 열기", True)
