@@ -488,6 +488,122 @@ def board_eval_ref(rows, incoming, attack_style, i_soon=True, t_soon=False, top=
     return score
 
 
+# ---- 증분 평가: 줄이 지워지지 않는 하드 드롭 배치는 부모 보드의 특징(구멍/전환/높이)을 한 번만 구해 두고, 놓인 몇 줄/몇 열만 고쳐서 board_eval과 같은 값을 냄
+# 블록 모양(piece, rot)과 왼쪽 위 x(px)마다 미리 계산: 건드리는 줄별 비트마스크, 건드리는 열별 (x, 가장 위 dy, 칸 수), dy 합, 가장 위 dy
+_PLACE = {}
+for _p, _rots in SHAPES.items():
+    _tab = {}
+    for _rot, _lo, _hi, _c, _cells, _my in ORIENTS[_p]:
+        for _px in range(-_lo, W - _hi):
+            _rm, _cm = {}, {}
+            for _dx, _dy in _cells:
+                _rm[_dy] = _rm.get(_dy, 0) | (1 << (_px + _dx))
+                _t = _cm.get(_px + _dx)
+                _cm[_px + _dx] = (min(_t[0], _dy), _t[1] + 1) if _t else (_dy, 1)
+            _tab[(_rot, _px)] = (tuple(sorted(_rm.items())), tuple((x, v[0], v[1]) for x, v in sorted(_cm.items())),
+                                 sum(dy for _, dy in _cells), min(dy for _, dy in _cells))
+    _PLACE[_p] = _tab
+
+
+class _Ctx:
+    """부모 보드 하나의 특징 (후보 수십 개가 함께 씀)"""
+    __slots__ = ("rows", "top", "tops", "heights", "holes", "row_tr", "col_tr", "ready", "tsd")
+
+    def __init__(self, rows, top, tops):
+        self.rows, self.top, self.tops = rows, top, tops
+        self.heights = [H - t for t in tops]
+        seen = 0
+        holes = row_tr = col_tr = 0
+        prev = 0
+        for y in range(top, H):
+            r = rows[y]
+            holes += (seen & ~r & FULL).bit_count()
+            seen |= r
+            row_tr += ROW_TRANS[r]
+            if y > top or top > 0:
+                col_tr += (prev ^ r).bit_count()
+            prev = r
+        col_tr += (prev ^ FULL).bit_count() if top < H else FULL.bit_count()
+        self.holes, self.row_tr, self.col_tr = holes, row_tr, col_tr
+        self.ready = rows[top:].count(_READY_TARGET)
+        self.tsd = any(rows[y] in TSD_ROW for y in range(top if top > 1 else 1, H - 1))      # T-스핀 더블 자리 후보 줄이 있는가 (없으면 자리 검사를 건너뜀)
+
+
+def _quick_delta(ctx, piece, rot, px, py, incoming, attack_style, i_soon, t_soon):
+    """줄이 지워지지 않는 하드 드롭 배치의 (board_eval 값, dy 합). 줄이 지워지면 None (호출한 쪽이 기존 방식으로 계산).
+    정수 특징(구멍, 행/열 전환, 높이)은 정확히 같고 부동소수점 식도 board_eval과 같은 순서로 계산해 값이 완전히 같음"""
+    rowdefs, cols, ysum_base, mindy = _PLACE[piece][(rot, px)]
+    rows = ctx.rows
+    row_tr = ctx.row_tr
+    ready = ctx.ready
+    new_vals = []
+    for dy, mk in rowdefs:
+        old = rows[py + dy]
+        nv = old | mk
+        if nv == FULL:
+            return None
+        row_tr += ROW_TRANS[nv] - ROW_TRANS[old]
+        ready += (nv == _READY_TARGET) - (old == _READY_TARGET)
+        new_vals.append((py + dy, nv))
+    holes = ctx.holes
+    col_tr = ctx.col_tr
+    tops = ctx.tops
+    hp = ctx.heights[:]
+    for x, md, cnt in cols:
+        yt = py + md
+        gap = tops[x] - yt - cnt                       # 놓인 칸 아래에 새로 생기는 빈칸 수
+        holes += gap
+        col_tr += (2 if gap else 0) - (1 if yt == 0 else 0)
+        hp[x] = H - yt
+    top = py + mindy
+    if ctx.top < top:
+        top = ctx.top
+    wells = 0.0
+    for c in range(W):
+        left = hp[c - 1] if c > 0 else 99
+        right = hp[c + 1] if c < W - 1 else 99
+        d = (left if left < right else right) - hp[c]
+        if d > 0:
+            w = WELL_VAL[d]
+            if attack_style and c == W - 1:
+                w *= PARAMS["edge_well"]
+            wells += w
+    max_h = H - top
+    score = 0.0
+    if attack_style and incoming == 0 and max_h <= 12:
+        score += PARAMS["ready"] * min(ready, 4) * (1.0 if i_soon else PARAMS["no_i"])
+        if ctx.tsd or any(nv in TSD_ROW for _y, nv in new_vals):        # T-스핀 더블 자리가 있을 수 있을 때만 줄을 훑음 (보통은 건너뜀)
+            new = rows[:]
+            for y, nv in new_vals:
+                new[y] = nv
+            for y in range(top if top > 1 else 1, H - 1):
+                c = TSD_ROW.get(new[y])
+                if c is not None and new[y + 1] == FULL ^ (1 << (c + 1)):
+                    if new[y - 1] & ((1 << c) | (1 << (c + 2))):
+                        score += PARAMS["tslot"] * (1.0 if t_soon else 0.4)
+                    else:
+                        score += PARAMS["tslot_partial"] * (1.0 if t_soon else 0.4)
+                    break
+    P = PARAMS
+    score = score - P["w_row"] * row_tr - P["w_col"] * col_tr - P["w_hole"] * holes - P["w_well"] * wells
+    eff = max_h + incoming
+    dh = P["danger_h"]
+    if eff > dh:
+        score -= (eff - dh) ** 2 * P["w_danger"]
+    return score, ysum_base
+
+
+def _mat(x):
+    """_expand가 돌려준 보드가 아직 만들어지지 않은 표식 (rows, piece, rot, px, py)이면 실제 보드(줄 지움 없음)로 만듦"""
+    if type(x) is tuple:
+        rows, piece, rot, px, py = x
+        new = rows[:]
+        for dx, dy in SHAPES[piece][rot]:
+            new[py + dy] |= 1 << (px + dx)
+        return new
+    return x
+
+
 def _step_reward(landing, eroded, cleared, kind, combo_before, b2b_before, incoming, is_pc, max_h_after, attack_style):
     """이번 한 수의 보상과 다음 상태(combo, b2b)"""
     reward = -(PARAMS["land_atk"] if attack_style else PARAMS["land"]) * landing + 3.42 * eroded * cleared      # El-Tetris: (지운 줄 수) x (그 줄에 속한 이번 블록 칸 수) -> 큰 클리어일수록 훨씬 크게 보상
@@ -517,15 +633,26 @@ def _expand(rows, piece, combo, b2b, incoming, attack_style, use_tspin, soon=(Tr
     """한 블록의 모든 배치 -> [(quick, reward, new_rows, combo, b2b, meta)]"""
     out = []
     top0 = _top(rows)
+    tops = _tops(rows, top0)
     if piece == "T" and use_tspin:
         cands = t_placements(rows)
     else:
-        tops = _tops(rows, top0)
         cands = [(rot, px, py, None, None) for rot, px, py in simple_placements(rows, piece, tops)]
     i_soon, t_soon = soon
+    ctx = None
+    lp = PARAMS["land_atk"] if attack_style else PARAMS["land"]
     for rot, px, py, kind, path in cands:
         if py + _MIN_DY[piece][rot] < 0:
             continue
+        if path is None:                                         # 하드 드롭 배치: 줄이 안 지워지면 증분 평가 (새 보드는 뽑힐 때만 만듦)
+            if ctx is None:
+                ctx = _Ctx(rows, top0, tops)
+            fast = _quick_delta(ctx, piece, rot, px, py, incoming, attack_style, i_soon, t_soon)
+            if fast is not None:
+                landing = H - (4 * py + fast[1]) / 4.0
+                reward = -lp * landing + 3.42 * 0 * 0
+                out.append((reward + fast[0], reward, (rows, piece, rot, px, py), -1, b2b, (rot, px, py, path)))
+                continue
         new, cleared, eroded, landing, top = _apply(rows, piece, rot, px, py, top0)
         is_pc = cleared > 0 and top >= H
         reward, c2, b2 = _step_reward(landing, eroded, cleared, kind if cleared > 0 else None, combo, b2b, incoming,
@@ -547,11 +674,43 @@ def _options(cur, hold, queue, can_hold):
     return opts
 
 
+def _leaf_best(rows, hold, cur, rest, combo, b2b, incoming, attack_style):
+    """_future의 마지막 층: 이 층에서는 최고 점수 하나만 필요하므로 후보 목록/정렬을 만들지 않고 바로 최댓값만 구함 (결과는 목록을 정렬해 첫 항목을 꺼내던 것과 같음)"""
+    best = None
+    top0 = _top(rows)
+    tops = _tops(rows, top0)
+    ctx = _Ctx(rows, top0, tops)
+    lp = PARAMS["land_atk"] if attack_style else PARAMS["land"]
+    min_dy = _MIN_DY
+    for piece, _used_hold, new_hold, rem in _options(cur, hold, rest, True):
+        i_soon, t_soon = 'I' in rem[:5] or new_hold == 'I', 'T' in rem[:5] or new_hold == 'T'
+        md = min_dy[piece]
+        for rot, px, py in simple_placements(rows, piece, tops):
+            if py + md[rot] < 0:
+                continue
+            fast = _quick_delta(ctx, piece, rot, px, py, incoming, attack_style, i_soon, t_soon)
+            if fast is not None:
+                landing = H - (4 * py + fast[1]) / 4.0
+                quick = -lp * landing + 3.42 * 0 * 0 + fast[0]
+                if best is None or quick > best:
+                    best = quick
+                continue
+            new, cleared, eroded, landing, top = _apply(rows, piece, rot, px, py, top0)
+            reward, _c2, _b2 = _step_reward(landing, eroded, cleared, None, combo, b2b, incoming,
+                                            cleared > 0 and top >= H, H - top, attack_style)
+            quick = reward + board_eval(new, incoming, attack_style, i_soon, t_soon, top)
+            if best is None or quick > best:
+                best = quick
+    return -1e6 if best is None else best
+
+
 def _future(rows, hold, queue, combo, b2b, incoming, depth, beam, attack_style):
     """이미 한 수를 둔 뒤, 남은 블록으로 depth수 더 내다본 최고 점수 (보상 + 마지막 보드 평가)"""
     if not queue or depth <= 0:
         return board_eval(rows, incoming, attack_style, 'I' in queue[:5] or hold == 'I', 'T' in queue[:5] or hold == 'T')
     cur, rest = queue[0], queue[1:]
+    if depth == 1:
+        return _leaf_best(rows, hold, cur, rest, combo, b2b, incoming, attack_style)
     best = -1e18
     scored = []
     for piece, used_hold, new_hold, rem in _options(cur, hold, rest, True):
@@ -561,10 +720,8 @@ def _future(rows, hold, queue, combo, b2b, incoming, depth, beam, attack_style):
     if not scored:
         return -1e6
     scored.sort(key=lambda t: t[0], reverse=True)
-    if depth == 1:
-        return scored[0][0]
     for quick, reward, new_rows, c2, b2, new_hold, rem in scored[:beam]:
-        v = reward + _future(new_rows, new_hold, rem, c2, b2, incoming, depth - 1, max(2, beam - 1), attack_style)
+        v = reward + _future(_mat(new_rows), new_hold, rem, c2, b2, incoming, depth - 1, max(2, beam - 1), attack_style)
         if v > best:
             best = v
     return best
@@ -604,7 +761,7 @@ def plan_rows(rows, cur, hold, queue, can_hold, combo, b2b, incoming, depth=1, b
             if look:
                 if i >= beam:
                     break                    # 내다본 점수와 안 내다본 점수는 척도가 달라 섞지 않음: 상위 후보만 남김
-                total = reward + _future(new_rows, new_hold, rem, c2, b2, incoming, depth - 1, max(2, beam - 1), attack_style)
+                total = reward + _future(_mat(new_rows), new_hold, rem, c2, b2, incoming, depth - 1, max(2, beam - 1), attack_style)
             else:
                 total = quick
             if attack_style and new_hold == "I":

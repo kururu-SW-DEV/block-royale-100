@@ -82,6 +82,30 @@ def test_board_eval_matches_reference_exactly():
     assert n > 20000
 
 
+def test_incremental_eval_matches_full_eval_for_every_placement():
+    """줄이 안 지워지는 모든 하드 드롭 배치에서 증분 평가 == 놓고 나서 board_eval_ref (점수와 랜딩 높이까지 정확히 같음)"""
+    n = 0
+    for rows in _boards(250, 31):
+        top0 = B._top(rows)
+        tops = B._tops(rows, top0)
+        ctx = B._Ctx(rows, top0, tops)
+        for piece in "IJLOSTZ":
+            for rot, px, py in B.simple_placements(rows, piece, tops):
+                if py + B._MIN_DY[piece][rot] < 0:
+                    continue
+                new, cleared, eroded, landing, top = B._apply(rows, piece, rot, px, py, top0)
+                for inc, atk, i_soon, t_soon in ((0, True, True, False), (0, True, False, True), (5, False, True, False)):
+                    fast = B._quick_delta(ctx, piece, rot, px, py, inc, atk, i_soon, t_soon)
+                    if cleared:
+                        assert fast is None
+                        continue
+                    assert fast[0] == B.board_eval_ref(new, inc, atk, i_soon, t_soon, top), (piece, rot, px, py, [format(v, "010b") for v in rows])
+                    assert B.H - (4 * py + fast[1]) / 4.0 == landing
+                    assert B._mat((rows, piece, rot, px, py)) == new
+                    n += 1
+    assert n > 20000
+
+
 def test_plan_best_move_unchanged_on_sample_positions():
     """t_placements를 기준 구현으로 바꿔도 계획기가 고르는 1순위 수가 같음 (깊이 2)"""
     rnd = random.Random(5)
