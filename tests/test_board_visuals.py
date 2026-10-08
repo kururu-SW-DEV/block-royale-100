@@ -72,7 +72,9 @@ def test_settled_cells_are_dimmer_than_active_cells():
 def test_garbage_cell_has_hatching():
     app, m = _app()
     g = app.renderer._cell_surface("G", 36)
-    pix = {tuple(g.get_at((x, y)))[:3] for x in range(2, 34) for y in range(2, 34)}
+    n = pygame.Surface.get_width(g)                              # 화면 배율에 따라 실제 크기가 다름 (러너의 작은 가상 화면에서는 36px보다 작음)
+    lo, hi = max(1, n // 18), n - max(1, n // 18)
+    pix = {tuple(g.get_at((x, y)))[:3] for x in range(lo, hi) for y in range(lo, hi)}
     assert len(pix) >= 3, "쓰레기 칸에 해칭 무늬(여러 밝기)가 없음"
 
 
@@ -81,10 +83,16 @@ def test_quiet_background_cards_are_silhouettes_in_focus_mode():
     r = app.renderer
     r.mini_focus = True
     bots = [pid for pid, p in m.players.items() if pid != m.local_player_id and p["is_alive"]]
-    target, attacker, leader, plain = bots[1], bots[2], bots[3], bots[4]
+    target, attacker, leader = bots[1], bots[2], bots[3]
     m.players[m.local_player_id]["target_id"] = target
     m.players[attacker]["target_id"] = m.local_player_id
     m.players[leader]["ko_count"] = 4
+
+    def calm(pid):                                               # 봇은 무작위라, 현상금/라이벌/결승 상대/위기/나를 노리는 봇이 아닌 '조용한' 봇을 골라야 함
+        p = m.players[pid]
+        special = (target, attacker, leader, getattr(m, "bounty_id", None), getattr(m, "rival_id", None), getattr(m, "final_opp_id", None))
+        return pid not in special and p.get("is_ai", True) and p.get("highest_y", 20) > 5 and p.get("target_id") != m.local_player_id and p.get("ko_count", 0) < 2
+    plain = next(pid for pid in bots if calm(pid))
     drawn = set()
     orig = r._blit_card_layer
     r._blit_card_layer = lambda key, *a, **k: (drawn.add(key[0]) if key[1] == "tag" else None, orig(key, *a, **k))[1]
