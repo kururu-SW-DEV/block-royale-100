@@ -4276,7 +4276,8 @@ class UIRenderer:
         while self._keycap_width(hints, gap) + 40 > center_w and droppable:
             hints.remove(droppable.pop())
         if self.pad_ui:                                           # 패드: 관전 중 버튼 (LB 결과 화면 / Back 배속 / X 재도전 / Y 연습 / B 일시정지)
-            hints = [({"S": "LB", "F": "Back", "R": "X", "P": "Y", "ESC": "B"}.get(k, k), d) for k, d in hints]
+            hints = [({"← →": "십자키", "S": "LB", "F": "Back", "R": "X", "P": "Y", "ESC": "B"}.get(k, k), d)
+                     for k, d in hints if k not in ("클릭", "Y")]       # 패드로는 클릭이 없고, 패드 Y는 연습이라 우승 예측(키보드 Y)은 할 수 없음
         bar_w = max(min(580, center_w), min(center_w, self._keycap_width(hints, gap) + 40))
         bar_w = min(bar_w, self.width - 20)
         rect = pygame.Rect(self.width // 2 - bar_w // 2 + int(ox),
@@ -4293,7 +4294,7 @@ class UIRenderer:
         if match.spectate_target_id is not None and match.spectate_target_id == getattr(match, "prediction_id", None):
             who += " ★" + _tr("우승 예측")                                              # 지금 보는 상대가 내 우승 예측
         self._draw_text(f"{name}  ({who}, K.O. {ko})", self.font_hud, name_col, badge.right + 12, rect.y + 19, "midleft")
-        self._keycap_hints(hints, rect.centerx, rect.y + 36, gap)
+        self._keycap_hints(hints, rect.centerx, rect.y + 36, gap, pad_ready=True)
 
     def _keycap_width(self, items, gap=14):
         """_keycap_hints가 그릴 전체 폭 (바 크기를 맞추는 데 씀)"""
@@ -4302,10 +4303,16 @@ class UIRenderer:
             total += self._text(key, self.font_tiny, (215, 225, 245)).get_width() + 12 + 5 + self._text(label, self.font_tiny, C_DIM).get_width()
         return total + gap * (len(items) - 1)
 
-    def _keycap_hints(self, items, cx, y, gap=14):
-        if self.pad_ui:
+    def _keycap_items(self, items, pad_ready=False):
+        """그릴 안내 목록: 패드로 하는 중이면 키 이름을 패드 버튼 이름으로 (표에 없는 키는 뺌). 이미 바꾼 목록은 그대로"""
+        if self.pad_ui and not pad_ready:
             from gamepad import pad_key_label
-            items = [(pad_key_label(k), lbl) for k, lbl in items if pad_key_label(k)]
+            return [(pad_key_label(k), lbl) for k, lbl in items if pad_key_label(k)]
+        return list(items)
+
+    def _keycap_hints(self, items, cx, y, gap=14, pad_ready=False):
+        """pad_ready=True: 이미 패드 버튼 이름으로 바꾼 목록 (다시 바꾸면 표에 없는 이름이 전부 빠져 안내가 비어 버림)"""
+        items = self._keycap_items(items, pad_ready)
         parts = []
         total = 0
         for key, label in items:

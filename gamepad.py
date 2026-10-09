@@ -120,6 +120,7 @@ class GamepadMapper:
         self._dpad = {}                                 # instance_id -> 눌린 십자키 방향 집합 (GameController는 십자키가 버튼으로 옴)
         self._rstick = {}                               # instance_id -> {'x','y','latched'}: 오른쪽 스틱 상태 (한 번 기울일 때 한 번만 모드 선택)
         self.x_is_restart = False                       # 경기 일시정지/결과/순위표 화면에서만 켜짐: X 버튼을 Space(Enter와 같은 확인) 대신 R(다시 시작)로 보냄
+        self.start_is_settings = False                  # 메인 화면에서만 켜짐: Start 버튼을 Enter(확인) 대신 설정 열기(S)로 보냄
         self.last_pad_t = 0.0                           # 마지막으로 패드 입력(또는 연결)이 있었던 시각 (게임 중 키 안내를 패드/키보드 중 어느 쪽으로 보일지 정하는 데 씀)
 
     RUMBLE_KINDS = {                                    # 종류 -> (저음 모터 비율, 고음 모터 비율, 기본 ms, 세기에 따라 늘어나는 ms)
@@ -315,6 +316,8 @@ class GamepadMapper:
         key = CTRL_MENU_BUTTONS.get(e.button)
         if self.x_is_restart and e.button == CB["X"]:
             key = pygame.K_r
+        if self.start_is_settings and e.button == CB["START"]:
+            key = pygame.K_s
         return [self._press(token, key, False)] if key is not None else []
 
     def translate(self, events, in_game):
@@ -369,6 +372,8 @@ class GamepadMapper:
                     key = MENU_BUTTONS.get(e.button)
                     if self.x_is_restart and e.button == 2:
                         key = pygame.K_r
+                    if self.start_is_settings and e.button == 7:
+                        key = pygame.K_s
                     made = [self._press(token, key, False)] if key is not None else []
             else:
                 out.append(e)

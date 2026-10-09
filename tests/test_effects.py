@@ -247,6 +247,86 @@ def test_cached_text_is_opaque_again_after_a_fade_out():
     assert any(tgt.get_at((x, y))[:3] != (0, 0, 0) for x in range(0, tgt.get_width(), 2) for y in range(0, tgt.get_height(), 2))
 
 
+def test_spectator_hints_are_shown_for_keyboard_and_pad():
+    app = _app()
+    m = _game(app, 30)
+    m.local_is_alive = False
+    m.is_spectating = True
+    m.spectate_target_id = next(k for k, p in m.players.items() if p["is_alive"] and k != m.local_player_id)
+    r = app.renderer
+    seen = []
+    orig = r._keycap_items
+    r._keycap_items = lambda items, pad_ready=False: (seen.append(orig(items, pad_ready)) or seen[-1])
+    for pad in (False, True):
+        seen.clear()
+        r.pad_ui = pad
+        r.render(m)
+        assert seen and len(seen[-1]) >= 3, (pad, seen)                 # 관전 중 하단 안내(대상 변경/결과 화면/일시정지 등)가 비지 않음
+        keys = [k for k, _ in seen[-1]]
+        if pad:
+            assert "B" in keys and "LB" in keys and "십자키" in keys, keys
+            assert "Y" not in [lbl_key for lbl_key, lbl in seen[-1] if lbl == "우승 예측"], "패드 Y는 연습이라 우승 예측 안내는 없음"
+        else:
+            assert "ESC" in keys and "S" in keys, keys
+    r.pad_ui = False
+
+
+def test_quick_start_settings_chips_are_big_and_inside_card():
+    app = _app()
+    app.state = "MENU"
+    import i18n
+    for lang in ("ko", "en"):
+        i18n.set_language(lang)
+        app.target_player_count = 100
+        app.bot_difficulty = "master"
+        app._render_menu()
+        card = app.menu_buttons["quick_play"]
+        for bid in ("qp_minus", "qp_plus", "qp_diff"):
+            r = app.menu_buttons[bid]
+            assert r.h >= 44 and r.w >= 44 and card.contains(r), (lang, bid, r, card)       # 누르기 쉬운 크기, 카드 안쪽
+        assert app.menu_buttons["qp_minus"].right <= app.menu_buttons["qp_plus"].left <= app.menu_buttons["qp_diff"].left
+    i18n.set_language("ko")
+    before = app.target_player_count
+    app._render_menu()
+    r = app.menu_buttons["qp_plus"]
+    app._handle_menu_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=r.center, button=1))
+    app._handle_menu_event(pygame.event.Event(pygame.MOUSEBUTTONUP, pos=r.center, button=1))
+    assert app.target_player_count == min(100, before + 1) and app.state == "MENU", "단추는 게임을 시작하지 않고 인원만 바꿈"
+
+
+def test_main_menu_start_button_opens_settings():
+    from gamepad import GamepadMapper, CB
+    gm = GamepadMapper(lambda a: [])
+    down = pygame.event.Event(pygame.CONTROLLERBUTTONDOWN, instance_id=0, button=CB["START"])
+    up = pygame.event.Event(pygame.CONTROLLERBUTTONUP, instance_id=0, button=CB["START"])
+    gm.start_is_settings = True
+    out = gm.translate([down], False)
+    assert [e.key for e in out if e.type == pygame.KEYDOWN] == [pygame.K_s], "메인 화면: Start = 설정(S)"
+    gm.translate([up], False)
+    gm.start_is_settings = False
+    out = gm.translate([down], False)
+    assert [e.key for e in out if e.type == pygame.KEYDOWN] == [pygame.K_RETURN], "다른 화면: Start = 확인(Enter) 그대로"
+    a_btn = pygame.event.Event(pygame.CONTROLLERBUTTONDOWN, instance_id=0, button=CB["A"])
+    gm.start_is_settings = True
+    assert [e.key for e in gm.translate([a_btn], False) if e.type == pygame.KEYDOWN] == [pygame.K_RETURN], "A는 그대로 확인"
+    # 앱: 메인 화면에서 S 키(패드 Start가 보내는 키)로 설정이 열리고, 패드 UI일 때 설정 단추에 Start 표시
+    app = _app()
+    app.state = "MENU"
+    app.renderer.pad_ui = True
+    app._render_menu()
+    ev = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_s, mod=0, unicode="", scancode=0)
+    ev.pad = True
+    app._handle_event(ev)
+    assert app.state == "SETTINGS"
+    import i18n
+    i18n.set_language("en")
+    try:
+        assert i18n.tr("설정 (Start)") == "Settings (Start)"
+    finally:
+        i18n.set_language("ko")
+    app.renderer.pad_ui = False
+
+
 def test_danger_breath_draws_runs_without_error():
     app = _app()
     m = _game(app)

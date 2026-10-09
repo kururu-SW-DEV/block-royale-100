@@ -271,6 +271,7 @@ class MenuMixin:
             elif k == pygame.K_d:
                 self._menu_cycle_difficulty()
         elif event.type == pygame.MOUSEMOTION:
+            self._menu_mouse = event.pos                       # 빠른 시작 카드의 설정 단추 호버 표시용
             if getattr(event, "rel", (1, 1)) == (0, 0):
                 return                                         # 창 포커스 복귀/화면 전환 때 생기는 '움직이지 않은' 이벤트로 포커스가 바뀌지 않게
             self._menu_kb = False
@@ -407,15 +408,8 @@ class MenuMixin:
             for i in range(17):
                 pygame.draw.line(self.screen, tri, (pcx - 5, pcy - 8 + i), (pcx - 5 + int(15 * (1 - abs(i - 8) / 8)), pcy - 8 + i), 2)
             self._t(title, self.font_hero, C_TEXT, tx, dr.y + 20)
-            flash = (time.time() - self._menu_flash) < 0.35
-            vr = self._t(status, self.font_small, C_GOLD if flash else _mix(COL_SUB, C_TEXT, t), tx + 16, dr.y + 64, "midleft")
-            cy = vr.centery                                  # ‹ › 는 클릭/휠로 인원을 바꾸는 버튼, 글자(인원 · 난이도)를 누르면 봇 난이도가 바뀜 (D 키와 같음)
-            ac = _mix(COL_HINT, accent, t)
-            pygame.draw.lines(self.screen, ac, False, [(vr.x - 9, cy - 5), (vr.x - 14, cy), (vr.x - 9, cy + 5)], 2)
-            pygame.draw.lines(self.screen, ac, False, [(vr.right + 9, cy - 5), (vr.right + 14, cy), (vr.right + 9, cy + 5)], 2)
-            self.menu_buttons["qp_minus"] = pygame.Rect(vr.x - 34, vr.y - 8, 34, vr.h + 16)
-            self.menu_buttons["qp_plus"] = pygame.Rect(vr.right, vr.y - 8, 34, vr.h + 16)
-            self.menu_buttons["qp_diff"] = pygame.Rect(vr.x, vr.y - 8, vr.w, vr.h + 16)
+            self._t(status, self.font_small, _mix(COL_SUB, C_TEXT, t), tx + 2, dr.y + 64, "midleft")          # 게임 방식(배틀로얄/서바이벌)만 제목 아래에
+            self._menu_quick_chips(dr, pcx - 22 - 18, accent, bg, t)
             return
         self._t(title, font, C_TEXT, tx, dr.y + 12)
         if status:                                           # 상태 한 줄 (글자가 길면 한 단계 작은 글꼴, 그래도 모자라면 숨김)
@@ -424,6 +418,46 @@ class MenuMixin:
                 cy = dr.bottom - 17
                 pygame.draw.circle(self.screen, status_col, (tx + 3, cy), 3)
                 self._t(status, sf, status_col, tx + 12, cy, "midleft")
+
+    def _menu_quick_chips(self, dr, right, accent, card_bg, t):
+        """빠른 시작 카드 오른쪽의 설정 단추 두 개 (전에는 제목 아래 작은 글씨 한 줄): 인원 [‹ 50명 ›] · 봇 난이도 [쉬움].
+        큰 글꼴과 넉넉한 누름 영역. ‹ › 는 인원 -1/+1, 난이도 단추는 누를 때마다 순환 (D 키와 같음). 카드 위 휠도 인원 조절"""
+        from i18n import tr
+        flash = (time.time() - self._menu_flash) < 0.35
+        diff = tr(BOT_DIFFICULTY_LABELS.get(self.bot_difficulty, "혼합").split(" (")[0])
+        n_txt = tr(f"{self.target_player_count}명")
+        ch = 46
+        cy = dr.centery + 2
+        mp = getattr(self, "_menu_mouse", (-999, -999))
+        chip_bg = _mix(card_bg, (8, 12, 26), 0.45)
+
+        def chip(rect, bid):
+            self.menu_buttons[bid] = rect
+            hov = rect.collidepoint(mp)
+            pressed = self._menu_press == bid
+            fill = _mix(chip_bg, accent, 0.22 if pressed else (0.12 if hov else 0.0))
+            pygame.draw.rect(self.screen, fill, rect, border_radius=10)
+            pygame.draw.rect(self.screen, _mix((62, 76, 112), accent, 0.85 if hov else 0.0), rect, 1, border_radius=10)
+            return hov
+
+        dw = max(100, self.font_menu.size(diff)[0] + 36)
+        dr_ = pygame.Rect(right - dw, cy - ch // 2, dw, ch)
+        hov = chip(dr_, "qp_diff")
+        self._t(diff, self.font_menu, C_TEXT if hov else _mix(COL_SUB, C_TEXT, 0.8), dr_.centerx, dr_.centery, "center")
+        pw = max(172, self.font_menu.size(n_txt)[0] + 2 * 44 + 12)
+        pr = pygame.Rect(dr_.x - 12 - pw, cy - ch // 2, pw, ch)
+        pygame.draw.rect(self.screen, chip_bg, pr, border_radius=10)
+        pygame.draw.rect(self.screen, (62, 76, 112), pr, 1, border_radius=10)
+        for bid, side in (("qp_minus", -1), ("qp_plus", 1)):
+            br = pygame.Rect(pr.x if side < 0 else pr.right - 44, pr.y, 44, ch)
+            self.menu_buttons[bid] = br
+            hov_b = br.collidepoint(mp)
+            if hov_b or self._menu_press == bid:
+                pygame.draw.rect(self.screen, _mix(chip_bg, accent, 0.28 if self._menu_press == bid else 0.16), br.inflate(-4, -4), border_radius=8)
+            ax = br.centerx + (-2 if side < 0 else 2)
+            ac = C_TEXT if hov_b else _mix(COL_HINT, accent, 0.6)
+            pygame.draw.lines(self.screen, ac, False, [(ax + 5 * -side, pr.centery - 9), (ax - 5 * -side, pr.centery), (ax + 5 * -side, pr.centery + 9)], 3)
+        self._t(n_txt, self.font_menu, C_GOLD if flash else C_TEXT, pr.centerx, pr.centery, "center")
 
     def _menu_ghost(self, bid, rect, accent=C_ACCENT):
         """하단 줄 버튼: 평소에는 테두리 없이 글자/아이콘만, 포커스·호버일 때만 면이 드러남"""
@@ -506,7 +540,7 @@ class MenuMixin:
         n = self.target_player_count
         atk_off = self.settings.get("game_mode") == "survival"
         diff = BOT_DIFFICULTY_LABELS.get(self.bot_difficulty, "혼합").split(" (")[0]
-        summary = _tr(f"{n}명 · {diff}" + (" · 서바이벌" if atk_off else " · 배틀로얄"))
+        summary = _tr("서바이벌" if atk_off else "배틀로얄")                  # 인원/난이도는 카드 오른쪽 단추로 옮김 (_menu_quick_chips)
         wk_best = self.stats_mgr.weekly_best(__import__("config").week_key())
         today = datetime.date.today().strftime("%Y%m%d")
         day_best = self.stats_mgr.daily_best(today)
@@ -568,7 +602,7 @@ class MenuMixin:
         if not running_under_wine():                       # Proton에서는 전체 화면 전환이 없음 (입력이 막힘)
             x = self._menu_icon("toggle_fs", x, "fs") - 4
         x = self._menu_icon("toggle_sound", x, "sound") - 4
-        x = self._menu_text_btn("settings", x, "설정") - 4
+        x = self._menu_text_btn("settings", x, "설정 (Start)" if self.renderer.pad_ui else "설정") - 4
         self._menu_text_btn("records", x, "전적", C_GOLD)
         r = self.menu_buttons.get(fid)
         if r and fid not in self.MENU_FOCUS_ORDER[:6] and fid != "quit_game":      # 하단 줄 항목: 그 버튼 바로 위에 작게 (화면 밖으로 나가지 않게)

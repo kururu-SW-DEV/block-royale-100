@@ -277,6 +277,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
             overlay = (self.state == "GAME" and self.match is not None and not pad_in_game and self.modal is None and not self.rules_open
                        and not getattr(self.match, "brief_open", False))              # 일시정지/탈락·결과/순위표 화면: X = 다시 시작(R)
             self.gamepad.x_is_restart = overlay
+            self.gamepad.start_is_settings = (self.state == "MENU" and self.modal is None and not self.rules_open and self.osk is None
+                                              and self.text_focus is None and not self._attract_on())      # 메인 화면: Start = 설정
             self.renderer.pad_x_restart = overlay
             for event in self.gamepad.translate(pygame.event.get(), pad_in_game):
                 if event.type == pygame.KEYDOWN and not getattr(event, "pad", False):

@@ -379,3 +379,6 @@ EXACT.update({"지우기": "Delete", "공백": "Space", "취소": "Cancel", "완
               "화상 키보드 (Y)": "On-screen keyboard (Y)",
               "십자키 이동  ·  A 입력  ·  X 지우기  ·  Y 대문자  ·  LB 한/영  ·  RB 기호  ·  Back 완료  ·  B 취소": "D-pad move  ·  A type  ·  X delete  ·  Y shift  ·  LB language  ·  RB symbols  ·  Back done  ·  B cancel",
               "터치/클릭으로 입력  ·  다 쓰면 '완료'를 누르세요  ·  물리 키보드로 치면 이 키보드는 닫힙니다": "Tap or click to type  ·  press Done when finished  ·  typing on a physical keyboard closes this one"})
+
+# v1.4.34 메인 화면 Start 버튼 = 설정
+EXACT.update({"설정 (Start)": "Settings (Start)"})
