@@ -490,9 +490,9 @@ class MenuMixin:
         self.renderer._blit_overlay(("menu_scrim",), (SCREEN_WIDTH, 440), _scrim, (0, SCREEN_HEIGHT - 440))
 
         # 1. 로고
-        logo_top = 16
+        logo_top = 30                                      # 로고가 화면 맨 위에 붙어 불안해 보이지 않게 위쪽 여백을 둠 (아래쪽 여백과 비슷하게)
         logo_h = self.logo.draw(self.screen, cx, logo_top)
-        y0 = min(logo_top + logo_h + 14, 312)
+        y0 = min(logo_top + logo_h + 10, 338)
 
         # 2. 상태 값 (이미 있는 데이터만)
         n = self.target_player_count
@@ -512,13 +512,13 @@ class MenuMixin:
         pad, gap, ch_, head = 10, 10, 66, 28
         fh = head + ch_ + pad
         ix, iw = x0 + pad, w - 2 * pad
-        y1 = y0 + 88 + 12
+        y1 = y0 + 88 + 10
         self._menu_category("함께하기", y1, fh, C_GREEN)
         cw2 = (iw - gap) // 2
         self._menu_card("host_room", (ix, y1 + head, cw2, ch_), "host", C_GREEN, "방 만들기", f"내 IP {self.local_ip}", COL_SUB, 1)
         self._menu_card("join_room", (ix + cw2 + gap, y1 + head, iw - cw2 - gap, ch_), "join", C_GOLD, "방 참가하기",
                         f"LAN 방 {rooms}개 발견" if rooms else "IP 직접 접속도 가능", C_GOLD if rooms else COL_SUB, 2)
-        y2 = y1 + fh + 10
+        y2 = y1 + fh + 8
         self._menu_category("혼자하기", y2, fh, C_ACCENT)
         cw3 = (iw - 2 * gap) // 3
         self._menu_card("practice", (ix, y2 + head, cw3, ch_), "practice", C_ACCENT, "연습",
