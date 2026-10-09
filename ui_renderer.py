@@ -12,7 +12,15 @@ import challenges
 from gfx import CANVAS, Canvas, HiFont, HiSurf, mix_color as _mix
 from config import is_colorblind
 from config import NAME_COLORS
-from stats_manager import LADDER_NAMES, ACHIEVEMENTS, level_of
+from stats_manager import LADDER_NAMES, ACHIEVEMENTS, level_of, ORB_THEMES, perks_unlocked_between
+
+
+def _hsv_color(h):
+    """색상 h(0~1)의 밝고 선명한 RGB (무지개 구슬용)"""
+    import colorsys
+    r, g, b = colorsys.hsv_to_rgb(h % 1.0, 0.55, 1.0)
+    return int(r * 255), int(g * 255), int(b * 255)
+
 from config import (
     SCREEN_WIDTH, SCREEN_HEIGHT,
     BOARD_WIDTH, BOARD_HEIGHT,
@@ -718,10 +726,9 @@ class UIRenderer:
                 r.h = max(0, min(board.bottom, y0 + hh) - r.y)
                 if r.h > 0:
                     CANVAS.alpha_rect(r, (255, 215, 90, int(aa * fade * 2.2)))
-        scale = getattr(match, 'shake_scale', 1.0)
         ia = now - getattr(match, 'impact_t', 0.0)
-        if scale > 0 and 0.0 <= ia < 0.07:
-            a = int(110 * getattr(match, 'impact_power', 1.0) * min(1.0, scale + 0.3) * (1.0 - ia / 0.07))
+        if getattr(match, 'flash_enabled', True) and 0.0 <= ia < 0.07:                    # 번쩍임은 흔들림 설정과 별개 (설정 > 기타 '화면 번쩍임')
+            a = int(110 * getattr(match, 'impact_power', 1.0) * (1.0 - ia / 0.07))
             if a > 0:
                 CANVAS.alpha_rect(board.inflate(8, 8), (255, 255, 255, a), radius=6)
 
@@ -1096,11 +1103,14 @@ class UIRenderer:
                     y = src[1] + (dest[1] - src[1]) * k - math.sin(k * math.pi) * 60      # 위로 살짝 휘어 날아감
                     return x, y
                 big = 4 if o.get("gold") else 0                                        # 현상금 처치: 더 크고 진한 금빛 구슬
+                th = ORB_THEMES.get(getattr(self, "orb_theme", "gold"), ORB_THEMES["gold"])
+                rb = getattr(self, "orb_theme", "gold") == "rainbow"                   # 레벨 보상: 무지개 구슬은 색이 계속 돎
                 for j in range(6, 0, -1):                                              # 꼬리
                     tx, ty = pos(max(0.0, age - j * 0.03))
-                    pygame.draw.circle(self.screen, _mix((255, 210, 80), (255, 120, 40), j / 6.0), (int(tx), int(ty)), max(2, 8 - j + big // 2))
+                    tc = _hsv_color((now * 0.9 + j * 0.06) % 1.0) if rb else _mix(th[2], th[3], j / 6.0)
+                    pygame.draw.circle(self.screen, tc, (int(tx), int(ty)), max(2, 8 - j + big // 2))
                 x, y = pos(age)
-                pygame.draw.circle(self.screen, (255, 200, 60) if big else (255, 240, 170), (int(x), int(y)), 9 + big)
+                pygame.draw.circle(self.screen, (255, 200, 60) if big else (_hsv_color((now * 0.9) % 1.0) if rb else th[0]), (int(x), int(y)), 9 + big)
                 pygame.draw.circle(self.screen, (255, 255, 255), (int(x), int(y)), 5 + big // 2)
             else:
                 k = (age - fly) / 0.35                                                 # 도착: K.O. 칸이 번쩍임
@@ -2180,7 +2190,7 @@ class UIRenderer:
         danger = n >= 4
         border = C_DANGER if danger else (C_ORANGE if n > 0 else C_PANEL_BORDER)
         self._panel(rect, border=border, border_w=2 if n > 0 else 1)
-        self._draw_text("받을 공격", self.font_tiny, border if n > 0 else C_DIM, rect.centerx, rect.y + 11, "midtop")
+        self._draw_text("▲ 받을 공격" if (danger and is_colorblind()) else "받을 공격", self.font_tiny, border if n > 0 else C_DIM, rect.centerx, rect.y + 11, "midtop")      # 색약 모드: 위험은 색뿐 아니라 ▲ 기호로도
         col = C_DANGER if danger else (C_ORANGE if n > 0 else C_DIM)
         # 숫자와 "줄"은 실제로 그려진 글자 아래끝(기준선)을 맞춰 나란히, 박스 가운데 정렬
         num = self._text(f"+{n}" if n > 0 else "0", self.font_title, col)
@@ -2469,11 +2479,17 @@ class UIRenderer:
                 pulse_a = int(150 + 90 * math.sin(now * 6.0))
                 self._blit_overlay(("mini_danger", dw, dh), (dw, dh), lambda surf, dw=dw, dh=dh: self._build_mini_danger(surf, dw, dh),
                                    (board_rect.x, board_rect.y), alpha=max(0, min(255, pulse_a)))
+                if is_colorblind():                                  # 색약 모드: 위기 카드는 붉은 그라데이션 대신/함께 '!' 기호도 표시
+                    self._draw_text("!", self.font_small, (255, 235, 120), board_rect.right - 5, board_rect.y + 2, "topright")
             if is_alive and pid in attackers_of_me and not is_targeted:
                 CANVAS.display.fill((240, 78, 88), CANVAS.rect_f(board_rect.x + 2, board_rect.y + 1, board_rect.w - 4, 3))   # 나를 노리는 상대: 카드 위쪽 붉은 줄 (변환된 실제 좌표에 직접 채움)
             if is_alive and (is_bounty or pid == getattr(match, "final_opp_id", None)):       # 결승 상대/현상금 봇: 금빛 맥박 테두리
                 pl2 = 0.5 + 0.5 * math.sin(now * (6.0 if pid == getattr(match, "final_opp_id", None) else 4.0))
                 pygame.draw.rect(self.screen, _mix((255, 185, 55), (255, 245, 170), pl2), board_rect.inflate(2, 2), 2, border_radius=3)
+                if is_bounty:                                                                  # 골든 타깃 남은 시간 (끝나면 다른 봇으로 바뀜)
+                    left_ = match.bounty_secs_left() if hasattr(match, "bounty_secs_left") else None
+                    if left_ is not None:
+                        self._draw_text(f"{int(math.ceil(left_))}s", self.font_tiny, (255, 225, 120), board_rect.right - 2, board_rect.bottom - 2, "bottomright")
             if is_spec or is_targeted:                       # 락온 코너 브래킷: 관전 대상은 금색(맥박), 조준 대상은 붉은색
                 pl = 0.5 + 0.5 * math.sin(now * (5.0 if is_spec else 8.0))
                 bcol = _mix((255, 200, 80), (255, 255, 255), 0.55 * pl) if is_spec else _mix((255, 84, 96), (255, 190, 190), 0.5 * pl)
@@ -3608,6 +3624,11 @@ class UIRenderer:
         lc = getattr(match, "ladder_clear", None)
         if lc:
             chips.append((f"난이도 클리어 {LADDER_NAMES.get(lc, lc)}", C_GOLD))
+        for ob in (getattr(match, "onboarding_done", None) or []):
+            chips.append((f"★ 입문 미션 완료 · {ob}", (255, 225, 110)))
+        vu = getattr(match, "vs_usual", None)
+        if vu:
+            chips.append((vu, C_GREEN if "▲" in vu else C_DIM))              # 기록을 못 깨도 '오늘은 평소보다 잘했다/못했다'를 알려 줌
         csum = match.challenge_summary() if hasattr(match, "challenge_summary") else None
         if csum:
             chips.append((csum[1] if len(csum[0]) > 28 else csum[0], C_GREEN))
@@ -3857,8 +3878,13 @@ class UIRenderer:
             xp = rw["xp"]
             up = xp["lv_after"] > xp["lv_before"]
             lines.append((f"경험치 +{xp['gain']} XP   ·   Lv.{xp['lv_after']}" + ("   ★ 레벨 업!" + (f" 칭호 '{__import__('stats_manager').level_title(xp['lv_after'])}'" if __import__('stats_manager').level_title(xp['lv_after']) != __import__('stats_manager').level_title(xp['lv_before']) else "") if up else "") + (f"   ·   다음 해금: {rw['next_unlock']}" if rw.get("next_unlock") else ""), C_GOLD if up else (170, 200, 235)))
+            for perk in perks_unlocked_between(xp["lv_before"], xp["lv_after"]):                       # 레벨 보상(K.O. 구슬 색)을 얻었으면 알림
+                lines.append((f"★ 새 효과 해금!  {perk}", (255, 225, 110)))
         if rw and rw["highlights"]:
             lines.append(("명장면:  " + " · ".join(match.HIGHLIGHT_LABELS.get(h, (h, None))[0] for h in rw["highlights"][:4]), (255, 215, 130)))
+        if getattr(match, "prediction_reward", 0) > 0:                       # 탈락 뒤 우승 예측이 맞았으면 알림
+            pn = match.players.get(match.prediction_id, {}).get("name", "")
+            lines.append((f"우승 예측 적중!  {pn}  +{match.prediction_reward} XP", C_GREEN))
         goal = getattr(match, "next_goal", None)
         loss = None if won else match.defeat_summary()
         second = None
@@ -3895,6 +3921,40 @@ class UIRenderer:
         stack = pts(lambda t: t[2] / float(BOARD_HEIGHT))
         pygame.draw.lines(self.screen, (255, 165, 70), False, stack, 2)                                  # 내 스택 높이
         pygame.draw.circle(self.screen, (255, 90, 90), (int(stack[-1][0]), int(stack[-1][1])), 3)        # 탈락 지점
+
+    killcam = None                       # 결과 창에서 재생 중인 마지막 8초 되감기 (앱이 매 프레임 지정)
+    killcam_available = False
+
+    def _draw_killcam(self, match, x, y):
+        """결과 창 오른쪽: 되감기 안내 칩(V) / 켜면 내 보드의 마지막 8초를 작은 보드로 반복 재생 (패인 한 줄을 실제 장면으로 확인)"""
+        if not self.killcam_available or x + 190 > self.width:
+            return
+        kc = self.killcam
+        if kc is None:
+            chip = pygame.Rect(x, y, 170, 30)
+            self._panel(chip, border=(70, 110, 160), bg=(16, 22, 38), radius=10, alpha=235)
+            self._draw_text("V  마지막 8초 보기" if not self.pad_ui else "LB  마지막 8초 보기", self.font_tiny, (170, 205, 240), chip.centerx, chip.centery, "center")
+            return
+        cs = 14
+        pw, ph = cs * 10 + 24, cs * 20 + 86
+        panel = pygame.Rect(x, y, pw, ph)
+        self._panel(panel, border=(90, 130, 190), bg=(12, 16, 30), radius=12, alpha=245)
+        self._draw_text("마지막 8초", self.font_tiny, (170, 205, 240), panel.centerx, panel.y + 8, "midtop")
+        bx_, by_ = panel.x + 12, panel.y + 30
+        pygame.draw.rect(self.screen, (10, 12, 22), (bx_ - 2, by_ - 2, cs * 10 + 4, cs * 20 + 4), border_radius=3)
+        for yy in range(20):
+            for xx in range(10):
+                piece = kc.grid[yy][xx]
+                if piece:
+                    self._draw_cell(bx_ + xx * cs, by_ + yy * cs, cs, piece)
+        last = kc.last
+        if last is not None and kc.t - kc.last_t < 0.35 and last["k"] == "G":          # 쓰레기가 올라온 순간: 아래쪽이 붉게 번쩍
+            a = int(150 * (1.0 - (kc.t - kc.last_t) / 0.35))
+            CANVAS.alpha_rect((bx_, by_ + (20 - last["n"]) * cs, cs * 10, last["n"] * cs), (255, 90, 90, a), radius=2)
+        frac = min(1.0, max(0.0, (kc.t - max(0.0, kc.duration - 8.0)) / 8.0))
+        pygame.draw.rect(self.screen, (28, 34, 56), (bx_, by_ + cs * 20 + 10, cs * 10, 6), border_radius=3)
+        pygame.draw.rect(self.screen, (120, 190, 255), (bx_, by_ + cs * 20 + 10, max(4, int(cs * 10 * frac)), 6), border_radius=3)
+        self._draw_text("V 닫기" if not self.pad_ui else "LB 닫기", self.font_tiny, C_DIM, panel.centerx, panel.bottom - 8, "midbottom")
 
     def _render_result_overlay(self, match):
         """탈락 결과 창 (v1.1.13 재설계): 헤더(랭크 도장 / 제목 + 부제목 / 그래프) -> 통계 카드 6장 -> 요약 상자 -> 조언 상자 -> 버튼. 정보는 그대로, 구역 4개로 묶고 겹침 없이 배치"""
@@ -3990,6 +4050,8 @@ class UIRenderer:
                 pygame.draw.rect(self.screen, C_GOLD, pill, border_radius=8)
                 self._draw_text("NEW", self.font_tiny, (24, 18, 4), pill.centerx, pill.centery, "center")
 
+        self._draw_killcam(match, bx + box_w + 16, by + 24)
+
         # ---- C. 요약 상자 / D. 조언 상자
         self._draw_result_summary(match, L, bx, by, box_w, t, rec_t)
         self._draw_result_advice(match, L, bx, by, box_w, t)
@@ -4065,6 +4127,8 @@ class UIRenderer:
         hints = [("← →", "대상 변경"), ("클릭", "미니 보드 선택"), ("S", "결과 화면")]
         if not net_on:
             hints.append(("F", f"배속 ×{getattr(match, 'spectate_speed', 1)}"))
+            if getattr(match, "prediction_id", None) is not None and not getattr(match, "prediction_settled", False):
+                hints.append(("Y", "우승 예측"))
             hints.append(("R", "재도전"))
             hints.append(("P", "연습"))
         hints.append(("ESC", "일시정지" if not net_on else "메뉴"))
@@ -4081,7 +4145,7 @@ class UIRenderer:
                     lim_r = min(lim_r, r_.left - 6)
         center_w = max(300, min(center_w, 2 * min(cx_mid - lim_l, lim_r - cx_mid)))
         gap = 14
-        droppable = [h_ for h_ in hints if h_[0] in ("P", "R")]
+        droppable = [h_ for h_ in hints if h_[0] in ("P", "R", "Y")]
         while self._keycap_width(hints, gap) + 40 > center_w and gap > 8:
             gap -= 2
         while self._keycap_width(hints, gap) + 40 > center_w and droppable:
@@ -4101,6 +4165,8 @@ class UIRenderer:
         name_col = C_TEXT
         if not target_p.get("is_ai", False):
             name_col = NAME_COLORS[match.get_name_colors().get(match.spectate_target_id, 0)][1]
+        if match.spectate_target_id is not None and match.spectate_target_id == getattr(match, "prediction_id", None):
+            who += " ★" + _tr("우승 예측")                                              # 지금 보는 상대가 내 우승 예측
         self._draw_text(f"{name}  ({who}, K.O. {ko})", self.font_hud, name_col, badge.right + 12, rect.y + 19, "midleft")
         self._keycap_hints(hints, rect.centerx, rect.y + 36, gap)
 

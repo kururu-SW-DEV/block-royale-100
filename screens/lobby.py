@@ -383,7 +383,10 @@ class LobbyMixin:
             pygame.draw.rect(self.screen, (24, 32, 54) if i else (22, 48, 44), row, border_radius=8)
             pygame.draw.circle(self.screen, col, (row.x + 16, row.centery), 5)
             self._t(name, self.font_info, col, row.x + 32, row.centery, "midleft")
-            self._t(tag, self.font_small, C_DIM, row.right - 14, row.centery, "midright")
+            tag_r = self._t(tag, self.font_small, C_DIM, row.right - 14, row.centery, "midright")
+            sp = self.net_mgr.session_scores.get(name, 0)
+            if sp:                                                                      # 같은 방에서 연달아 한 판들의 승점 (이긴 판에 10점, K.O.마다 +1)
+                self._t(f"{sp}점", self.font_small, C_GOLD, tag_r.x - 14, row.centery, "midright")
         if len(rows) > len(shown):
             self._t(f"외 {len(rows) - len(shown)}명 더 접속 중", self.font_small, C_DIM, box_x + 34, box_y + 118 + 4 * 34 + 2)
 
@@ -518,8 +521,11 @@ class LobbyMixin:
                 col = NAME_COLORS[e["color"]][1]
                 pygame.draw.circle(self.screen, col, (row.x + 16, row.centery), 5)
                 self._t(e["name"] + ("  (나)" if is_me else ""), self.font_info, col, row.x + 32, row.centery, "midleft")
-                self._t("방장" if e["host"] else e["id"], self.font_small, C_GOLD if e["host"] else C_DIM,
-                        row.right - 14, row.centery, "midright")
+                tag_r = self._t("방장" if e["host"] else e["id"], self.font_small, C_GOLD if e["host"] else C_DIM,
+                                row.right - 14, row.centery, "midright")
+                sp = self.net_mgr.session_scores.get(e["name"], 0)
+                if sp:
+                    self._t(f"{sp}점", self.font_small, C_GOLD, tag_r.x - 14, row.centery, "midright")
             if len(roster) > len(shown):
                 self._t(f"외 {len(roster) - len(shown)}명 더 접속 중", self.font_small, C_DIM, box_x + 32, box_y + 176 + 5 * 36 + 2)
             if not roster:

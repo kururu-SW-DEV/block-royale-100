@@ -8,6 +8,7 @@ Block Royale 100 - 화면 글자 번역 (v1.1.14, 영어 UI 1단계)
 언어는 설정의 '언어 / Language'로 바꾸며 "ko"가 기본이다 (한국어일 때는 번역 함수가 곧바로 원문을 돌려줘 비용이 없다).
 """
 
+import os
 import re
 
 LANGS = ("ko", "en")
@@ -92,6 +93,23 @@ def translate_piece(text):
     return hit if hit is not None else _translate(text)
 
 
+_MISSING_LOG = os.environ.get("BR_I18N_LOG") == "1"
+_missing_seen = set()
+
+
+def _note_missing(text):
+    """영어 화면에서 번역을 못 찾은 한글 문구를 data 폴더의 i18n_missing.txt에 한 번씩만 적음 (스캔 테스트가 못 잡는 동적 문구를 실제 플레이에서 찾기 위함)"""
+    if _lang == "ko" or text in _missing_seen:
+        return
+    _missing_seen.add(text)
+    try:
+        from app_paths import data_path
+        with open(data_path("i18n_missing.txt"), "a", encoding="utf-8") as f:
+            f.write(text.replace(chr(10), " ") + chr(10))
+    except Exception:
+        pass
+
+
 def tr(text):
     """화면에 그리기 직전의 글자를 현재 언어로 바꿈 (한국어면 그대로)"""
     if _lang == "ko" or not text or not isinstance(text, str):
@@ -99,6 +117,8 @@ def tr(text):
     out = _cache.get(text)
     if out is None:
         out = _translate(text) if re.search(r"[가-힣]", text) else text
+        if out == text and _MISSING_LOG and re.search(r"[가-힣]", text):
+            _note_missing(text)                                       # 개발용(BR_I18N_LOG=1): 번역되지 못한 한글을 파일에 모음
         if len(_cache) > 8000:
             _cache.clear()
         _cache[text] = out

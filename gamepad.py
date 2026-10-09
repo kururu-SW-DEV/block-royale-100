@@ -48,6 +48,9 @@ CTRL_DPAD = {CB["DPAD_UP"]: "up", CB["DPAD_DOWN"]: "down", CB["DPAD_LEFT"]: "lef
 _CBTN = (getattr(pygame, "CONTROLLERBUTTONDOWN", -1), getattr(pygame, "CONTROLLERBUTTONUP", -1))
 _CAXIS = getattr(pygame, "CONTROLLERAXISMOTION", -1)
 _CAX_X, _CAX_Y = getattr(pygame, "CONTROLLER_AXIS_LEFTX", 0), getattr(pygame, "CONTROLLER_AXIS_LEFTY", 1)
+_CAX_RX, _CAX_RY = getattr(pygame, "CONTROLLER_AXIS_RIGHTX", 2), getattr(pygame, "CONTROLLER_AXIS_RIGHTY", 3)
+# 게임 중 오른쪽 스틱으로 조준 모드를 바로 고름 (숫자키 2~5와 같음): 위 = K.O., 오른쪽 = 반격, 아래 = 배지, 왼쪽 = 랜덤 (자동은 Back으로 순환)
+RIGHT_STICK_KEYS = {"up": pygame.K_2, "right": pygame.K_3, "down": pygame.K_4, "left": pygame.K_5}
 PAD_EVENT_TYPES = (pygame.JOYBUTTONDOWN, pygame.JOYBUTTONUP, pygame.JOYHATMOTION, pygame.JOYAXISMOTION) + _CBTN + (_CAXIS,)
 
 
@@ -115,6 +118,7 @@ class GamepadMapper:
         self._sent = {}                                 # 누른 입력 -> 보낸 키 코드
         self.ctrls = {}                                 # instance_id -> 열어 둔 GameController
         self._dpad = {}                                 # instance_id -> 눌린 십자키 방향 집합 (GameController는 십자키가 버튼으로 옴)
+        self._rstick = {}                               # instance_id -> {'x','y','latched'}: 오른쪽 스틱 상태 (한 번 기울일 때 한 번만 모드 선택)
         self.x_is_restart = False                       # 경기 일시정지/결과/순위표 화면에서만 켜짐: X 버튼을 Space(Enter와 같은 확인) 대신 R(다시 시작)로 보냄
         self.last_pad_t = 0.0                           # 마지막으로 패드 입력(또는 연결)이 있었던 시각 (게임 중 키 안내를 패드/키보드 중 어느 쪽으로 보일지 정하는 데 씀)
 
@@ -169,6 +173,26 @@ class GamepadMapper:
             return True
         except Exception:
             return False
+
+    def _right_stick(self, inst, e, in_game):
+        """오른쪽 스틱: 게임 중 한 번 기울이면 조준 모드 숫자키(2~5)를 한 번 보냄. 스틱을 중립으로 돌려야 다시 반응 (떨림 방지 이력)"""
+        v = e.value / 32767.0 if abs(e.value) > 1.0 else e.value
+        st = self._rstick.setdefault(inst, {"x": 0.0, "y": 0.0, "latched": False})
+        st["x" if e.axis == _CAX_RX else "y"] = max(-1.0, min(1.0, v))
+        mag = max(abs(st["x"]), abs(st["y"]))
+        if mag < STICK_OFF:
+            st["latched"] = False
+            return []
+        if mag < STICK_ON or st["latched"]:
+            return []
+        st["latched"] = True
+        if not in_game:
+            return []
+        name = (("right" if st["x"] > 0 else "left") if abs(st["x"]) >= abs(st["y"]) else ("down" if st["y"] > 0 else "up"))
+        token = (inst, "rstick", name)
+        down = self._press(token, RIGHT_STICK_KEYS[name], False)
+        up = self._release(token)
+        return [x for x in (down, up) if x is not None]
 
     # ---- 키 이벤트 만들기: 누른 순간에 보낸 키를 기억해 뗄 때도 똑같은 키를 뗌 (그 사이에 일시정지/탈락으로 매핑이 바뀌어도 키가 눌린 채 남지 않게)
     def _resolve_key(self, name, in_game):
@@ -314,6 +338,8 @@ class GamepadMapper:
                 made = self._set_dirs((inst, "stick"), sd, in_game)
             elif e.type in _CBTN:
                 made = self._controller_button(inst, e, in_game)
+            elif e.type == _CAXIS and e.axis in (_CAX_RX, _CAX_RY):
+                made = self._right_stick(inst, e, in_game)
             elif e.type == _CAXIS:
                 if e.axis in (_CAX_X, _CAX_Y):
                     v = e.value / 32767.0 if abs(e.value) > 1.0 else e.value        # 이벤트 값은 -32768..32767 정수일 수 있음

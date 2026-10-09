@@ -2,7 +2,7 @@
 Block Royale 100 - Configuration & Constants
 """
 
-APP_VERSION = "1.4.30"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
+APP_VERSION = "1.4.31"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
 
 # 화면 해상도 설정
 SCREEN_WIDTH = 1366
@@ -146,6 +146,9 @@ WEEKLY_MUTATORS = (
     {"id": "perfect", "name": "퍼펙트 폭격", "desc": "퍼펙트 클리어 공격 2배 (20줄)", "perfect_attack": 20},
     {"id": "fog", "name": "안개 속", "desc": "NEXT 블록이 1개만 보임", "next_visible": 1},
     {"id": "rush", "name": "후반 가속", "desc": "공격력 증폭이 2분부터 시작", "escalation_start": 120.0},
+    {"id": "heavy", "name": "무거운 전장", "desc": "쓰레기 줄이 1.5배", "rules": {"garbage": "heavy"}},      # rules: 커스텀 규칙과 같은 키를 쓰되 기록은 그대로 남음
+    {"id": "swift", "name": "빠른 낙하", "desc": "블록이 더 빨리 떨어짐", "rules": {"gravity": "fast"}},
+    {"id": "nohold", "name": "홀드 금지", "desc": "홀드를 쓸 수 없음", "no_hold": True},
 )
 
 

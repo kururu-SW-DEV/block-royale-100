@@ -60,6 +60,7 @@ TAB_NAV = {
              ("matchlog", "matchlog_toggle", "matchlog=off", "matchlog=on"),
              ("ghost", "ghost_toggle", "ghost=off", "ghost=on"),
              ("skyline", "skyline_toggle", "skyline=off", "skyline=on"),
+             ("flash", "flash_toggle", "flash=off", "flash=on"),
              ("errlog", "open_errlog", None, None)],
     "general": [("fs", "toggle_fs", "fs=window", "fs=full"), ("res", "res_next", "res_prev", "res_next"),
                 ("mini", "mini_detail", "mini_detail=detailed", "mini_detail=simple"),
@@ -112,6 +113,7 @@ HELP = {
     "key_hints": "게임 화면 아래의 조작 키 안내 바입니다. '처음 10판'은 익숙해지면 저절로 사라지고, '끔'은 화면이 더 넓어 보입니다. (T 설정/ESC는 그대로 사용 가능)",
     "announcer": "쿼드·T-스핀·콤보·퍼펙트 클리어·TOP 10·결승·골든 타깃 같은 큰 순간에 짧은 로봇 목소리가 외칩니다. 합성한 소리라 발음은 어설프며, 기본은 꺼짐입니다. 효과음이 꺼져 있으면 나오지 않습니다.",
     "warn": "피격 경보음과 위기 때 나는 심장 박동 소리만 따로 줄이거나 끕니다. 효과음 음량에는 영향이 없습니다.",
+    "flash": "큰 순간(쿼드, 퍼펙트 클리어, K.O. 등)에 보드가 하얗게 번쩍이는 효과입니다. 화면 흔들림 설정과 따로 끌 수 있어서, 흔들림은 켜 두고 번쩍임만 끌 수도 있습니다.",
     "skyline": "켜면 메인 보드에 쌓인 블록의 윗면을 따라 밝은 선이 이어져 지형의 높낮이와 구멍 위치가 한눈에 보입니다. 기본은 꺼짐이며, 줄이 내려앉는 순간에는 잠시 숨습니다.",
     "block_skin": "게임 화면 블록의 모양을 바꿉니다. 색은 위의 '블록 색상' 설정을 따르며, 로고와 미니 보드는 그대로입니다.",
     "bgm": "배경음악 켜기/끄기와 음량. 생존자가 줄수록(100인 → 50인 → 20인) 곡이 더 긴박해집니다.",
@@ -138,7 +140,7 @@ HELP = {
 # 탭별 '기본값으로' 대상 설정 키
 TAB_DEFAULT_KEYS = {
     "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake", "language"],
-    "help": ["match_log", "ghost_race", "board_skyline"],
+    "help": ["match_log", "ghost_race", "board_skyline", "screen_flash"],
     "general": ["fullscreen", "resolution", "mini_detail", "color_mode", "text_size", "block_skin", "key_hints"],
     "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume", "warn_volume", "announcer"],
     "keys": ["gamepad"],
@@ -489,6 +491,13 @@ class SettingsMixin:
                 self.sound_mgr.play('rotate')
                 self.settings.set("board_skyline", new)
                 self.renderer.skyline = new
+        elif btn_id in ("flash=on", "flash=off", "flash_toggle"):
+            cur = bool(self.settings.get("screen_flash", True))
+            new = (btn_id.endswith("=on")) if "=" in btn_id else (not cur)
+            if new != cur:
+                self.sound_mgr.play('rotate')
+                self.settings.set("screen_flash", new)
+                self.apply_gameplay_options()
         elif btn_id in ("ghost=on", "ghost=off", "ghost_toggle"):
             cur = bool(self.settings.get("ghost_race", False))
             new = (btn_id.endswith("=on")) if "=" in btn_id else (not cur)
@@ -625,13 +634,14 @@ class SettingsMixin:
         elif self._s_hover(rect):
             pygame.draw.rect(self.screen, COL_ROW_HOVER, rect, border_radius=10)
         if sub:
-            self._t(label, self.font_row, COL_TEXT, rect.x + 22, rect.y + 8)
+            compact = h <= 46                                   # 낮은 줄(기타 탭 8줄)은 제목/보조 줄을 위로 붙여 아래 구분선과 겹치지 않게
+            self._t(label, self.font_row, COL_TEXT, rect.x + 22, rect.y + (5 if compact else 8))
             from i18n import tr
             sub = tr(sub)                                       # 번역한 글자로 길이를 재고 줄임 (자른 한국어는 번역표와 맞지 않으므로)
-            max_sub = 470                                       # 오른쪽 컨트롤과 겹치지 않게 긴 보조 줄은 줄임표로 (글자 크기 '크게'에서도)
+            max_sub = 540                                       # 오른쪽 컨트롤과 겹치지 않게 긴 보조 줄은 줄임표로 (글자 크기 '크게'에서도)
             while len(sub) > 4 and self.font_help.size(sub)[0] > max_sub:
                 sub = sub[:-2].rstrip(" ,·") + "…"
-            self._t(sub, self.font_help, sub_col or COL_SUB, rect.x + 22, rect.y + 32)
+            self._t(sub, self.font_help, sub_col or COL_SUB, rect.x + 22, rect.y + (26 if compact else 32))
         else:
             self._t(label, self.font_row, COL_TEXT, rect.x + 22, rect.centery, "midleft")
         pygame.draw.line(self.screen, (32, 42, 68), (rect.x + 12, rect.bottom), (rect.right - 12, rect.bottom), 1)
@@ -713,7 +723,7 @@ class SettingsMixin:
     def _render_tab_match(self):
         y = TOP
         lang = self.settings.get("language", "ko")
-        self._s_row("language", y, 52, "언어 / Language", "The whole UI switches language; a few names (e.g. in saved data) stay as they were" if lang == "en" else "화면의 글이 모두 바뀝니다 (저장된 데이터 속 이름 등 일부는 그대로)")
+        self._s_row("language", y, 52, "언어 / Language", "The whole UI switches language (some saved names stay as they were)" if lang == "en" else "화면의 글이 모두 바뀝니다 (저장된 데이터 속 이름 등 일부는 그대로)")
         self._s_seg([("lang=ko", "한국어"), ("lang=en", "English")], "lang=" + lang, RIGHT, y + 26)
         y += 52
         # 참가 인원
@@ -771,7 +781,7 @@ class SettingsMixin:
         if not editing:
             self._t("클릭해서 수정", self.font_tiny, COL_SUB, box.right - 12, box.centery, "midright")
         if not ini_edit:
-            self._t("이니셜", self.font_tiny, COL_SUB, ini_box.centerx, ini_box.y - 2, "midbottom")
+            self._t("이니셜", self.font_tiny, COL_SUB, ini_box.x - 10, ini_box.centery, "midright")      # 칸 왼쪽에 (위에 두면 줄 경계선과 겹쳐 보임)
         y += 52
         # 이름 색
         self._s_row("color", y, 52, "이름 색")
@@ -787,34 +797,36 @@ class SettingsMixin:
         done_ids = self.stats_mgr.achievements_done()
         cur_title = self.settings.get("title", "")
         title_name = next((a[1] for a in __import__("stats_manager").ACHIEVEMENTS if a[0] == cur_title and cur_title in done_ids), "없음")
-        self._s_row("title", y, 50, "칭호", f"달성한 업적 {len(done_ids)}개 중에서 선택 (메인 메뉴 프로필에 표시)")
-        self._s_cycler("title_prev", "title_next", title_name, RIGHT, y + 25, enabled=bool(done_ids), color=C_GOLD)
-        y += 50
-        self._s_row("rules", y, 50, "규칙 요약 보기", "공격표 · 배지 · 역습 보너스 · 조준 모드 (게임 어디서든 F1)")
-        self._s_btn("open_rules", pygame.Rect(RIGHT - 200, y + 7, 200, 36), "규칙 카드 열기", True)
-        y += 50
+        self._s_row("title", y, 46, "칭호", f"달성한 업적 {len(done_ids)}개 중에서 선택 (메인 메뉴 프로필에 표시)")
+        self._s_cycler("title_prev", "title_next", title_name, RIGHT, y + 22, enabled=bool(done_ids), color=C_GOLD)
+        y += 46
+        self._s_row("rules", y, 46, "규칙 요약 보기", "공격표 · 배지 · 역습 보너스 · 조준 모드 (게임 어디서든 F1)")
+        self._s_btn("open_rules", pygame.Rect(RIGHT - 200, y + 5, 200, 36), "규칙 카드 열기", True)
+        y += 46
         tips_on = bool(self.settings.get("tips_replay"))                  # 켜 두면 다음 경기부터 팁이 다시 나옴 (다 본 뒤 저절로 꺼짐)
-        self._s_row("tips_replay", y, 50, "도움말 팁 다시 보기", "다음 경기부터 팁과 첫 판 설명을 다시 표시 (켠 뒤 다시 누르면 끔)" if tips_on else "첫 판 설명과 상황별 팁을 다음 경기부터 다시 표시")
-        self._s_btn("tips_replay", pygame.Rect(RIGHT - 200, y + 7, 200, 36), "켜짐 · 누르면 끔" if tips_on else "다시 보기", True, color=C_GREEN if tips_on else None)
-        y += 50
+        self._s_row("tips_replay", y, 46, "도움말 팁 다시 보기", "다음 경기부터 팁과 첫 판 설명을 다시 표시 (켠 뒤 다시 누르면 끔)" if tips_on else "첫 판 설명과 상황별 팁을 다음 경기부터 다시 표시")
+        self._s_btn("tips_replay", pygame.Rect(RIGHT - 200, y + 5, 200, 36), "켜짐 · 누르면 끔" if tips_on else "다시 보기", True, color=C_GREEN if tips_on else None)
+        y += 46
         log_on = bool(self.settings.get("match_log", False))
-        self._s_row("matchlog", y, 50, "경기 기록 저장", "테스트용: 경기마다 JSON 기록을 남김")
-        self._s_seg([("matchlog=off", "끔"), ("matchlog=on", "켜기")], "matchlog=on" if log_on else "matchlog=off", RIGHT, y + 25)
-        y += 50
+        self._s_row("matchlog", y, 46, "경기 기록 저장", "테스트용: 경기마다 JSON 기록을 남김")
+        self._s_seg([("matchlog=off", "끔"), ("matchlog=on", "켜기")], "matchlog=on" if log_on else "matchlog=off", RIGHT, y + 22)
+        y += 46
         gh_on = bool(self.settings.get("ghost_race", False))
         from replay import load_replays_cached, best_replay
         _b = best_replay(load_replays_cached(), mode="battle")
-        self._s_row("ghost", y, 50, "고스트 레이스", (f"내 최고 판({_b['score']:,}점)이 경기 옆에 함께 달립니다 (혼자 하는 경기)" if _b else "내 최고 판이 경기 옆에 함께 달립니다 (아직 저장된 리플레이 없음)"))
-        self._s_seg([("ghost=off", "끔"), ("ghost=on", "켜기")], "ghost=on" if gh_on else "ghost=off", RIGHT, y + 25)
-        y += 50
+        self._s_row("ghost", y, 46, "고스트 레이스", (f"내 최고 판({_b['score']:,}점)이 경기 옆에 함께 달립니다 (혼자 하는 경기)" if _b else "내 최고 판이 경기 옆에 함께 달립니다 (아직 저장된 리플레이 없음)"))
+        self._s_seg([("ghost=off", "끔"), ("ghost=on", "켜기")], "ghost=on" if gh_on else "ghost=off", RIGHT, y + 22)
+        y += 46
         sky_on = bool(self.settings.get("board_skyline", False))
-        self._s_row("skyline", y, 50, "지형 윤곽선", "쌓인 블록 윗면을 따라 밝은 선을 그림 (메인 보드)")
-        self._s_seg([("skyline=off", "끔"), ("skyline=on", "켜기")], "skyline=on" if sky_on else "skyline=off", RIGHT, y + 25)
-        y += 50
-        self._s_row("errlog", y, 50, "오류 기록", "문제를 알릴 때 error.log를 함께 보내 주세요")
-        self._s_btn("open_errlog", pygame.Rect(RIGHT - 200, y + 7, 200, 36), "error.log 폴더 열기", True)
-        y += 50 + 10
-        self._t("F1: 규칙 요약  ·  T: 게임 중 설정  ·  M: 소리 켜고 끄기  ·  F11: 전체 화면", self.font_help, COL_SUB, IX + 22, y)
+        self._s_row("skyline", y, 46, "지형 윤곽선", "쌓인 블록 윗면을 따라 밝은 선을 그림 (메인 보드)")
+        self._s_seg([("skyline=off", "끔"), ("skyline=on", "켜기")], "skyline=on" if sky_on else "skyline=off", RIGHT, y + 22)
+        y += 46
+        fl_on = bool(self.settings.get("screen_flash", True))
+        self._s_row("flash", y, 46, "화면 번쩍임", "큰 순간에 보드가 하얗게 번쩍임 (화면 흔들림과 따로 끌 수 있음)")
+        self._s_seg([("flash=off", "끔"), ("flash=on", "켜기")], "flash=on" if fl_on else "flash=off", RIGHT, y + 22)
+        y += 46
+        self._s_row("errlog", y, 46, "오류 기록", "문제를 알릴 때 error.log를 함께 보내 주세요")
+        self._s_btn("open_errlog", pygame.Rect(RIGHT - 200, y + 5, 200, 36), "error.log 폴더 열기", True)
 
     def _render_tab_general(self):
         y = TOP

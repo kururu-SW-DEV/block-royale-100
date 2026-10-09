@@ -252,6 +252,7 @@ class NetworkManager:
         self.lobby_return = False      # (클라이언트) 호스트가 경기를 마치고 대기실로 돌아왔다는 통보를 받음
         self.roster = []               # (클라이언트) 호스트가 알려준 참가자 명단 [{id, name, color, host}]
         self.roster_target = 0         # (클라이언트) 호스트가 정한 대전 인원
+        self.session_scores = {}       # 같은 방에서 연달아 한 판들의 승점 {이름: 점수}: 호스트가 집계해 명단(ROSTER)에 선택 필드로 실어 보냄 (구버전은 무시)
         self.room_rules = {}           # (클라이언트) 호스트가 알려준 경기 규칙 {"diff": 봇 난이도, "mode": "battle"/"survival"} (대기실 표시용)
         self.match_difficulty = None   # (클라이언트) 호스트가 시작 신호에 실어 보낸 봇 난이도 (전적 기록용). 없으면 None
         self.my_color = 0              # 내 이름 색상 번호 (JOIN 요청 / 호스트 채팅에 사용)
@@ -650,12 +651,24 @@ class NetworkManager:
             out.append({"id": c["id"], "name": c["name"], "color": c.get("color", 0), "host": False})
         return out
 
+    SESSION_POINTS = {1: 10, 2: 6, 3: 4}      # 판 순위별 승점 (K.O. 1명당 +1)
+
+    def host_add_session_scores(self, rows):
+        """(호스트) 끝난 판의 사람 참가자 순위표 [{name, rank, ko, is_ai}]로 세션 승점을 올림"""
+        for r in rows:
+            if r.get("is_ai"):
+                continue
+            pts = self.SESSION_POINTS.get(int(r.get("rank", 0)), 0) + int(r.get("ko", 0))
+            nm = str(r.get("name", "?"))
+            self.session_scores[nm] = min(9999, self.session_scores.get(nm, 0) + pts)
+
     def host_broadcast_roster(self):
         """(호스트) 참가자 전원에게 전체 명단과 대전 인원을 전송 (대기실에서 모두가 같은 명단을 보도록)"""
         if not self.running or self.mode != "HOST" or not self.clients:
             return
         self._host_broadcast({"type": MsgType.ROSTER, "players": self.roster_list(), "target": self.room_settings.get("target", 0),
-                              "diff": self.room_settings.get("diff"), "mode": self.room_settings.get("mode"), "team": bool(self.room_settings.get("team"))})
+                              "diff": self.room_settings.get("diff"), "mode": self.room_settings.get("mode"), "team": bool(self.room_settings.get("team")),
+                              "scores": dict(list(self.session_scores.items())[:100])})
 
     def unique_name(self, base, exclude_addr=None, exclude_host=False):
         """(호스트) 다른 참가자/호스트와 겹치지 않는 이름 (겹치면 #번호를 붙임). exclude_*: 이름을 바꾸는 본인은 제외"""
@@ -811,6 +824,7 @@ class NetworkManager:
         self.lobby_return = False
         self.roster = []
         self.roster_target = 0
+        self.session_scores = {}
         self.room_rules = {}
         self.match_difficulty = None
         self.chat_log.clear()
@@ -956,6 +970,10 @@ class NetworkManager:
                         rules["mode"] = msg["mode"]
                     rules["team"] = bool(msg.get("team", False))
                     self.room_rules = rules
+                    sc = msg.get("scores")
+                    if isinstance(sc, dict):                                    # 세션 승점: 이름은 정리하고 점수는 0~9999로 제한
+                        self.session_scores = {_sanitize_name(k, "?"): max(0, min(9999, v)) for k, v in list(sc.items())[:100]
+                                               if isinstance(v, int) and not isinstance(v, bool)}
 
                 elif mtype == MsgType.PROFILE_ACK:
                     self.profile_ack = {"name": _sanitize_name(msg.get("name"), "Player"), "color": _sanitize_color(msg.get("color"))}
@@ -1177,6 +1195,7 @@ class NetworkManager:
                 pass
 
     def stop(self):
+        self.session_scores = {}                       # 방을 떠나면 세션 승점도 초기화
         was_host_running = self.running and self.mode == "HOST"
         host_port = self.host_port
         # 나가기 통보: 호스트는 참가자 전원에게 방이 닫혔음을, 클라이언트는 호스트에게 나갔음을 알림

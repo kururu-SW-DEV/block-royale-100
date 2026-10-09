@@ -279,7 +279,7 @@ class BlockEngine:
 
     def hold(self):
         """홀드 기능 (1피스당 1회)"""
-        if self.game_over or not self.can_hold:
+        if self.game_over or not self.can_hold or getattr(self, "hold_disabled", False):
             return False
 
         prev_current = self.current_piece

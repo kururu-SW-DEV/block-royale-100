@@ -88,6 +88,7 @@ class BattleRoyaleMatch:
         self.clutch_times = []                         # 내 위기 탈출 경기 시각
         self.bounty_id = None                          # 현상금 봇 (처치하면 보너스)
         self.bounty_claimed = False
+        self.bounty_until = 0.0                        # 현재 골든 타깃의 만료 시각(경기 시간 elapsed 기준). 처치/만료/다른 봇이 먼저 잡으면 곧바로 다음 봇으로 넘어감
         self.net_unstable = set()                      # (호스트) 신호가 끊긴 참가자 ID: 미니 카드에 '연결 불안정' 표시
         self.net_unstable_self = False                 # (참가자) 호스트에게서 몇 초째 신호가 없음: 화면 아래에 안내
         self.custom_rules = None                       # 커스텀 규칙(쓰레기 배율/낙하 속도/배지). 기본값이 아닐 때만 dict, 이 경기는 전적/점수표/경험치에 기록하지 않음
@@ -148,6 +149,9 @@ class BattleRoyaleMatch:
         self._danger_since = None         # 스택이 위험 높이 이상이 된 경기 시각 (아니면 None)
         self._last_clutch = -1e9          # 마지막으로 보상을 준 경기 시각
         self._last_beat = -1e9            # 마지막 위기 박동음 재생 시각
+        self.prediction_id = None          # 탈락 뒤 '우승 예측'으로 고른 생존자 (처음엔 나를 탈락시킨 상대, 관전 중 Y로 바꿈)
+        self.prediction_settled = False
+        self.prediction_reward = 0         # 예측 보상으로 받은 경험치 (TOP 3 +10, 우승 +30)
         self.local_killer_id = None       # 나를 탈락시킨 상대 (없으면 None: 자멸/시간 압박 등)
         self.timeline = []                # 1초마다 (경기 시각, 생존자 수, 내 스택 높이, 받을 공격) — 결과 화면 그래프용
         self._tl_t = 0.0
@@ -194,6 +198,12 @@ class BattleRoyaleMatch:
             return
         if "escalation_start" in m:
             self.ESCALATION_START = float(m["escalation_start"])      # 인스턴스 값으로 덮어씀 (클래스 값은 그대로)
+        if m.get("no_hold"):                                              # 홀드 금지: 나와 봇 모두 홀드를 못 씀
+            self.local_engine.hold_disabled = True
+            for p in self.players.values():
+                eng = getattr(p.get("bot"), "engine", None)
+                if eng is not None:
+                    eng.hold_disabled = True
         if "perfect_attack" in m:
             self.local_engine.perfect_clear_attack = int(m["perfect_attack"])
             for p in self.players.values():
@@ -301,7 +311,12 @@ class BattleRoyaleMatch:
     CUSTOM_GRAVITY = {"slow": 1.4, "normal": 1.0, "fast": 0.7}          # 낙하 간격에 곱함 (느리게 = 간격이 길어짐)
 
     def _custom(self, key, default=None):
-        return (self.custom_rules or {}).get(key, default)
+        if self.custom_rules and key in self.custom_rules:
+            return self.custom_rules[key]
+        mut_rules = (self.mutator or {}).get("rules")                 # 주간 변형 규칙(무거운 전장/빠른 낙하): 같은 키로 읽되 전적 기록은 막지 않음
+        if mut_rules and key in mut_rules:
+            return mut_rules[key]
+        return default
 
     def attack_multiplier(self):
         if self.ESCALATION_START is None or self.elapsed < self.ESCALATION_START:
@@ -433,6 +448,7 @@ class BattleRoyaleMatch:
                 rng = random.Random(int(self.daily) * 31 + 5) if (self.daily and str(self.daily).isdigit()) else random.Random()
                 self._bounty_rng = rng
                 self.bounty_id = rng.choice(sorted(cands))
+                self.bounty_until = self.BOUNTY_SECS
 
     def take_over_with_bot(self, pid, snap=None):
         """(호스트) 연결이 끊긴 참가자의 자리를 봇이 이어받음: 마지막 보드(스냅샷이 없으면 미니 보드 격자)에서 계속 플레이. 이미 탈락했으면 아무 일도 안 함"""
@@ -914,11 +930,11 @@ class BattleRoyaleMatch:
                 agg["lines"] += lines                                                  # 1초 안에 연달아 맞으면 한 줄로 합쳐 토스트 칸을 아낌
                 agg["senders"].add(from_id)
                 n_s = len(agg["senders"])
-                agg["ft"]["text"] = f"[피격 경고] {n_s}명 +{agg['lines']}줄 공격 받음" if n_s > 1 else f"[피격 경고] +{agg['lines']}줄 공격 받음 (보낸이: {attacker_name})"
+                agg["ft"]["text"] = f"◀ +{agg['lines']}  ({n_s}명)" if n_s > 1 else f"◀ +{agg['lines']}  {attacker_name}"
                 agg["ft"]["birth"] = now_t
                 agg["t"] = now_t
             else:
-                self.add_floating_text(f"[피격 경고] +{lines}줄 공격 받음 (보낸이: {attacker_name})", (255, 75, 75), duration=2.4, size=22, category="alert")
+                self.add_floating_text(f"◀ +{lines}  {attacker_name}", (255, 75, 75), duration=2.4, size=24, category="alert")      # 짧게: 빠른 교전에서도 읽히게 (자세한 내용은 결과 화면에)
                 self._hit_agg = {"t": now_t, "lines": lines, "senders": {from_id}, "ft": self.floating_texts[-1]}
             
         # 2. 로컬에서 관리하는 AI 봇이 피격 대상인 경우
@@ -972,6 +988,13 @@ class BattleRoyaleMatch:
 
         if victim_id == self.local_player_id:
             self.local_killer_id = killer_id if (killer_id in self.players and killer_id != victim_id) else None
+            if self.prediction_id is None and self.attacks_enabled and not self.practice and not (self.net_mgr and self.net_mgr.mode != "NONE"):
+                if self.local_killer_id is not None and self.players[self.local_killer_id]["is_alive"]:
+                    self.prediction_id = self.local_killer_id                        # 기본 예측: 나를 탈락시킨 상대 (복수 대신 응원)
+                else:
+                    cands = [q for q, pp in self.players.items() if pp["is_alive"] and q != self.local_player_id]
+                    if cands:
+                        self.prediction_id = max(cands, key=lambda q: self.badge_points(q))
             self._record_timeline(final=True)
             self.freeze_local_stats()
             self.local_is_alive = False
@@ -1015,6 +1038,7 @@ class BattleRoyaleMatch:
                 self._ko_events.append({"due": time.time() + 0.7 + 0.1 * gain, "n": self.local_ko_count, "lvl_up": new_lvl > old_lvl, "lvl": new_lvl, "pct": new_pct})
                 if gold:
                     self.bounty_claimed = True
+                    self.bounty_until = self.elapsed + self.BOUNTY_GAP                      # 잠깐 뒤 다음 골든 타깃
                     self.bounty_kills += 1
                     self.add_floating_text(f"★ 현상금 사냥 성공! {victim_name} ★", (255, 200, 60), duration=3.0, size=30, category="action", tier=2)
                     if self.sound_mgr:
@@ -1467,7 +1491,50 @@ class BattleRoyaleMatch:
                     self.sound_mgr.play('vo_top10')
         self._check_rank_records(n)
 
-    def _new_golden_target(self):
+    BOUNTY_SECS = 75.0                 # 골든 타깃 제한 시간(초): 1페이즈가 경기의 절반(약 4분)이라 한 명만 오래 걸려 있지 않게 돌려 가며 목표를 줌
+    BOUNTY_MAX_REWARDS = 5
+    BOUNTY_GAP = 4.0                   # 처치한 뒤 다음 골든 타깃이 나오기까지(초)
+
+    PREDICTION_TOP3_XP, PREDICTION_WIN_XP = 10, 30
+
+    def set_prediction(self, pid):
+        """탈락 뒤 관전 중 우승 예측 대상을 바꿈 (살아 있는 상대만). 바꿨으면 True"""
+        p = self.players.get(pid)
+        if self.local_is_alive or not p or not p["is_alive"] or pid == self.local_player_id or self.prediction_settled:
+            return False
+        if not self.attacks_enabled or self.practice or (self.net_mgr and self.net_mgr.mode != "NONE"):
+            return False
+        self.prediction_id = pid
+        return True
+
+    def prediction_xp(self):
+        """경기가 끝났을 때 예측 보상 경험치 (TOP 3 +10, 우승 +30, 아니면 0)"""
+        p = self.players.get(self.prediction_id) if self.prediction_id else None
+        if not p:
+            return 0
+        rank = p.get("rank", 0)
+        if rank == 1:
+            return self.PREDICTION_WIN_XP
+        return self.PREDICTION_TOP3_XP if 0 < rank <= 3 else 0
+
+    def bounty_secs_left(self):
+        """현재 골든 타깃의 남은 시간(초). 골든 타깃이 없거나 이미 잡았으면 None"""
+        if self.bounty_id is None or self.bounty_claimed:
+            return None
+        return max(0.0, self.bounty_until - self.elapsed)
+
+    def _update_bounty(self):
+        """골든 타깃 순환: 처치(잠깐 쉬었다가)/만료/다른 봇이 먼저 탈락시킨 경우 새 봇을 지정"""
+        if self.bounty_id is None or not self.attacks_enabled or self.practice:
+            return
+        target = self.players.get(self.bounty_id)
+        if self.bounty_claimed:
+            if self.elapsed >= self.bounty_until and self.bounty_kills < self.BOUNTY_MAX_REWARDS:      # 한 판에 받는 현상금 경험치는 최대 5번 (페이즈 전환의 새 타깃은 별도)
+                self._new_golden_target(rotate=True)
+        elif target is None or not target["is_alive"] or self.elapsed >= self.bounty_until:
+            self._new_golden_target(rotate=True)                                  # 다른 봇이 먼저 잡았거나 시간이 다 됨
+
+    def _new_golden_target(self, rotate=False):
         """2·3단계가 시작될 때 살아 있는 봇 한 명을 새 골든 타깃으로 지정 (현재 타깃을 못 잡았어도 교체). 처치하면 경험치만 +30, 공격력 보너스 없음"""
         if self.bounty_id is None or not self.attacks_enabled or self.practice:
             return                                                  # 현상금 봇이 없는 경기(네트워크/연습/서바이벌)는 골든 타깃도 없음
@@ -1476,7 +1543,8 @@ class BattleRoyaleMatch:
             return
         self.bounty_id = self._bounty_rng.choice(cands)
         self.bounty_claimed = False
-        self.add_floating_text("★ 새 골든 타깃 지정! 금빛 $ 카드를 노리세요 ★", (255, 210, 90), duration=2.6, size=22, category="action", tier=1)
+        self.bounty_until = self.elapsed + self.BOUNTY_SECS
+        self.add_floating_text("★ 골든 타깃이 바뀌었어요! 금빛 $ 카드를 노리세요 ★" if rotate else "★ 새 골든 타깃 지정! 금빛 $ 카드를 노리세요 ★", (255, 210, 90), duration=2.6, size=22, category="action", tier=1)
         if self.sound_mgr:
             self.sound_mgr.play('vo_golden')
 
@@ -1651,6 +1719,7 @@ class BattleRoyaleMatch:
         now = time.time()
         self.elapsed += dt
         self._announce_escalation()
+        self._update_bounty()
         
         # 플로팅 텍스트 수명 체크
         self.floating_texts = [ft for ft in self.floating_texts if now - ft["birth"] < ft["duration"]]
@@ -1744,7 +1813,7 @@ class BattleRoyaleMatch:
                     self.add_commentary(f"{self._short_name(self.local_player_id)}  {len(targets)}명에게 동시 포격! {shown_attack}줄", (255, 170, 90), mine=True)
                     self.trigger_screen_shake(10.0)
                 
-                lbl = "[자동 반격]" if (self.local_target_mode == "ATTACKERS" and target_p.get("target_id") == self.local_player_id) else "[공격 발송]"
+                lbl = "↩" if (self.local_target_mode == "ATTACKERS" and target_p.get("target_id") == self.local_player_id) else "▶"      # ↩ 자동 반격 / ▶ 공격 발송 (글자 대신 기호로 짧게)
                 tags = []                                                  # 괄호 하나에 짧게: "(배지2 · 역습+3 · ×1.4)"
                 if badge_lvl > 0:
                     tags.append(f"배지{badge_lvl}")
@@ -1752,11 +1821,11 @@ class BattleRoyaleMatch:
                     tags.append(f"역습+{attacker_bonus}")
                 if mult > 1.0:
                     tags.append(f"×{mult:.1f}")                            # 후반 증폭이 걸린 상태임을 알림
-                bonus_str = f" ({' · '.join(tags)})" if tags else ""
+                bonus_str = f"  ({' · '.join(tags)})" if tags else ""
                 self.log_event("attack", to=target, lines=shown_attack, mult=round(mult, 2))
 
                 if len(targets) < 2:                             # 다중 포격은 위의 전용 알림만 표시 (중복 방지)
-                    self.add_floating_text(f"{lbl} +{shown_attack}줄 >> {target_name}{bonus_str}", (255, 130, 130), duration=2.4, size=22, category="attack")
+                    self.add_floating_text(f"{lbl} +{shown_attack}  {target_name}{bonus_str}", (255, 130, 130), duration=2.4, size=24, category="attack")
             elif not self.attacks_enabled:
                 self.total_attacks_sent += self.local_engine.garbage_to_send     # 서바이벌: 실제로 보내지는 않지만 만들어 낸 공격력은 APM에 반영
                 if self.practice:

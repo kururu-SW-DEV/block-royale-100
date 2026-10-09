@@ -173,6 +173,7 @@ DEFAULT_SETTINGS = {
     "title": "",                 # 칭호: 달성한 업적 id 중 하나(메인 메뉴 프로필에 표시), 비어 있으면 없음
     "drill_best": 0,             # 연습 모드 압박 드릴에서 가장 오래 버틴 시간(초)
     "tips_replay": False,        # 팁 다시 보기를 눌렀다면 True: 숙련자(10판 이상)에게도 아직 안 본 팁을 보여 줌 (다 보면 꺼짐)
+    "screen_flash": True,        # 큰 순간(쿼드/퍼펙트/K.O.)의 화면 번쩍임: 화면 흔들림 설정과 따로 끌 수 있음 (빛에 민감한 경우)
     "board_skyline": False,      # 메인 보드의 지형 윤곽선(쌓인 블록 윗면을 따라 밝은 선): 기본은 꺼짐
     "block_skin": "classic",     # 블록 모양: BLOCK_SKIN_OPTIONS 중 하나
     "match_log": False,          # 사람 테스트용 경기 로그를 저장할지 (경기마다 JSON 한 개, 기본 끔)

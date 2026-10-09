@@ -301,6 +301,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                     pass                                         # 알림 창이 떠 있는 동안 아래 화면의 호버/포커스가 바뀌지 않게 함
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
                     self.toggle_fullscreen()
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_F12 and self.text_focus is None:
+                    self._save_screenshot()                     # F12: 지금 화면을 PNG로 저장 (결과 화면/우승 화면을 친구에게 공유)
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_m and self.state != "JOIN_MENU" and self.text_focus is None and self.rebinding_action is None:
                     self.toggle_mute()
                 else:
@@ -353,6 +355,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
             if self._attract_on():
                 self._render_attract(dt)
             self.renderer.draw_transition()
+            self._draw_shot_msg()
             pygame.display.flip()
             
         self.settings.save()

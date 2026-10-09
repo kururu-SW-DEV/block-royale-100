@@ -169,10 +169,22 @@ class MenuMixin:
         self.sound_mgr.play('rotate')
         self._menu_flash = time.time()                     # 숫자가 바뀐 순간 잠깐 금색으로
 
+    def _menu_cycle_difficulty(self):
+        self.sound_mgr.play('rotate')
+        self.settings.cycle_bot_difficulty(1)
+        self.bot_difficulty = self.settings.get("bot_difficulty")
+        self._menu_flash = time.time()
+
     def _menu_activate(self, btn_id):
         """메인 메뉴 항목 실행 (키보드/마우스 공용)"""
         if btn_id == "toggle_sound":
             self.toggle_mute()
+            return
+        if btn_id in ("qp_minus", "qp_plus"):                # 빠른 시작 카드 안의 ‹ › : 인원 -1/+1 (게임을 시작하지 않음)
+            self._menu_adjust_players(-1 if btn_id == "qp_minus" else 1)
+            return
+        if btn_id == "qp_diff":                              # 빠른 시작 카드의 인원 · 난이도 글자: 봇 난이도 순환
+            self._menu_cycle_difficulty()
             return
         if btn_id == "toggle_fs":
             self.sound_mgr.play('move')
@@ -213,7 +225,6 @@ class MenuMixin:
             self._menu_kb = True
             shift = bool(getattr(event, "mod", 0) & pygame.KMOD_SHIFT)
             fid = self._menu_focus_id()
-            n = len(self.MENU_FOCUS_ORDER)
             if k == pygame.K_ESCAPE:
                 self._confirm_quit_app()
             elif k in (pygame.K_1, pygame.K_KP1):
@@ -258,10 +269,7 @@ class MenuMixin:
                     row = [b for b in (UTIL_ROW if fid in UTIL_ROW else MODE_ROW) if b in self._menu_visible_ids()]
                     self._set_menu_focus(row[(row.index(fid) + step) % len(row)])
             elif k == pygame.K_d:
-                self.sound_mgr.play('rotate')
-                self.settings.cycle_bot_difficulty(1)
-                self.bot_difficulty = self.settings.get("bot_difficulty")
-                self._menu_flash = time.time()
+                self._menu_cycle_difficulty()
         elif event.type == pygame.MOUSEMOTION:
             if getattr(event, "rel", (1, 1)) == (0, 0):
                 return                                         # 창 포커스 복귀/화면 전환 때 생기는 '움직이지 않은' 이벤트로 포커스가 바뀌지 않게
@@ -274,12 +282,17 @@ class MenuMixin:
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self._menu_kb = False
             self._menu_press = None
-            for bid, rect in self.menu_buttons.items():
+            for bid, rect in sorted(self.menu_buttons.items(), key=lambda kv: 0 if kv[0].startswith("qp_") else 1):      # 카드 안의 작은 버튼이 카드보다 먼저
                 if rect.collidepoint(event.pos):
                     self._menu_press = bid                    # 누른 순간은 눌림 표시만, 같은 버튼 위에서 뗄 때 실행
                     if bid in self.MENU_FOCUS_ORDER:
                         self._set_menu_focus(bid, sound=False)
                     break
+        elif event.type == pygame.MOUSEWHEEL:
+            r = self.menu_buttons.get("quick_play")
+            if r is not None and r.collidepoint(pygame.mouse.get_pos()) and getattr(event, "y", 0):
+                self._set_menu_focus("quick_play", sound=False)
+                self._menu_adjust_players(1 if event.y > 0 else -1)          # 빠른 시작 카드 위에서 휠: 인원 조절
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             press, self._menu_press = self._menu_press, None
             rect = self.menu_buttons.get(press) if press else None
@@ -395,11 +408,14 @@ class MenuMixin:
                 pygame.draw.line(self.screen, tri, (pcx - 5, pcy - 8 + i), (pcx - 5 + int(15 * (1 - abs(i - 8) / 8)), pcy - 8 + i), 2)
             self._t(title, self.font_hero, C_TEXT, tx, dr.y + 20)
             flash = (time.time() - self._menu_flash) < 0.35
-            vr = self._t(status, self.font_small, C_GOLD if flash else _mix(COL_SUB, C_TEXT, t), tx + (16 if t > 0.5 else 0), dr.y + 64, "midleft")
-            if t > 0.5:                                      # 포커스: 좌우로 인원을 바꿀 수 있다는 ‹ › 표시
-                cy = vr.centery
-                pygame.draw.lines(self.screen, accent, False, [(vr.x - 9, cy - 5), (vr.x - 14, cy), (vr.x - 9, cy + 5)], 2)
-                pygame.draw.lines(self.screen, accent, False, [(vr.right + 9, cy - 5), (vr.right + 14, cy), (vr.right + 9, cy + 5)], 2)
+            vr = self._t(status, self.font_small, C_GOLD if flash else _mix(COL_SUB, C_TEXT, t), tx + 16, dr.y + 64, "midleft")
+            cy = vr.centery                                  # ‹ › 는 클릭/휠로 인원을 바꾸는 버튼, 글자(인원 · 난이도)를 누르면 봇 난이도가 바뀜 (D 키와 같음)
+            ac = _mix(COL_HINT, accent, t)
+            pygame.draw.lines(self.screen, ac, False, [(vr.x - 9, cy - 5), (vr.x - 14, cy), (vr.x - 9, cy + 5)], 2)
+            pygame.draw.lines(self.screen, ac, False, [(vr.right + 9, cy - 5), (vr.right + 14, cy), (vr.right + 9, cy + 5)], 2)
+            self.menu_buttons["qp_minus"] = pygame.Rect(vr.x - 34, vr.y - 8, 34, vr.h + 16)
+            self.menu_buttons["qp_plus"] = pygame.Rect(vr.right, vr.y - 8, 34, vr.h + 16)
+            self.menu_buttons["qp_diff"] = pygame.Rect(vr.x, vr.y - 8, vr.w, vr.h + 16)
             return
         self._t(title, font, C_TEXT, tx, dr.y + 12)
         if status:                                           # 상태 한 줄 (글자가 길면 한 단계 작은 글꼴, 그래도 모자라면 숨김)
@@ -501,7 +517,7 @@ class MenuMixin:
         # 3. 주 행동 + 카테고리 두 묶음 (함께하기 2장 · 혼자하기 3장, 카드 칸은 같은 폭/끝선)
         x0, w = self.COL_X, self.COL_W
         self._menu_card("quick_play", (x0, y0, w, 88), "quick", C_ACCENT, "빠른 시작", summary, COL_SUB, 0, hero=True)
-        pad, gap, ch_, head = 0, 12, 72, 0                 # 카테고리 틀/이름 없이 카드만 두 줄 (함께하기 2장 · 혼자하기 3장)
+        gap, ch_, head = 12, 72, 0                 # 카테고리 틀/이름 없이 카드만 두 줄 (함께하기 2장 · 혼자하기 3장)
         fh = ch_
         ix, iw = x0, w
         y1 = y0 + 88 + 12
@@ -523,8 +539,9 @@ class MenuMixin:
         cap, ccol = CAPTIONS.get(fid, ""), COL_SUB
         if fid == "quick_play":
             nxt = None if atk_off else next((d for d in LADDER if d not in self.stats_mgr.ladder_cleared()), None)
-            if self.stats_mgr.data.get("total_games", 0) == 0:
-                cap, ccol = "처음이라면 여기서 시작하세요", C_GREEN
+            ob = self.stats_mgr.onboarding_next()
+            if ob is not None:                                       # 입문 미션: 처음 하는 사람이 다음에 할 일 한 가지를 순서대로
+                cap, ccol = f"입문 미션 {ob[0]}/{ob[1]} · {ob[2]}", C_GREEN
             elif nxt:                                                # 보이지 않던 보상(난이도 사다리 ★)을 알려 줌
                 cap, ccol = f"★ 다음 도전: {LADDER_NAMES[nxt]} 봇 {LADDER_MIN_PLAYERS}인↑에서 {LADDER_RANK}위 안", C_GOLD
         elif fid == "toggle_sound":
@@ -536,6 +553,8 @@ class MenuMixin:
             for line in self._wrap_text(cap, self.font_help, w)[:2]:
                 self._t(line, self.font_help, ccol, cx, y, "midtop")
                 y += 20
+            if fid == "quick_play":                              # 인원 · 난이도를 바꾸는 방법 (D 키는 전에는 화면 어디에도 안내가 없었음)
+                self._t("← → 인원  ·  D 난이도  ·  클릭/휠도 가능" if not self.renderer.pad_ui else "← → 인원", self.font_tiny, COL_HINT, cx, y + 2, "midtop")
 
         # 5. 하단 줄: 왼쪽 프로필, 가운데 버전, 오른쪽 전적 · 설정 · 소리 · 전체 화면 · 게임 종료
         self._menu_profile()

@@ -58,6 +58,8 @@ class GameMixin:
                 else:
                     self.match.practice_inject_garbage(8 if (event.mod & pygame.KMOD_SHIFT) else 4)
                     self.match._play_hit_alarm(8 if (event.mod & pygame.KMOD_SHIFT) else 4)
+                    self.stats_mgr.mark_onboarding("practice_g")
+                    self._check_onboarding()
                 return
             # 시작 카운트다운 중에는 조작 키를 받지 않음 (ESC만 허용)
             if self.match.countdown_left() > 0 and event.key != pygame.K_ESCAPE:
@@ -138,6 +140,12 @@ class GameMixin:
                         self.match.cycle_spectate_target(1)
                         self.sound_mgr.play('move')
                         return
+                    elif event.key == pygame.K_y and self.net_mgr.mode == "NONE":
+                        if self.match.set_prediction(self.match.spectate_target_id):          # Y: 지금 보는 상대를 우승 예측으로 (TOP 3 +10 XP, 우승 +30 XP)
+                            nm = self.match.players[self.match.prediction_id]["name"]
+                            self.match.add_floating_text(f"우승 예측: {nm}", (255, 225, 110), duration=2.2, size=22, category="action")
+                            self.sound_mgr.play('rotate')
+                        return
                     elif event.key in (pygame.K_s, pygame.K_PAGEUP):         # 패드: LB = 결과 화면
                         self.match.is_spectating = False
                         self.sound_mgr.play('move')
@@ -188,6 +196,11 @@ class GameMixin:
                         if time.time() < self.result_lock_until:      # 탈락 직후 하드드롭 연타로 결과 화면이 닫히는 것 방지
                             return
                         self._activate_result_focus()
+                        return
+                    elif event.key in (pygame.K_v, pygame.K_PAGEUP) and getattr(self, "killcam", None) is not None and self.net_mgr.mode == "NONE":
+                        self.killcam_on = not self.killcam_on                  # V(패드 LB): 탈락 직전 8초를 작은 창에서 반복 재생
+                        self.killcam.seek(self.killcam_start)
+                        self.sound_mgr.play('move')
                         return
                     elif event.key == pygame.K_ESCAPE:
                         if time.time() < self.result_lock_until:
@@ -261,9 +274,11 @@ class GameMixin:
                 mode = self.match.cycle_target_mode()
                 self.settings.set("target_mode", mode, autosave=False)          # 조작 중에는 디스크에 쓰지 않음 (메뉴로 나갈 때/종료할 때 저장)
                 self.sound_mgr.play('rotate')
+                self._announce_target_mode(mode)
             elif event.key in self.TARGET_NUM_KEYS and not self.settings.is_bound_key(event.key, ACTION_NAMES):
                 self.settings.set("target_mode", self.match.set_target_mode(TARGET_MODES[self.TARGET_NUM_KEYS[event.key]]), autosave=False)      # 1~5: 자동/K.O./반격/배지/랜덤 바로 선택 (다음 경기에도 유지)
                 self.sound_mgr.play('rotate')
+                self._announce_target_mode(self.match.local_target_mode)
             elif event.key == pygame.K_ESCAPE:
                 if self.net_mgr.mode == "NONE" and not self.is_paused and not self.match.match_finished and self.match.local_is_alive:
                     self.is_paused = True
@@ -629,6 +644,39 @@ class GameMixin:
         except Exception as e:
             print(f"[MatchLog] 저장 실패: {e}")
 
+    KILLCAM_SECS = 8.0
+
+    def _update_killcam(self, dt):
+        """결과 창의 되감기 재생 진행 (끝나면 처음 지점으로 돌아가 반복)"""
+        kc = getattr(self, "killcam", None)
+        self.renderer.killcam = kc if (kc is not None and getattr(self, "killcam_on", False)) else None
+        self.renderer.killcam_available = kc is not None and self.net_mgr.mode == "NONE"
+        if kc is None or not getattr(self, "killcam_on", False):
+            return
+        kc.update(min(dt, 0.1))
+        if kc.finished:
+            kc.seek(self.killcam_start)
+
+    def _check_onboarding(self):
+        """입문 미션을 새로 끝냈으면 보상(경험치)을 주고 알림. 결과 화면에도 칩으로 보이게 match에 기록"""
+        from stats_manager import ONBOARDING_XP
+        done = self.stats_mgr.claim_onboarding()
+        for text in done:
+            if self.match is not None:
+                self.match.onboarding_done = list(getattr(self.match, "onboarding_done", [])) + [text]
+                if self.match.local_is_alive:
+                    self.match.add_floating_text(f"★ 입문 미션 완료! {text} (+{ONBOARDING_XP} XP)", (255, 225, 110), duration=3.2, size=22, category="action", tier=2)
+        return done
+
+    def _announce_target_mode(self, mode):
+        """조준 모드를 키/패드로 바꾼 직후 그 모드의 뜻을 한 줄로 알려 줌 (설명은 칩에 마우스를 올려야만 보였음)"""
+        from ui_renderer import TARGET_MODE_HELP
+        self.stats_mgr.mark_onboarding("aim")
+        self._check_onboarding()
+        text = TARGET_MODE_HELP.get(mode)
+        if text and self.match is not None and self.match.local_is_alive:
+            self.match.add_floating_text(text, (150, 220, 255), duration=3.2, size=20, category="tip")
+
     def _play_rotate_sound(self):
         """회전음. T 블록이 T-스핀이 성립하는 자세가 되면 전용 소리로 알림 (눈으로 보지 않아도 스핀을 알 수 있게)"""
         eng = self.match.local_engine
@@ -763,6 +811,7 @@ class GameMixin:
         if self.match.match_finished or self.match.local_is_alive:
             self.match.spectate_speed = 1
         self._save_challenges()
+        self._update_killcam(dt)
         self._check_tips()
         if self.match.practice and self.match.drill_best > self.settings.get("drill_best", 0):
             self.settings.set("drill_best", int(self.match.drill_best), autosave=False)      # 최고 기록은 메뉴로 나갈 때 저장
@@ -789,6 +838,17 @@ class GameMixin:
                 self.sound_mgr.play_results_bgm()  # 대신 바로 순위표 곡을 켬
             else:
                 self.sound_mgr.play_defeat()
+        if (self.match.match_finished and self.net_mgr.mode == "HOST" and not getattr(self.match, "session_scored", False)
+                and not self.match.practice):
+            self.match.session_scored = True                                          # 같은 방의 판 결과를 세션 승점에 한 번만 더함
+            self.net_mgr.host_add_session_scores(self.match.standings())
+        if self.match.match_finished and not self.match.prediction_settled and self.match.prediction_id and not self.match.local_is_alive:
+            self.match.prediction_settled = True                                      # 경기가 끝났을 때 한 번만 정산
+            xp = self.match.prediction_xp()
+            if xp > 0:
+                self.match.prediction_reward = xp
+                self.stats_mgr.add_xp(xp)
+                self.stats_mgr.save()
         if self.match.match_finished and self.match.local_rank == 1 and not self.victory_played:
             self.victory_played = True
             self.result_lock_until = time.time() + 1.2 + (0 if self.match.practice else self.renderer.VICTORY_CEREMONY)      # 세리머니가 끝난 뒤에 순위표 입력을 받음
@@ -796,10 +856,18 @@ class GameMixin:
             
         rec = self.replay_rec
         if rec is not None and not rec.finished and (self.match.match_finished or not self.match.local_is_alive):
-            from replay import save_replay
+            from replay import save_replay, ReplayPlayer
             rank_r = self.match.local_rank if self.match.local_rank > 0 else self.match.alive_count + 1
-            save_replay(rec.finish(rank_r, self.match.total_players, self.match.local_ko_count, self.match.local_engine.score,
-                                   self.match.survival_seconds()))                          # 마지막 판 10개까지 replays.json에 보관
+            _rdata = rec.finish(rank_r, self.match.total_players, self.match.local_ko_count, self.match.local_engine.score,
+                                self.match.survival_seconds())
+            save_replay(_rdata)                                                              # 마지막 판 10개까지 replays.json에 보관
+            try:                                                                             # 결과 창의 '마지막 8초 되감기'(V): 방금 기록한 판의 끝부분을 반복 재생
+                self.killcam = ReplayPlayer(_rdata)
+                self.killcam_start = max(0.0, self.killcam.duration - self.KILLCAM_SECS)
+                self.killcam.seek(self.killcam_start)
+                self.killcam_on = False
+            except Exception:
+                self.killcam = None
         # 경기 종료/탈락 시 전적 통계 자동 갱신 (1회)
         if not self.match_recorded and not self.match.practice and not self.match.custom_rules and (self.match.match_finished or not self.match.local_is_alive):
             self.match_recorded = True
@@ -814,6 +882,8 @@ class GameMixin:
             from stats_manager import unlocked_skin_ids
             _skins_before = set(unlocked_skin_ids(self.stats_mgr.data))
             _prev_max_ko = int(self.stats_mgr.data.get("max_ko", 0))      # 이번 판 반영 전의 K.O. 개인 최고 (근접 실패 문구용)
+            from stats_manager import vs_usual_text
+            self.match.vs_usual = vs_usual_text(self.stats_mgr.data.get("recent_matches", []), final_rank, self.match.total_players, survival_sec)      # 이번 판 반영 전의 최근 10판과 비교
             _hl = self.match.highlights() if (self.match.attacks_enabled and not self.match.practice) else []
             self.match.new_records = self.stats_mgr.record_match(
                 rank=final_rank,
@@ -838,6 +908,7 @@ class GameMixin:
             _mode = "battle" if self.match.attacks_enabled else "survival"
             if getattr(self.match, "log_enabled", False):
                 self._save_match_log(final_rank)
+            self._check_onboarding()                                  # 이번 판으로 끝낸 입문 미션 (첫 경기/첫 K.O./50인 TOP 10)
             self.match.new_achievements = list(getattr(self.stats_mgr, "last_new_achievements", []))
             self.match.ladder_clear = self.stats_mgr.last_ladder_clear
             self.match.next_ladder = None

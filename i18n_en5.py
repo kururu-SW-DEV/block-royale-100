@@ -33,7 +33,7 @@ EXACT = {
     "완벽한 하루": "Perfect Day", "하루에 오늘의 도전 별 3개를 모두 받기": "Earn all 3 Daily Challenge stars in one day",
     "별 수집가": "Star Collector", "오늘의 도전 별(★) 누적 30개": "30 Daily Challenge stars (★) total",
     "별의 지배자": "Star Sovereign", "오늘의 도전 + 주간 변형 별 누적 100개": "100 stars total from Daily + Weekly challenges",
-    "변형 정복자": "Variant Conqueror", "주간 변형 규칙 네 가지 모두에서 별 1개 이상": "Earn a star in all four weekly variants",
+    "변형 정복자": "Variant Conqueror", "주간 변형 규칙 네 가지 이상에서 별 1개 이상": "Earn a star in four or more weekly variants",
     "주간 단골": "Weekly Regular", "주간 변형 별 누적 10개": "10 Weekly Variant stars total",
     "완벽한 한 주": "Perfect Weekly", "한 주에 주간 변형 별 3개를 모두 받기": "Earn all 3 Weekly Variant stars in one week",
     "콤보 장인": "Combo Artisan", "한 판에서 8연속 콤보": "8-chain combo in one match",
@@ -318,3 +318,50 @@ EXACT.update({"전적에 남지 않음": "Not recorded"})
 EXACT.update({"B2B (연쇄 1~3/4~7/8~)": "B2B (chain 1-3 / 4-7 / 8+)", "+1 / +2 / +3줄": "+1 / +2 / +3 lines",
               "처치 시 상대 배지 흡수": "Absorb victim's badges", })
 TEMPLATES.update({"K.O.의 절반 (최대 {#})": "Half their K.O.s (max {})"})
+
+# v1.4.31 골든 타깃 순환
+EXACT.update({"★ 골든 타깃이 바뀌었어요! 금빛 $ 카드를 노리세요 ★": "★ The golden target changed! Go for the gold $ card ★"})
+
+EXACT.update({"← → 인원  ·  D 난이도  ·  클릭/휠도 가능": "← → players  ·  D difficulty  ·  click/wheel also work", "← → 인원": "← → players"})
+
+TEMPLATES.update({"평소 대비 생존 ▲ {#}초": "Survived ▲ {}s vs. your usual", "평소 대비 생존 ▼ {#}초": "Survived ▼ {}s vs. your usual"})
+
+TEMPLATES.update({"스크린샷 저장: {}": "Screenshot saved: {}"})
+EXACT.update({"스크린샷을 저장하지 못했어요": "Could not save the screenshot"})
+
+EXACT.update({"화면 번쩍임": "Screen flash", "큰 순간에 보드가 하얗게 번쩍임 (화면 흔들림과 따로 끌 수 있음)": "White flash on big moments (separate from shake)",
+              "큰 순간(쿼드, 퍼펙트 클리어, K.O. 등)에 보드가 하얗게 번쩍이는 효과입니다. 화면 흔들림 설정과 따로 끌 수 있어서, 흔들림은 켜 두고 번쩍임만 끌 수도 있습니다.": "A white flash on the board during big moments (quad, perfect clear, K.O., etc.). It can be turned off separately from screen shake, so you can keep the shake and disable only the flash."})
+
+EXACT.update({"▲ 받을 공격": "▲ Incoming"})
+
+# v1.4.31 입문 미션
+EXACT.update({"첫 경기를 끝까지 해 보기": "Play your first match to the end", "첫 K.O. 처치하기": "Score your first K.O.",
+              "Tab이나 1~5 키로 조준 모드 바꿔 보기": "Switch the aim mode with Tab or 1-5",
+              "연습 모드에서 G 키로 쓰레기를 받아 막아 보기": "In Practice, press G to take garbage and block it",
+              "50인 이상 경기에서 10위 안에 들기": "Finish in the top 10 of a 50+ player match"})
+TEMPLATES.update({"입문 미션 {#}/{#} · {}": "Starter mission {}/{} · {}", "★ 입문 미션 완료 · {}": "★ Starter mission complete · {}",
+                  "★ 입문 미션 완료! {} (+{#} XP)": "★ Starter mission complete! {} (+{} XP)"})
+
+EXACT.update({"V  마지막 8초 보기": "V  Watch last 8s", "LB  마지막 8초 보기": "LB  Watch last 8s", "마지막 8초": "Last 8 seconds", "V 닫기": "V close", "LB 닫기": "LB close"})
+
+EXACT.update({"우승 예측": "Winner pick"})
+TEMPLATES.update({"우승 예측: {}": "Winner pick: {}"})
+
+TEMPLATES.update({"우승 예측 적중!  {}  +{#} XP": "Winner pick hit!  {}  +{} XP"})
+
+# v1.4.31 짧아진 전투 토스트
+TEMPLATES.update({"◀ +{#}  {}": "◀ +{}  {}", "◀ +{#}  ({#}명)": "◀ +{}  ({} players)",
+                  "▶ +{#}  {}": "▶ +{}  {}", "↩ +{#}  {}": "↩ +{}  {}",
+                  "배지{#}": "Badge {}", "역습+{#}": "Counter +{}"})
+
+TEMPLATES.update({"★ 새 효과 해금!  {}": "★ New effect unlocked!  {}"})
+EXACT.update({"K.O. 구슬이 하늘색으로 바뀝니다": "K.O. orbs turn sky blue", "K.O. 구슬이 분홍색으로 바뀝니다": "K.O. orbs turn pink", "K.O. 구슬이 무지개색으로 바뀝니다": "K.O. orbs turn rainbow"})
+
+# v1.4.31 주간 변형 3종 추가 (무거운 전장 / 빠른 낙하 / 홀드 금지)
+EXACT.update({"무거운 전장": "Heavy Front", "쓰레기 줄이 1.5배": "Garbage lines ×1.5", "빠른 낙하": "Fast Fall", "블록이 더 빨리 떨어짐": "Pieces fall faster",
+              "홀드 금지": "No Hold", "홀드를 쓸 수 없음": "Hold is disabled",
+              "받은 공격 8줄 막기 (무거운 전장)": "Block 8 incoming lines (Heavy Front)", "상쇄 8줄": "Block 8", "K.O. 3명": "Score 3 K.O.s", "K.O. 3": "K.O. 3",
+              "빠른 낙하 속에서 줄 40개 지우기": "Clear 40 lines while pieces fall fast", "40줄 삭제": "40 lines", "5분 생존": "Survive 5 minutes", "생존 5:00": "Survive 5:00",
+              "홀드 없이 줄 30개 지우기": "Clear 30 lines without hold", "홀드 없이 쿼드 1회": "One quad without hold", "쿼드 1회": "1 quad", "15위 안에 들기": "Finish in the top 15"})
+
+TEMPLATES.update({"{#}점": "{} pts"})

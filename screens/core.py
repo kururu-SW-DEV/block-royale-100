@@ -30,12 +30,43 @@ class CoreMixin:
             getattr(self, name).size_pt = base + boost
         self.renderer.clear_visual_caches()                     # 색이 바뀐 블록/패널 캐시를 비워 새 색으로 다시 만들게 함
 
+    def _save_screenshot(self):
+        """현재 화면을 저장 폴더의 screenshots/ 에 PNG로 저장하고 잠깐 알림 (실패해도 게임은 계속)"""
+        import datetime
+        import os
+        from app_paths import data_path
+        try:
+            folder = data_path("screenshots")
+            os.makedirs(folder, exist_ok=True)
+            name = datetime.datetime.now().strftime("BlockRoyale_%Y%m%d_%H%M%S.png")
+            pygame.image.save(pygame.display.get_surface(), os.path.join(folder, name))
+            self._shot_msg = (f"스크린샷 저장: {name}", time.time() + 2.6)
+            self.sound_mgr.play('move')
+        except Exception:
+            self._shot_msg = ("스크린샷을 저장하지 못했어요", time.time() + 2.6)
+
+    def _draw_shot_msg(self):
+        msg = getattr(self, "_shot_msg", None)
+        if not msg or time.time() > msg[1]:
+            return
+        r = self.renderer
+        text = msg[0]
+        w = r.font_small.size(text if text.startswith("스크린샷을") else f"스크린샷 저장: {text.split(': ', 1)[-1]}")[0] + 32
+        rect = pygame.Rect(0, 0, min(w, 600), 34)
+        rect.midbottom = (SCREEN_WIDTH // 2, SCREEN_HEIGHT - 62)
+        CANVAS.alpha_rect(rect, (10, 13, 24, 225), radius=10)
+        CANVAS.alpha_rect(rect, (110, 200, 255, 200), width=1, radius=10)
+        r._draw_text(text, r.font_small, (225, 235, 255), rect.centerx, rect.centery, "center")
+
     def apply_gameplay_options(self):
         """진행 중인 경기에 설정(화면 흔들림 배율)을 반영. 조준 모드는 경기 시작 때와 모드를 바꿀 때만 저장/복원"""
         from app_common import SHAKE_SCALE
         if self.match is not None:
+            from stats_manager import orb_theme_for_level
+            self.renderer.orb_theme = orb_theme_for_level(self.stats_mgr.level()[0])            # 레벨 보상: K.O. 구슬 색
             self.match.rumble_cb = lambda power: self.gamepad.rumble(power) if self._pad_hints_active() else None      # 마지막으로 패드를 쓴 경우에만 진동 (키보드로 하는 중에는 연결된 패드가 울리지 않게)
             self.match.shake_scale = SHAKE_SCALE.get(self.settings.get("screen_shake"), 1.0)
+            self.match.flash_enabled = bool(self.settings.get("screen_flash", True))      # 번쩍임은 흔들림과 별개로 켜고 끔
 
     def apply_handling(self):
         """설정의 DAS/ARR/소프트드롭(ms)을 실제 입력 처리에 반영"""
@@ -359,6 +390,8 @@ class CoreMixin:
         self.match.novice = (not practice) and self.stats_mgr.data.get("total_games", 0) < 3        # 처음 3판: 조준 칩은 자동만 또렷하게
         self.match.log_enabled = bool(self.settings.get("match_log", False)) and not practice
         from replay import ReplayRecorder
+        self.killcam, self.killcam_on = None, False                          # 이전 판의 '마지막 8초 되감기'를 새 판에 가져오지 않음
+        self.renderer.killcam, self.renderer.killcam_available = None, False
         self.replay_rec = None if practice else ReplayRecorder({"mode": "survival" if not self.match.attacks_enabled else "battle", "custom": bool(self.match.custom_rules)})      # 내 보드 리플레이 (연습 제외)
         if self.replay_rec is not None:
             self.match.local_engine.replay_log = []        # 카운트다운 직후 첫 프레임에 고정된 블록도 기록에서 빠지지 않게 처음부터 켬

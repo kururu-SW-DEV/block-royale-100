@@ -36,6 +36,28 @@ def xp_for_next(level):
 LEVEL_TITLES = ((5, "견습"), (10, "숙련자"), (15, "베테랑"), (20, "전략가"), (30, "명인"), (40, "전설"), (50, "블록 로열"))      # 레벨 칭호: 업적 칭호를 고르지 않았을 때 프로필에 표시 (Lv.10 이후의 장기 목표)
 
 
+# 레벨 보상(Lv.10 이후의 눈에 보이는 성장): 레벨에 따라 K.O. 구슬 색이 자동으로 바뀜 (고를 필요 없음). (필요 레벨, 문구, 구슬 색 테마)
+LEVEL_PERKS = ((15, "K.O. 구슬이 하늘색으로 바뀝니다", "sky"), (30, "K.O. 구슬이 분홍색으로 바뀝니다", "pink"), (50, "K.O. 구슬이 무지개색으로 바뀝니다", "rainbow"))
+ORB_THEMES = {"gold": ((255, 240, 170), (255, 200, 60), (255, 210, 80), (255, 120, 40)),          # (구슬 겉, 구슬 안(현상금), 꼬리 시작, 꼬리 끝)
+              "sky": ((190, 240, 255), (90, 200, 255), (110, 220, 255), (40, 120, 255)),
+              "pink": ((255, 205, 235), (255, 110, 190), (255, 140, 210), (200, 60, 150)),
+              "rainbow": ((255, 255, 255), (255, 255, 255), (255, 255, 255), (255, 255, 255))}
+
+
+def orb_theme_for_level(level):
+    """레벨에 맞는 K.O. 구슬 색 테마 이름"""
+    theme = "gold"
+    for lv, _text, name in LEVEL_PERKS:
+        if int(level) >= lv:
+            theme = name
+    return theme
+
+
+def perks_unlocked_between(lv_before, lv_after):
+    """lv_before < 레벨 <= lv_after 사이에 새로 얻은 레벨 보상 문구 목록"""
+    return [text for lv, text, _n in LEVEL_PERKS if int(lv_before) < lv <= int(lv_after)]
+
+
 def level_title(level):
     """레벨에 해당하는 칭호 (Lv.5 미만이면 빈 문자열)"""
     out = ""
@@ -153,7 +175,7 @@ ACHIEVEMENTS = (
     ("daily_perfect", "완벽한 하루", "하루에 오늘의 도전 별 3개를 모두 받기", lambda c: c.get("daily_full", 0) >= 1),
     ("star_collector", "별 수집가", "오늘의 도전 별(★) 누적 30개", lambda c: c.get("daily_stars", 0) >= 30),
     ("star_100", "별의 지배자", "오늘의 도전 + 주간 변형 별 누적 100개", lambda c: c.get("daily_stars", 0) + c.get("weekly_stars", 0) >= 100),
-    ("variant_master", "변형 정복자", "주간 변형 규칙 네 가지 모두에서 별 1개 이상", lambda c: c.get("weekly_rules_n", 0) >= 4),
+    ("variant_master", "변형 정복자", "주간 변형 규칙 네 가지 이상에서 별 1개 이상", lambda c: c.get("weekly_rules_n", 0) >= 4),
     ("weekly_stars", "주간 단골", "주간 변형 별 누적 10개", lambda c: c.get("weekly_stars", 0) >= 10),
     ("weekly_perfect", "완벽한 한 주", "한 주에 주간 변형 별 3개를 모두 받기", lambda c: c.get("weekly_full", 0) >= 1),
     # ---- 연습·기술
@@ -194,8 +216,16 @@ CHALLENGE_ACHIEVEMENTS = ("streak3", "streak7", "streak14", "daily_perfect", "st
                           "master_5", "master_all", "pc2", "combo10", "b2b7", "drill300", "sprint90", "tst3", "ach25", "ach40")      # 도전 과제를 저장할 때 따로 판정하는 업적 (경기 기록 없이도 달성)
 ACHIEVEMENT_IDS = tuple(a[0] for a in ACHIEVEMENTS)
 
+# 입문 미션 5단계: 처음 하는 사람이 다음에 무엇을 하면 되는지 순서대로 알려 줌 (메인 화면 '빠른 시작' 아래 한 줄 + 결과 화면). 하나 끝낼 때마다 경험치 +ONBOARDING_XP
+ONBOARDING = (("first_game", "첫 경기를 끝까지 해 보기"), ("first_ko", "첫 K.O. 처치하기"),
+              ("aim", "Tab이나 1~5 키로 조준 모드 바꿔 보기"), ("practice_g", "연습 모드에서 G 키로 쓰레기를 받아 막아 보기"),
+              ("top10", "50인 이상 경기에서 10위 안에 들기"))
+ONBOARDING_XP = 30
+ONBOARDING_IDS = tuple(o[0] for o in ONBOARDING)
+
 DEFAULT_STATS = {
     "total_games": 0,
+    "onboarding": {"flags": [], "claimed": []},   # 입문 미션: 직접 표시해야 하는 단계(flags)와 보상을 이미 받은 단계(claimed)
     "victories": 0,
     "top_5": 0,
     "top_10": 0,
@@ -228,6 +258,21 @@ def _backup_corrupt(path):
         shutil.copy2(path, f"{path}.corrupt-{int(datetime.datetime.now().timestamp())}")
     except Exception:
         pass
+
+
+def vs_usual_text(recent, rank, total_players, survival_sec, mode_total_min=8):
+    """결과 화면 '평소 대비' 한 줄: 같은 규모(8인 이상)의 최근 10판 평균과 이번 판의 생존 시간을 비교. 기록이 3판 미만이거나 차이가 작으면 None
+    recent: 이번 판을 반영하기 전의 최근 경기 목록"""
+    if total_players < mode_total_min:
+        return None
+    prev = [m for m in recent if isinstance(m, dict) and m.get("total_players", 0) >= mode_total_min and isinstance(m.get("survival_sec"), (int, float))][-10:]
+    if len(prev) < 3:
+        return None
+    avg = sum(m["survival_sec"] for m in prev) / len(prev)
+    diff = int(round(survival_sec - avg))
+    if abs(diff) < max(8, avg * 0.12):
+        return None                                           # 평소와 비슷하면 말하지 않음
+    return f"평소 대비 생존 ▲ {diff}초" if diff > 0 else f"평소 대비 생존 ▼ {-diff}초"
 
 
 def next_goal_text(rank, kos, total_players, best_in_size, difficulty=None, cleared=(), ladder_clear=None, max_ko=0, badge_pts=None):
@@ -365,6 +410,9 @@ class StatsManager:
                                     rows.append({"score": e["score"], "rank": e["rank"], "total": e["total"], "kos": e["kos"], "ini": e["ini"][:3], "date": e["date"][:16]})
                             clean[kk] = sorted(rows, key=lambda r: -r["score"])[:10]
                     target[k] = clean
+            elif k == "onboarding":
+                if isinstance(v, dict):
+                    target[k] = {f: [x for x in ONBOARDING_IDS if isinstance(v.get(f), list) and x in v[f]] for f in ("flags", "claimed")}
             elif k == "last_play_day":
                 if isinstance(v, str) and (v == "" or (len(v) == 8 and v.isdigit())):
                     target[k] = v
@@ -480,6 +528,46 @@ class StatsManager:
             del c["daily"][old]
         return ids
 
+
+    def onboarding_done(self):
+        """지금까지 끝낸 입문 미션 id 집합"""
+        d = self.data
+        ob = d.get("onboarding", {})
+        done = set(ob.get("flags", [])) | set(ob.get("claimed", []))
+        if d.get("total_games", 0) >= 1:
+            done.add("first_game")
+        if d.get("total_kos", 0) >= 1:
+            done.add("first_ko")
+        if any(isinstance(m, dict) and m.get("total_players", 0) >= 50 and 0 < m.get("rank", 0) <= 10 for m in d.get("recent_matches", [])):
+            done.add("top10")
+        return done
+
+    def onboarding_next(self):
+        """아직 안 끝낸 첫 입문 미션 (번호, 전체 수, 문구). 모두 끝났으면 None"""
+        done = self.onboarding_done()
+        for i, (oid, text) in enumerate(ONBOARDING):
+            if oid not in done:
+                return i + 1, len(ONBOARDING), text
+        return None
+
+    def mark_onboarding(self, oid):
+        """직접 표시해야 하는 입문 미션(조준 모드 바꾸기, 연습에서 쓰레기 받기)을 끝냈다고 기록"""
+        ob = self.data.setdefault("onboarding", {"flags": [], "claimed": []})
+        if oid in ONBOARDING_IDS and oid not in ob.setdefault("flags", []):
+            ob["flags"].append(oid)
+
+    def claim_onboarding(self):
+        """새로 끝난 입문 미션의 경험치를 한 번씩 지급하고 그 문구 목록을 돌려줌"""
+        ob = self.data.setdefault("onboarding", {"flags": [], "claimed": []})
+        claimed = ob.setdefault("claimed", [])
+        names = dict(ONBOARDING)
+        newly = [oid for oid in ONBOARDING_IDS if oid in self.onboarding_done() and oid not in claimed]
+        for oid in newly:
+            claimed.append(oid)
+            self.add_xp(ONBOARDING_XP)
+        if newly:
+            self.save()
+        return [names[o] for o in newly]
 
     def level(self):
         """(레벨, 이번 레벨에서 쌓은 경험치, 필요 경험치)"""

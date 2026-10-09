@@ -747,7 +747,7 @@ def test_combat_text_pressure_and_onboarding():
     toast = [f["text"] for f in m.floating_texts if f["category"] == "attack"]
     tid = m.players["L"]["target_id"]
     got = m.players[tid]["bot"].engine.incoming_garbage
-    assert toast and f"+{got}줄" in toast[-1] and "×1.4" in toast[-1], (toast, got)
+    assert toast and f"+{got}" in toast[-1] and "×1.4" in toast[-1], (toast, got)
 
     # 후반전 예고: 4:30에 한 번, 이후 20% 단계가 오를 때마다 한 번
     m = BattleRoyaleMatch(total_players=10, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy")
@@ -820,12 +820,12 @@ def test_v1012_feed_phase_log_achievement_progress():
     m = BattleRoyaleMatch(total_players=10, local_player_id="L", local_player_name="me", net_mgr=None, sound_mgr=None, bot_difficulty="easy")
     others = [p for p in m.players if p != "L"]
     m.apply_attack(others[0], "L", 2); m.apply_attack(others[1], "L", 3); m.apply_attack(others[1], "L", 1)
-    hits = [f["text"] for f in m.floating_texts if f["text"].startswith("[피격")]
-    assert len(hits) == 1 and "2명" in hits[0] and "+6줄" in hits[0], hits
+    hits = [f["text"] for f in m.floating_texts if f["text"].startswith("◀")]
+    assert len(hits) == 1 and "2명" in hits[0] and "+6" in hits[0], hits
     assert m.local_hits_from[others[0]] == 2 and m.local_hits_from[others[1]] == 4
     m._hit_agg["t"] -= 2.0                                    # 1초가 지나면 새 토스트
     m.apply_attack(others[2], "L", 1)
-    assert len([f for f in m.floating_texts if f["text"].startswith("[피격")]) == 2
+    assert len([f for f in m.floating_texts if f["text"].startswith("◀")]) == 2
     # 후반전 알림은 pin 카테고리
     m.elapsed = 275.0; m._announce_escalation()
     assert any(f["category"] == "pin" for f in m.floating_texts)
