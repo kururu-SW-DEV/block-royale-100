@@ -163,8 +163,11 @@ def test_beam_flight_time_is_shared():
 def test_match_log_records_clears_and_b2b_and_report_tool_aggregates():
     import json
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.insert(0, os.path.join(root, "tools"))
-    import match_log_report as R
+    tools_dir = os.path.join(root, "tools")                # tools/는 저장소에서 제외되어 있어 CI 등에는 없음: 있을 때만 집계 도구를 확인
+    have_tool = os.path.exists(os.path.join(tools_dir, "match_log_report.py"))
+    if have_tool:
+        sys.path.insert(0, tools_dir)
+        import match_log_report as R
     app = _app()
     app.start_game(mode="SOLO", total_players=10)
     m = app.match
@@ -181,6 +184,8 @@ def test_match_log_records_clears_and_b2b_and_report_tool_aggregates():
     assert "clear" in kinds and "b2b_break" in kinds, kinds
     ev = next(e for e in m.events if e["kind"] == "clear")
     assert ev["n"] == 4 and ev["b2b"] == 2 and ev["ts"] == 0
+    if not have_tool:
+        return
     # 집계 도구: 합성 기록 두 판
     folder = tempfile.mkdtemp()
 
