@@ -65,6 +65,7 @@ TAB_NAV = {
              ("errlog", "open_errlog", None, None)],
     "general": [("fs", "toggle_fs", "fs=window", "fs=full"), ("res", "res_next", "res_prev", "res_next"),
                 ("mini", "mini_detail", "mini_detail=detailed", "mini_detail=simple"),
+                ("visual_fx", None, "fx_prev", "fx_next"),
                 ("block_skin", None, "skin_prev", "skin_next"),
                 ("color_mode", "color_mode", "color_mode=normal", "color_mode=colorblind"),
                 ("text_size", "text_size", "text_size=normal", "text_size=large"),
@@ -97,6 +98,7 @@ HELP = {
     "attack": "배틀로얄: 줄을 지워 상대에게 쓰레기 줄을 보내 서로 공격하는 모드 · 서바이벌: 서로 공격하지 않고 각자 끝까지 버티는 모드(K.O.·배지 없음, 3분 뒤부터 쓰레기 줄이 주기적으로 올라옴). 방을 열면 호스트의 설정이 모두에게 적용됩니다.",
     "name": "채팅, 대기실 명단, 미니 보드에 표시되는 이름입니다. 클릭하거나 Enter로 수정 (최대 16자).",
     "color": "이름 색: 채팅과 대기실 명단, 미니 보드의 내 이름에 쓰입니다.",
+    "visual_fx": "줄 삭제·하드 드롭의 빛 번짐, 단계별 배경, 우승 연출의 화려함입니다. 화면이 느려지면 '최소'로 두세요 (최소 = 예전과 같은 화면). 화면 흔들림/번쩍임 설정도 따릅니다.",
     "rumble": "패드를 쓸 때 쿼드·피격·K.O.·하드 드롭에서 패드가 울리는 세기입니다. 화면 흔들림 설정과 따로 정할 수 있습니다.",
     "shake": "공격을 받거나 K.O.가 났을 때 화면이 흔들리는 정도입니다. 멀미가 나면 '약하게'나 '끔'을 고르세요.",
     "tips_replay": "처음 일어나는 일(받은 공격, 역습 보너스, 첫 K.O., 후반전)에 한 번씩 뜨는 도움말 팁과 첫 판 설명 말풍선을 다음 경기부터 다시 보여 줍니다.",
@@ -143,7 +145,7 @@ HELP = {
 TAB_DEFAULT_KEYS = {
     "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake", "pad_rumble", "language"],
     "help": ["match_log", "ghost_race", "board_skyline", "screen_flash"],
-    "general": ["fullscreen", "resolution", "mini_detail", "color_mode", "text_size", "block_skin", "key_hints"],
+    "general": ["fullscreen", "resolution", "mini_detail", "visual_fx", "color_mode", "text_size", "block_skin", "key_hints"],
     "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume", "warn_volume", "announcer"],
     "keys": ["gamepad"],
     "react": ["das_ms", "arr_ms", "sdf_ms", "dcd_ms", "das_cancel"],
@@ -441,6 +443,10 @@ class SettingsMixin:
         elif btn_id in ("shake_prev", "shake_next"):
             self.sound_mgr.play('rotate')
             self.settings.cycle_screen_shake(-1 if btn_id == "shake_prev" else 1)
+            self.apply_gameplay_options()
+        elif btn_id in ("fx_prev", "fx_next"):
+            self.sound_mgr.play('rotate')
+            self.settings.cycle_visual_fx(-1 if btn_id == "fx_prev" else 1)
             self.apply_gameplay_options()
         elif btn_id in ("rumble_prev", "rumble_next"):
             self.sound_mgr.play('rotate')
@@ -846,44 +852,48 @@ class SettingsMixin:
         size = pygame.display.get_surface().get_size() if pygame.display.get_surface() else (0, 0)
         from app_paths import running_under_wine
         fs_note = "SteamOS(Proton)에서는 전체 화면이면 입력이 막혀 창 모드로 고정됩니다" if running_under_wine() else f"현재 {size[0]}×{size[1]}  ·  F11 키로도 전환"
-        self._s_row("fs", y, 52, "화면 모드", fs_note)
-        self._s_seg([("fs=window", "창 모드"), ("fs=full", "전체 화면")], "fs=full" if fs else "fs=window", RIGHT, y + 26)
-        y += 52
+        self._s_row("fs", y, 46, "화면 모드", fs_note)
+        self._s_seg([("fs=window", "창 모드"), ("fs=full", "전체 화면")], "fs=full" if fs else "fs=window", RIGHT, y + 22)
+        y += 46
         res = self.settings.get("resolution", "auto")
         res_label = "자동 (모니터에 맞춤)" if res == "auto" else res.replace("x", " × ") + {
             "1280x720": "  (HD)", "1920x1080": "  (FHD)", "2560x1440": "  (QHD)", "3840x2160": "  (4K)"}.get(res, "")
-        self._s_row("res", y, 52, "창 해상도", "전체 화면에서는 사용하지 않습니다" if fs else None)
-        self._s_cycler("res_prev", "res_next", res_label, RIGHT, y + 26, enabled=not fs)
-        y += 52
-        self._s_row("mini", y, 52, "미니 보드", "상대 보드에 표시할 정보의 양")
+        self._s_row("res", y, 46, "창 해상도", "전체 화면에서는 사용하지 않습니다" if fs else None)
+        self._s_cycler("res_prev", "res_next", res_label, RIGHT, y + 22, enabled=not fs)
+        y += 46
+        self._s_row("mini", y, 46, "미니 보드", "상대 보드에 표시할 정보의 양")
         self._s_seg([("mini_detail=detailed", "자세히"), ("mini_detail=focus", "집중"), ("mini_detail=simple", "간략")],
-                    "mini_detail=" + (self.settings.get("mini_detail") if self.settings.get("mini_detail") in ("detailed", "focus", "simple") else "focus"), RIGHT, y + 26)
-        y += 52
+                    "mini_detail=" + (self.settings.get("mini_detail") if self.settings.get("mini_detail") in ("detailed", "focus", "simple") else "focus"), RIGHT, y + 22)
+        y += 46
+        fxm = self.settings.get("visual_fx", "normal")
+        self._s_row("visual_fx", y, 46, "빛 연출", "줄 삭제·하드 드롭의 빛 번짐, 배경과 우승 연출 (최소 = 예전 화면)")
+        self._s_cycler("fx_prev", "fx_next", {"min": "최소", "normal": "보통", "fancy": "화려하게"}.get(fxm, "보통"), RIGHT, y + 22, color=C_ACCENT)
+        y += 46
         skin = self.settings.get("block_skin", "classic")
         _sm = __import__("stats_manager")
         if skin not in _sm.unlocked_skin_ids(self.stats_mgr.data):
             skin = "classic"                                                 # 저장된 스킨이 (전적 초기화 등으로) 잠겼다면 기본으로 표시
         locked = _sm.locked_skin_hints(self.stats_mgr.data)
         HELP["block_skin"] = _tr(HELP_SKIN_BASE) + (_tr("  잠긴 스킨: ") + ", ".join(f"{_tr(BLOCK_SKIN_LABELS[s].split(' (')[0])}({_tr(d)})" for s, d in locked) if locked else "")
-        self._s_row("block_skin", y, 52, "블록 스킨", BLOCK_SKIN_DESCS.get(skin, ""))
-        self._s_cycler("skin_prev", "skin_next", BLOCK_SKIN_LABELS.get(skin, "클래식"), RIGHT, y + 26, color=C_GOLD)
+        self._s_row("block_skin", y, 46, "블록 스킨", BLOCK_SKIN_DESCS.get(skin, ""))
+        self._s_cycler("skin_prev", "skin_next", BLOCK_SKIN_LABELS.get(skin, "클래식"), RIGHT, y + 22, color=C_GOLD)
         px = RIGHT - 328 - 16 - 7 * 22                            # 현재 스킨으로 그린 7종 블록 미리보기 (설명과 선택기 사이)
         for i, piece in enumerate("IOTSZJL"):
-            self.screen.blit(self.renderer._cell_surface(piece, 20), (px + i * 22, y + 16))
-        y += 52
+            self.screen.blit(self.renderer._cell_surface(piece, 20), (px + i * 22, y + 13))
+        y += 46
         self._s_section("접근성", y)
         y += 24
-        self._s_row("color_mode", y, 52, "블록 색상", "색약 보정: 밝기 차이가 큰 팔레트")
+        self._s_row("color_mode", y, 46, "블록 색상", "색약 보정: 밝기 차이가 큰 팔레트")
         self._s_seg([("color_mode=normal", "기본"), ("color_mode=colorblind", "색약 보정")],
-                    "color_mode=colorblind" if self.settings.get("color_mode") == "colorblind" else "color_mode=normal", RIGHT, y + 26)
-        y += 52
-        self._s_row("text_size", y, 52, "글자 크기", "게임·메뉴·설정의 작은 글씨")
+                    "color_mode=colorblind" if self.settings.get("color_mode") == "colorblind" else "color_mode=normal", RIGHT, y + 22)
+        y += 46
+        self._s_row("text_size", y, 46, "글자 크기", "게임·메뉴·설정의 작은 글씨")
         self._s_seg([("text_size=normal", "보통"), ("text_size=large", "크게")],
-                    "text_size=large" if self.settings.get("text_size") == "large" else "text_size=normal", RIGHT, y + 26)
-        y += 52
+                    "text_size=large" if self.settings.get("text_size") == "large" else "text_size=normal", RIGHT, y + 22)
+        y += 46
         kh = self.settings.get("key_hints", "always")
-        self._s_row("key_hints", y, 52, "조작 안내 바", "게임 화면 아래 키 안내")
-        self._s_cycler("key_hints_prev", "key_hints_next", {"always": "항상 표시", "novice": "처음 10판만", "off": "끔"}.get(kh, "항상 표시"), RIGHT, y + 26)
+        self._s_row("key_hints", y, 46, "조작 안내 바", "게임 화면 아래 키 안내")
+        self._s_cycler("key_hints_prev", "key_hints_next", {"always": "항상 표시", "novice": "처음 10판만", "off": "끔"}.get(kh, "항상 표시"), RIGHT, y + 22)
 
     def _render_tab_audio(self):
         y = TOP
@@ -1111,6 +1121,7 @@ class SettingsMixin:
             self.match.is_paused = paused
             CANVAS.overlay((4, 6, 12, 205))
         else:
+            self.menu_bg.set_fx(0, True, True, None, None)
             self.menu_bg.draw(self.screen)
         mx, my = pygame.mouse.get_pos()
         self.settings_buttons.clear()

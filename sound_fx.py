@@ -44,6 +44,10 @@ NOTE_INDEX = {
 }
 
 # 스테이지(1/2/3단계) 배경음 세트 목록: 세트마다 1/2/3단계 3곡이 한 벌. 설정에서 고르거나 "랜덤"으로 매 판 하나를 뽑음
+# 곡 BPM (시각 연출의 박자 맞춤용: ui_glow_bg). 세트 번호 -> 1/2/3단계 BPM (_synth_cyberpunk_track에 넘긴 값과 같아야 함)
+STAGE_BPM = {0: (128, 142, 156), 1: (124, 138, 152), 2: (130, 144, 158), 3: (120, 134, 148), 4: (132, 146, 160)}
+SPECIAL_BPM = {"menu": 114, "lobby": 96, "results": 96}
+
 STAGE_SET_NAMES = [
     "Cyber Rush (오리지널)",
     "Neon Circuit",
@@ -1535,6 +1539,8 @@ class SoundManager:
         self.active_channel = new_channel
         self.current_bgm_stage = stage
         self.is_bgm_playing = True
+        bpm = SPECIAL_BPM.get(stage) or (STAGE_BPM.get(self.current_set_idx, STAGE_BPM[0])[max(0, min(2, int(stage) - 1))] if isinstance(stage, int) else None)
+        self._beat = (bpm, time.time()) if bpm else None                # 박자 위상 계산용 (재생 시작 시각 기준: 곡은 박자 단위 길이로 반복)
 
     @staticmethod
     def stage_for_alive(alive_count, total_players=100):
@@ -1796,6 +1802,14 @@ class SoundManager:
         except Exception:
             pass
         return None
+
+    def beat_phase(self):
+        """지금 박자 위상 (0 = 방금 박자가 떨어진 순간 ~ 1 = 다음 박자 직전)과 박자 번호. 소리가 안 나거나 일시정지/모르면 None"""
+        b = getattr(self, "_beat", None)
+        if not b or not self.enabled or not self.bgm_enabled or not self.is_bgm_playing or self._bgm_paused:
+            return None
+        beats = (time.time() - b[1]) * b[0] / 60.0
+        return beats % 1.0, int(beats)
 
     def set_warn_scale(self, scale):
         self.warn_scale = max(0.0, min(1.0, float(scale)))

@@ -261,6 +261,7 @@ class RecordsMixin:
             self.replay_view.update(min(dt, 0.1))
 
     def _render_records(self):
+        self.menu_bg.set_fx(0, True, True, None, None)
         self.menu_bg.draw(self.screen)
         mx, my = pygame.mouse.get_pos()
         self.records_buttons.clear()

@@ -966,7 +966,9 @@ class BattleRoyaleMatch:
         # 1. 로컬 플레이어가 피격 대상인 경우
         if to_id == self.local_player_id and self.local_is_alive:
             self.local_engine.queue_garbage(lines, source=from_id)
-            self._pending_hits.append((time.time() + self.HIT_FLIGHT_SECS + order * 0.07, lines, from_id))      # 흔들림/경고음/진동은 빔이 도착하는 순간에 (받을 공격 칸은 그때까지 흐리게)
+            self._pending_hits.append((time.time() + self.HIT_FLIGHT_SECS + order * 0.07, lines, from_id))
+            if from_id in self.players:
+                self.players[from_id]["shot_t"] = time.time()                        # 나를 쏜 상대의 미니 카드가 발사 순간 번쩍 (렌더러)      # 흔들림/경고음/진동은 빔이 도착하는 순간에 (받을 공격 칸은 그때까지 흐리게)
             attacker_p = self.players.get(from_id, {})
             attacker_name = attacker_p.get("name", "적 플레이어")
             self.local_hits_from[from_id] = self.local_hits_from.get(from_id, 0) + lines          # 결과 화면 "패인 한 줄"용: 누가 얼마나 보냈나

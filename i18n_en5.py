@@ -385,3 +385,8 @@ EXACT.update({"설정 (Start)": "Settings (Start)"})
 
 # v1.4.36 패드 분리
 EXACT.update({"패드 연결이 끊겨 일시정지했습니다": "Controller disconnected - paused"})
+
+# v1.4.37 빛 연출
+EXACT.update({"빛 연출": "Light effects", "최소": "Minimal", "화려하게": "Fancy",
+              "줄 삭제·하드 드롭의 빛 번짐, 배경과 우승 연출 (최소 = 예전 화면)": "Glow on line clears and hard drops, backgrounds and victory scenes (Minimal = old look)",
+              "줄 삭제·하드 드롭의 빛 번짐, 단계별 배경, 우승 연출의 화려함입니다. 화면이 느려지면 '최소'로 두세요 (최소 = 예전과 같은 화면). 화면 흔들림/번쩍임 설정도 따릅니다.": "How flashy the glow on line clears and hard drops, the stage backgrounds and the victory scene are. Choose Minimal if the game runs slowly (Minimal = the old look). Screen shake and flash settings are respected."})

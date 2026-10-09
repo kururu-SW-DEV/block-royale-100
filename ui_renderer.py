@@ -32,6 +32,9 @@ C_BG_TOP = (14, 17, 30)
 C_BG_BOTTOM = (8, 9, 16)
 
 from i18n import tr as _tr
+from ui_glow import GlowMixin
+from ui_glow_bg import GlowBgMixin
+from ui_glow_scenes import GlowSceneMixin
 
 
 def _tr_stamp():
@@ -126,7 +129,7 @@ class ParticleManager:
 
     AMBIENT_MAX = 60
 
-    def add_sparks(self, x, y, color, count=30, speed_mult=1.0, glow=False, ambient=False):
+    def add_sparks(self, x, y, color, count=30, speed_mult=1.0, glow=False, ambient=False, up=False):
         """ambient=True: 나와 무관한 연출용 (최대 AMBIENT_MAX개, 넘치면 새로 만들지 않음). 내 연출이 상한(320)을 넘기면 배경 파티클부터 지움"""
         if self.low:
             if glow:
@@ -138,7 +141,7 @@ class ParticleManager:
                 return
             self._amb += count
         for _ in range(count):
-            angle = random.uniform(0, math.pi * 2)
+            angle = random.uniform(-math.pi * 0.8, -math.pi * 0.2) if up else random.uniform(0, math.pi * 2)       # up: 위쪽 부채꼴 (분수)
             speed = random.uniform(80, 340) * speed_mult
             self.particles.append({
                 "x": x, "y": y,
@@ -194,7 +197,15 @@ class ParticleManager:
                 alive_r.append(r)
         self.rings = alive_r
 
-    def draw(self, surface, ox=0, oy=0):
+    def draw(self, surface, ox=0, oy=0, glow_n=0):
+        """glow_n: 내 파티클(배경용 amb 제외) 중 가장 최근 N개를 작은 빛 구슬로 그림 (큰 사건 직후에만 파티클이 많으므로 평소 비용 0)"""
+        glowing = set()
+        if glow_n > 0:
+            for p in reversed(self.particles):
+                if len(glowing) >= glow_n:
+                    break
+                if not p.get("amb") and not p.get("glow"):
+                    glowing.add(id(p))
         for r in self.rings:
             rx, ry = int(r["x"] + ox), int(r["y"] + oy)
             rad = max(1, int(r["radius"]))
@@ -216,11 +227,14 @@ class ParticleManager:
             if p.get("glow"):
                 draw_glow(surface, p["x"] + ox, p["y"] + oy, p["size"] * 4 + 2, p["color"], fade)
                 continue
+            if id(p) in glowing:
+                draw_glow(surface, p["x"] + ox, p["y"] + oy, p["size"] * 3 + 3, p["color"], fade)
+                continue
             sz = max(1, int(p["size"] * (0.5 + 0.5 * fade)))
             pygame.draw.rect(surface, p["color"], (int(p["x"] + ox), int(p["y"] + oy), sz, sz))
 
 
-class UIRenderer:
+class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin):
     def __init__(self, screen):
         self.screen = CANVAS.attach(screen)   # 논리 좌표(1366x768)로 그리면 실제 해상도에 맞춰 변환됨
         self.width = SCREEN_WIDTH
@@ -279,6 +293,7 @@ class UIRenderer:
         self._combo_break_n = 0
         self._cancel_seen = 0            # 방어(막은 줄) 반응
         self._cancel_t0 = -9.0
+        self._deco_prebaked = 3          # 단계 장식 미리 굽기 진행 (새 경기마다 0으로)
         self._b2b_break_seen = 0         # B2B 끊김 연출
         self._pc_seen = 0                # 퍼펙트 금빛 쓸어올림
         self._pc_t0 = -9.0
@@ -446,17 +461,20 @@ class UIRenderer:
             pygame.draw.line(surf, _mix(top, bottom, y / h), (0, y), (w, y))
         return surf
 
-    def _bg(self, phase=1):
-        """배경 그라데이션 (네이티브 해상도로 단계별 1회 생성). phase: 경기 단계 1/2/3"""
+    def _bg(self, phase=1, deco=False):
+        """배경 그라데이션 (네이티브 해상도로 단계별 1회 생성). phase: 경기 단계 1/2/3. deco=True: 단계별 장식(그리드/성운/주황빛)을 구워 넣은 판 (빛 연출 보통 이상)"""
         self._check_ver()
         if self.bg_surface is None:
             self._bg_by_phase = {}
             self.bg_surface = self._make_bg(C_BG_TOP, C_BG_BOTTOM)
             self._bg_by_phase[1] = self.bg_surface
-        surf = self._bg_by_phase.get(phase)
+        key = phase if not deco else (phase, "deco")
+        surf = self._bg_by_phase.get(key)
         if surf is None:
             th = STAGE_THEMES[phase]
-            surf = self._bg_by_phase[phase] = self._make_bg(th["top"], th["bottom"])
+            surf = self._bg_by_phase[key] = self._make_bg(th["top"], th["bottom"])
+            if deco:
+                self._bake_stage_deco(surf, phase, th["top"], th["bottom"])
         return surf
 
     def _update_stage_theme(self, match):
@@ -467,18 +485,23 @@ class UIRenderer:
             self._theme_match_id = id(match)
             self._theme_from = self._theme_to = phase
             self._theme_t0 = -10.0
+            self._deco_prebaked = 0
         elif phase != self._theme_to:
             self._theme_from, self._theme_to, self._theme_t0 = self._theme_to, phase, now
             if phase > self._theme_from and not getattr(match, "practice", False):
                 self._phase_fx = {"t0": now, "phase": phase}
                 self._add_bg_pulse(self.width // 2, self.height // 2, STAGE_THEMES[phase]["border"])
         t = min(1.0, (now - self._theme_t0) / 1.4)
+        deco = self._fx_mode(match) >= 1
+        if deco and self._deco_prebaked < 3:                    # 단계 장식(약 20ms)을 경기 시작 직후 세 프레임에 하나씩 미리 구워 둠 (단계가 바뀌는 순간에 프레임이 끊기지 않게)
+            self._deco_prebaked += 1
+            self._bg(self._deco_prebaked, True)
         if t >= 1.0:
-            self.screen.blit(self._bg(self._theme_to), (0, 0))
+            self.screen.blit(self._bg_beat(self._theme_to, deco, self._beat_k(match)), (0, 0))          # 박자에 맞춰 밝기만 바뀌는 사전 제작 변형을 고름
             self._theme_border = STAGE_THEMES[self._theme_to]["border"]
             return
-        self.screen.blit(self._bg(self._theme_from), (0, 0))
-        nxt = self._bg(self._theme_to)
+        self.screen.blit(self._bg(self._theme_from, deco), (0, 0))
+        nxt = self._bg(self._theme_to, deco)
         nxt.set_alpha(int(255 * t))
         self.screen.blit(nxt, (0, 0))
         nxt.set_alpha(None)
@@ -567,6 +590,7 @@ class UIRenderer:
     # ---------------------------------------------------------------- 메인 렌더
     def render(self, match, sound_mgr=None):
         self.particles.low = bool(getattr(match, "fx_low", False))
+        self._beat_info = sound_mgr.beat_phase() if sound_mgr is not None and hasattr(sound_mgr, "beat_phase") else None
         shake = getattr(match, 'screen_shake', 0.0)
         sdir = getattr(match, 'shake_dir', None)
         if shake > 0 and sdir:                           # 방향성 흔들림: 그 축으로 감쇠하는 사인파(약 18Hz) + 아주 작은 수직 떨림. 쿼드는 세로 펀치, 피격은 아래쪽
@@ -629,7 +653,8 @@ class UIRenderer:
         if lock_key != self._lock_seen:
             self._lock_seen = lock_key
             if engine.lock_events > 0 and not spectating and engine.last_lock_cells:
-                self.lock_flashes.append({"cells": list(engine.last_lock_cells), "birth": time.time()})
+                self.lock_flashes.append({"cells": list(engine.last_lock_cells), "birth": time.time(),
+                                          "col": PIECE_COLORS.get(getattr(engine, "last_locked_piece", None), (140, 200, 255))})
                 bottom = max(y for _, y in engine.last_lock_cells)
                 for x, y in engine.last_lock_cells:
                     if y == bottom:
@@ -653,14 +678,16 @@ class UIRenderer:
         CANVAS.display.fill((0, 0, 0))
         self.next_visible = (getattr(match, "mutator", None) or {}).get("next_visible", 5)      # 주간 변형 '안개 속': NEXT가 1개만 보임
         self._update_stage_theme(match)
+        self._render_embers(match)                                   # 3단계 주황 불씨 (화려하게 모드)
         self._render_phase_vignette(match)
         self._render_bg_pulses(match, ox, oy)
 
         self._render_mini_boards(match, ox, oy)
         self._render_attack_effects(match, ox, oy)
+        self._render_victory_backdrop(match)                         # 우승 후: 상대 카드를 어둡게 가리고 그 앞에 금빛 광선 (내 보드/왕관은 그 위)
         self._render_send_counter(match, ox, oy)
         self._render_main_board(match, ox, oy)
-        self.particles.draw(self.screen, ox, oy)
+        self.particles.draw(self.screen, ox, oy, glow_n=self._particle_glow_budget(match))
         self._apply_zoom_punch(ox, oy)
         self._render_reactions(match, ox, oy)
         self._render_board_juice(match, ox, oy)
@@ -1830,6 +1857,7 @@ class UIRenderer:
                 a = int(150 * (1.0 - age / 0.16))
                 for cx_, cy_ in lf["cells"]:                       # 매 프레임 새 Surface를 만들지 않고 바로 반투명 사각형을 그림
                     CANVAS.alpha_rect((bx + cx_ * cs + 1, by + cy_ * cs + 1, cs - 2, cs - 2), (255, 255, 255, a), radius=5)
+                self._glow_lock(match, lf, bx, by, cs, age)                # 둘레 후광 (가산 글로우, 보통 이상)
         self.lock_flashes = alive_lock
 
         # 3-2. 라인 클리어 와이프
@@ -1846,26 +1874,28 @@ class UIRenderer:
                 progress = elapsed / fl["duration"]
                 alpha = max(0, min(255, int(255 * (1.0 - progress))))
                 kind = fl.get("kind", "clear")
-                col = self.WIPE_COLORS.get(kind, self.WIPE_COLORS["clear"])
+                wc_ = self._fx_theme()["wipe"]                       # 이펙트 테마(블록 스킨에 따른 색 세트)
+                col = wc_.get(kind, wc_["clear"])
                 pad = 4 + (2 if fl.get("combo", 0) >= 3 else 0)       # 콤보가 이어질수록 띠가 두꺼워짐
-                ww, hh = bw + 16, cs + pad * 2
+                ww, hh = bw, cs + pad * 2                              # 가로는 보드 폭 그대로, 흰/금색 심지는 지워진 줄의 칸에 정확히 맞춤 (위아래로만 옅은 번짐이 pad만큼 나감)
                 core = (255, 255, 255) if flash_on else tuple(min(255, c + 70) for c in col)
 
                 def _build_wipe(s, col=col, core=core, ww=ww, hh=hh, pad=pad):
-                    pygame.draw.rect(s, (*col, 85), (0, 0, ww, hh), border_radius=8)
-                    pygame.draw.rect(s, (*core, 255), (0, pad - 1, ww, hh - 2 * pad + 2), border_radius=6)
+                    pygame.draw.rect(s, (*col, 85), (0, 0, ww, hh), border_radius=6)
+                    pygame.draw.rect(s, (*core, 255), (0, pad, ww, cs), border_radius=3)
                 sweep = _ease_out(min(1.0, progress * 2.4))
                 if kind == "quad":
                     cw = max(8, int(ww * sweep))
-                    clip = pygame.Rect(bx - 8 + (ww - cw) // 2, by + fl["row"] * cs - pad, cw, hh)
+                    clip = pygame.Rect(bx + (ww - cw) // 2, by + fl["row"] * cs - pad, cw, hh)
                 elif kind == "tspin":
-                    clip = pygame.Rect(bx - 8, by + fl["row"] * cs - pad, max(8, int(ww * sweep)), hh)
+                    clip = pygame.Rect(bx, by + fl["row"] * cs - pad, max(8, int(ww * sweep)), hh)
                 else:
-                    clip = pygame.Rect(bx - 8, by + fl["row"] * cs - pad, ww, hh)
+                    clip = pygame.Rect(bx, by + fl["row"] * cs - pad, ww, hh)
                 prev_clip = CANVAS.display.get_clip()                    # 바깥에 걸려 있던 클립을 지우지 않고 되돌림
                 CANVAS.display.set_clip(CANVAS.rect(clip))
-                self._blit_overlay(("wipe", kind, ww, hh, flash_on), (ww, hh), _build_wipe, (bx - 8, by + fl["row"] * cs - pad), alpha=alpha)
+                self._blit_overlay(("wipe", kind, ww, hh, flash_on), (ww, hh), _build_wipe, (bx, by + fl["row"] * cs - pad), alpha=alpha)
                 CANVAS.display.set_clip(prev_clip)
+                self._glow_wipe(match, fl, bx, by, bw, cs, progress, kind)           # 띠 위아래로 번지는 빛 (가산 글로우, 보통 이상)
         self.line_clear_flashes = alive_flashes
 
         # 3-3. 예상 상승선: 곧 올라올 준비가 끝난 쓰레기 줄이 있으면, 이번에 줄을 못 지울 때 가장 높은 블록이 어디까지 밀려 올라오는지 붉은 점선으로 보여 줌
@@ -1877,6 +1907,7 @@ class UIRenderer:
 
         # 4. 위험 경고 (유입 쓰레기 4줄 이상 또는 블록이 천장 근처)
         is_danger = (incoming >= 4 and highest - incoming <= 7) or (not engine.game_over and highest <= 5)      # 받을 줄이 많아도 스택이 낮아 여유 있으면 경고하지 않음 (늘 켜진 경고는 진짜 위기를 가림)
+        self._danger_now = bool(is_danger and not spectating)               # 장식 연출이 위기 경고보다 튀지 않게 어둡게 (에너지 러너 등)
         if is_danger and not spectating:
             pulse = int(50 + 40 * math.sin(time.time() * 8.0))
             self._render_danger_breath(engine, highest, bx, by, bw, bh, cs, pulse)
@@ -2560,6 +2591,11 @@ class UIRenderer:
                     left_ = match.bounty_secs_left() if hasattr(match, "bounty_secs_left") else None
                     if left_ is not None:
                         self._draw_text(f"{int(math.ceil(left_))}s", self.font_tiny, (255, 225, 120), board_rect.right - 2, board_rect.bottom - 2, "bottomright")
+            wave = self._card_wave_alpha(match, board_rect, now)
+            if wave > 0:
+                self._blit_overlay(("mini_flash", board_rect.w, board_rect.h), (board_rect.w, board_rect.h),
+                                   lambda surf: surf.fill((255, 255, 255, 255)), board_rect.topleft, alpha=wave)         # 단계 전환 빛 물결
+            self._card_extras(match, pid, p, board_rect, now, is_alive)                       # 발사 순간 붉은 테두리 / 최후 10% 금빛 테두리
             if is_spec or is_targeted:                       # 락온 코너 브래킷: 관전 대상은 금색(맥박), 조준 대상은 붉은색
                 pl = 0.5 + 0.5 * math.sin(now * (5.0 if is_spec else 8.0))
                 bcol = _mix((255, 200, 80), (255, 255, 255), 0.55 * pl) if is_spec else _mix((255, 84, 96), (255, 190, 190), 0.5 * pl)
@@ -2941,6 +2977,7 @@ class UIRenderer:
                         self.shards.append({"x": bx + x * cs + cs / 2, "y": by + y * cs + cs / 2, "vx": (x - mid) * 40 + random.uniform(-60, 60), "vy": random.uniform(-300, -60),
                                             "col": _mix(PIECE_COLORS.get(piece, (200, 200, 220)), (255, 215, 90), 0.55), "sz": random.choice((3, 4, 5)), "life": 0.0, "max": random.uniform(0.5, 0.9)})
                 self.particles.add_sparks(bx + self.main_board_w // 2, by + y * cs + cs // 2, (255, 215, 90), count=6, speed_mult=1.5, glow=(y % 3 == 0))
+            self._victory_fountain(match, now)
             if now - self._vic_t0 > 0.9 and now - self._vic_t0 < 3.4 and len(self.confetti) < 110:
                 for _ in range(3):
                     self.confetti.append({"x": random.uniform(80, self.width - 80), "y": -10.0, "vy": random.uniform(110, 220), "vx": random.uniform(-40, 40),
@@ -3016,6 +3053,7 @@ class UIRenderer:
                 h = (tr["y1"] - tr["y0"]) * cs
                 CANVAS.alpha_rect((x + cs * 0.12, y0, cs * 0.76, h), (*tr["col"], int(70 * a)), radius=3)
                 CANVAS.alpha_rect((x + cs * 0.4, y0, cs * 0.2, h), (255, 255, 255, int(150 * a)), radius=2)
+                self._glow_trail(match, tr, x, y0, h, a, cs)                       # 혜성 꼬리 + 착지 충격선 (가산 글로우, 보통 이상)
         self.drop_trails = alive
         for sh in self.shards:
             fade = 1.0 - sh["life"] / sh["max"]
@@ -3043,6 +3081,8 @@ class UIRenderer:
         self.score_pops = alive_sp
         if self._vic_t0 is not None and getattr(match, 'match_finished', False):
             t = now - self._vic_t0 - 0.9
+            if t > 0.6 and self._fx_mode(match) >= 1:
+                self._victory_ring(match, now, self.main_board_x + self.main_board_w // 2 + ox, self.main_board_y + 290 + oy)
             if t > 0:
                 self._draw_crown(self.main_board_x + self.main_board_w // 2 + ox, self.main_board_y + 290 + oy - 14 * math.sin(min(1.0, t / 0.6) * math.pi * 0.5), min(1.0, t / 0.45))
 
@@ -3180,7 +3220,7 @@ class UIRenderer:
             level = 3
         if level == 0 or engine.game_over:
             return
-        col = self.AURA_COLORS[level]
+        col = self._fx_theme()["aura"][level]
         pad = 30
 
         def _build(ps):
@@ -3192,6 +3232,7 @@ class UIRenderer:
         else:
             pulse = 0.7
         self._blit_overlay(("aura", level, bw, bh), (bw + pad * 2, bh + pad * 2), _build, (bx - pad, by - pad), alpha=int(255 * pulse))
+        self._render_energy_runner(match, engine, bx, by, bw, bh, level)       # 둘레를 도는 빛 점 (가산 글로우, 보통 이상)
 
     def _render_danger_breath(self, engine, highest, bx, by, bw, bh, cs, pulse):
         """위기 때 쌓인 블록이 맥박에 맞춰 붉게 숨 쉬고 화면 가장자리에 붉은 비네트. 색약 모드는 주황 + 점선 테두리"""
@@ -3585,6 +3626,8 @@ class UIRenderer:
                 CANVAS.alpha_rect(rr.inflate(8, 6), (255, 210, 90, int((40 + 50 * glow) * k)), radius=12)
                 CANVAS.alpha_rect(rr, (60, 48, 18, int(235 * k)), radius=9)
                 CANVAS.alpha_rect(rr, (255, 210, 90, int(230 * k)), width=2, radius=9)
+                if k >= 1.0:
+                    self._standings_shine(match, rr, now)                  # 1위 행을 지나가는 빛줄기
             elif is_me:
                 CANVAS.alpha_rect(rr, (22, 50, 66, int(235 * k)), radius=9)
                 CANVAS.alpha_rect(rr, (100, 220, 255, int(220 * k)), width=1, radius=9)

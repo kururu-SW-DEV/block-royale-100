@@ -337,6 +337,7 @@ class LobbyMixin:
         return False
 
     def _render_host_lobby(self):
+        self.menu_bg.set_fx(0, True, True, None, None)
         self.menu_bg.draw(self.screen)
         self.text_rects.clear()
         mx, my = pygame.mouse.get_pos()
@@ -433,6 +434,7 @@ class LobbyMixin:
         self.renderer._button(back, "나가기", "red", back.collidepoint(mx, my), "ESC")
 
     def _render_join_menu(self):
+        self.menu_bg.set_fx(0, True, True, None, None)
         self.menu_bg.draw(self.screen)
         mx, my = pygame.mouse.get_pos()
         cx = SCREEN_WIDTH // 2
@@ -497,6 +499,7 @@ class LobbyMixin:
         self.renderer._button(self.join_back_btn, "메인 메뉴로", "blue", self.join_back_btn.collidepoint(mx, my), "ESC")
 
     def _render_client_lobby(self):
+        self.menu_bg.set_fx(0, True, True, None, None)
         self.menu_bg.draw(self.screen)
         self.text_rects.clear()
         mx, my = pygame.mouse.get_pos()

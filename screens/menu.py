@@ -12,7 +12,7 @@ import time
 from app_common import (
     APP_VERSION, BOT_DIFFICULTY_LABELS, C_ACCENT, C_DANGER, C_GOLD, C_GREEN, C_ORANGE, C_TEXT,
     LADDER, LADDER_MIN_PLAYERS, LADDER_NAMES, LADDER_RANK,
-    NAME_COLORS, SCREEN_HEIGHT, SCREEN_WIDTH, _mix, pygame
+    CANVAS, NAME_COLORS, SCREEN_HEIGHT, SCREEN_WIDTH, _mix, pygame
 )
 
 CARD_BG = (22, 28, 48)
@@ -326,6 +326,17 @@ class MenuMixin:
     BAR_Y, BAR_H = 708, 36                         # 하단 줄 (프로필 · 전적/설정/소리/전체 화면/종료)
     MENU_KEYS = {"quick_play": "1", "host_room": "2", "join_room": "3", "practice": "P", "daily": "C", "weekly": "W"}
 
+    def _menu_bg_fx(self):
+        """메인 화면 배경의 빛 연출 설정을 반영 (visual_fx / 화면 흔들림 / 번쩍임 / 메뉴 BGM 박자 / 마우스 위치)"""
+        from app_common import SHAKE_SCALE
+        from ui_glow import FX_NAMES
+        mode = FX_NAMES.get(self.settings.get("visual_fx", "normal"), 1)
+        motion = SHAKE_SCALE.get(self.settings.get("screen_shake"), 1.0) > 0
+        flash_ok = bool(self.settings.get("screen_flash", True))
+        beat = self.sound_mgr.beat_phase() if mode else None
+        mouse = CANVAS.to_logical(pygame.mouse.get_pos()) if (mode and motion and not self.renderer.pad_ui) else None
+        self.menu_bg.set_fx(mode, motion, flash_ok, beat, mouse)
+
     def _menu_hl_t(self, bid):
         return self._menu_hl.get(bid, 1.0 if self._menu_focus_id() == bid else 0.0)
 
@@ -520,6 +531,7 @@ class MenuMixin:
         self._t(name, self.font_mid, col, badge.right + 10, rect.centery, "midleft")
 
     def _render_menu(self):
+        self._menu_bg_fx()                                 # 메인 화면만 빛 연출(박자 맞춤/시차/빛 띠/로고 후광)을 켬
         self.menu_bg.draw(self.screen)
         self.menu_buttons.clear()
         cx = SCREEN_WIDTH // 2

@@ -74,6 +74,7 @@ class CoreMixin:
             self.match.rumble_cb = lambda power, kind="hit": self.gamepad.rumble(power, kind) if self._pad_hints_active() else None      # 마지막으로 패드를 쓴 경우에만 진동 (키보드로 하는 중에는 연결된 패드가 울리지 않게)
             self.match.shake_scale = SHAKE_SCALE.get(self.settings.get("screen_shake"), 1.0)
             self.match.pan_fn = self._card_pan
+            self.match.visual_fx = self.settings.get("visual_fx", "normal")                      # 빛 연출 단계 (ui_glow)
             self.match.rumble_scale = RUMBLE_SCALE.get(self.settings.get("pad_rumble"), 1.0)      # 패드 진동은 흔들림 설정과 따로
             self.match.flash_enabled = bool(self.settings.get("screen_flash", True))      # 번쩍임은 흔들림과 별개로 켜고 끔
 
