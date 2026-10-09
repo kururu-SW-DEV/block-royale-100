@@ -183,6 +183,69 @@ def test_closing_the_rules_card_resumes_a_game_it_paused():
     assert app.is_paused and m.is_paused, "직접 건 일시정지가 규칙 카드를 닫으며 풀림"
 
 
+def test_pad_hint_chips_do_not_all_say_A():
+    """패드로 할 때 패드 버튼이 없는 키(R/T)의 칩이 모든 버튼에 'A'로 붙어 구분이 안 되던 문제: 고른 버튼에만 A, 나머지는 칩 없음. 패드 버튼이 있는 키는 그대로"""
+    app = _app()
+    r = app.renderer
+    shown = []
+    orig = r._text
+    r._text = lambda text, font, color: (shown.append(text), orig(text, font, color))[1]
+    r.pad_ui = True
+    rect = pygame.Rect(100, 100, 300, 44)
+    for label, hint, focused in (("다시 시작", "R", False), ("환경 설정", "T", False), ("계속하기", "P", False), ("나가기", "ESC", False)):
+        shown.clear()
+        r._button(rect, label, "blue", focused, hint)
+        chips = [t for t in shown if t != label]
+        if hint in ("P", "ESC"):
+            assert chips == [{"P": "Y", "ESC": "B"}[hint]], (hint, chips)
+        else:
+            assert chips == [], f"고르지 않은 {hint} 버튼에 칩이 붙음: {chips}"
+    shown.clear()
+    r._button(rect, "환경 설정", "blue", True, "T")                    # 고른 버튼: 십자키로 골라 A로 누름
+    assert [t for t in shown if t != "환경 설정"] == ["A"]
+    r.pad_ui = False
+    shown.clear()
+    r._button(rect, "다시 시작", "blue", False, "R")                   # 키보드: 그대로 R
+    assert [t for t in shown if t != "다시 시작"] == ["R"]
+
+
+def test_pad_x_restarts_only_in_game_overlays():
+    from gamepad import GamepadMapper
+    m = GamepadMapper(lambda a: [], enabled=lambda: True)
+    E = pygame.event.Event
+    keydown = lambda evs: [e.key for e in evs if e.type == pygame.KEYDOWN]
+    joy = lambda: keydown(m.translate([E(pygame.JOYBUTTONDOWN, instance_id=0, button=2)], False))
+    ctl = lambda: keydown(m.translate([E(pygame.CONTROLLERBUTTONDOWN, instance_id=7, button=pygame.CONTROLLER_BUTTON_X)], False))
+    m.ctrls[7] = object()                                        # 7번은 GameController로 열린 장치로 취급
+    assert joy() == [pygame.K_SPACE] and ctl() == [pygame.K_SPACE], "평소 메뉴에서는 X = Space (리플레이 일시정지 등)"
+    m.translate([E(pygame.JOYBUTTONUP, instance_id=0, button=2), E(pygame.CONTROLLERBUTTONUP, instance_id=7, button=pygame.CONTROLLER_BUTTON_X)], False)
+    m.x_is_restart = True
+    assert joy() == [pygame.K_r] and ctl() == [pygame.K_r], "일시정지/결과/순위표 화면에서는 X = 다시 시작"
+
+
+def test_pad_x_chip_and_flag_follow_the_screen():
+    app = _app()
+    m = _start(app)
+    r = app.renderer
+    shown = []
+    orig = r._text
+    r._text = lambda text, font, color: (shown.append(text), orig(text, font, color))[1]
+    r.pad_ui = True
+    r.pad_x_restart = True
+    r._button(pygame.Rect(0, 0, 300, 44), "다시 시작", "blue", False, "R")
+    assert [t for t in shown if t != "다시 시작"] == ["X"], shown
+    shown.clear()
+    r.pad_x_restart = False
+    r._button(pygame.Rect(0, 0, 300, 44), "다시 시작", "blue", False, "R")
+    assert [t for t in shown if t != "다시 시작"] == []
+    # 일시정지 화면에서 X(= R)로 다시 시작이 실행됨
+    app.is_paused = m.is_paused = True
+    called = []
+    app._activate_pause_focus = lambda idx=None: called.append(idx)
+    app._handle_game_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_r, mod=0, unicode=""))
+    assert called == [1], called
+
+
 if __name__ == "__main__":
     pygame.init()
     from settings_manager import SETTINGS_FILE

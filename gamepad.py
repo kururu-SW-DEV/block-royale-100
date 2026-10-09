@@ -51,7 +51,7 @@ _CAX_X, _CAX_Y = getattr(pygame, "CONTROLLER_AXIS_LEFTX", 0), getattr(pygame, "C
 PAD_EVENT_TYPES = (pygame.JOYBUTTONDOWN, pygame.JOYBUTTONUP, pygame.JOYHATMOTION, pygame.JOYAXISMOTION) + _CBTN + (_CAXIS,)
 
 
-# 메뉴/결과/일시정지 화면의 버튼 옆 키 표시를 패드 버튼으로 바꾸는 표 (패드로 누를 수 없는 키 R/S/C/T 등은 표시하지 않음. MENU_BUTTONS와 같아야 함)
+# 메뉴/결과/일시정지 화면의 버튼 옆 키 표시를 패드 버튼으로 바꾸는 표 (MENU_BUTTONS와 같아야 함). 패드 버튼이 없는 키(S/T 등)는 고른 버튼에만 A를 표시하고, R은 경기 일시정지/결과/순위표 화면에서만 X (renderer.pad_x_restart)
 PAD_KEY_LABELS = {"ESC": "B", "Esc": "B", "ENTER": "A", "Enter": "A", "SPACE": "X", "Space": "X", "P": "Y", "TAB": "Back", "Tab": "Back", "↑↓←→": "십자키"}
 
 
@@ -115,6 +115,7 @@ class GamepadMapper:
         self._sent = {}                                 # 누른 입력 -> 보낸 키 코드
         self.ctrls = {}                                 # instance_id -> 열어 둔 GameController
         self._dpad = {}                                 # instance_id -> 눌린 십자키 방향 집합 (GameController는 십자키가 버튼으로 옴)
+        self.x_is_restart = False                       # 경기 일시정지/결과/순위표 화면에서만 켜짐: X 버튼을 Space(Enter와 같은 확인) 대신 R(다시 시작)로 보냄
         self.last_pad_t = 0.0                           # 마지막으로 패드 입력(또는 연결)이 있었던 시각 (게임 중 키 안내를 패드/키보드 중 어느 쪽으로 보일지 정하는 데 씀)
 
     # ---- 장치 연결/해제
@@ -264,6 +265,8 @@ class GamepadMapper:
             action = self.game_action(_CTRL_NAME.get(e.button))
             return [self._press(token, action, True)] if action else []
         key = CTRL_MENU_BUTTONS.get(e.button)
+        if self.x_is_restart and e.button == CB["X"]:
+            key = pygame.K_r
         return [self._press(token, key, False)] if key is not None else []
 
     def translate(self, events, in_game):
@@ -314,6 +317,8 @@ class GamepadMapper:
                     made = [self._press(token, action, True)] if action else []
                 else:
                     key = MENU_BUTTONS.get(e.button)
+                    if self.x_is_restart and e.button == 2:
+                        key = pygame.K_r
                     made = [self._press(token, key, False)] if key is not None else []
             else:
                 out.append(e)

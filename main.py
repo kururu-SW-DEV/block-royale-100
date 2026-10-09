@@ -250,6 +250,10 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
             pad_in_game = (self.state == "GAME" and self.match is not None and not self.is_paused and self.modal is None and not self.rules_open
                            and self.match.local_is_alive and not self.match.match_finished and self.match.countdown_left() <= 0
                            and not getattr(self.match, "brief_open", False))      # 그 밖에는 메뉴 방식(방향키/Enter/Esc)으로 변환
+            overlay = (self.state == "GAME" and self.match is not None and not pad_in_game and self.modal is None and not self.rules_open
+                       and not getattr(self.match, "brief_open", False))              # 일시정지/탈락·결과/순위표 화면: X = 다시 시작(R)
+            self.gamepad.x_is_restart = overlay
+            self.renderer.pad_x_restart = overlay
             for event in self.gamepad.translate(pygame.event.get(), pad_in_game):
                 if event.type == pygame.KEYDOWN and not getattr(event, "pad", False):
                     self._last_kb_t = time.time()                  # 진짜 키보드 입력 시각: 패드 입력이 더 최근이면 게임 중 키 안내를 패드 버튼으로 보여 줌

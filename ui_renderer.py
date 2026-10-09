@@ -501,7 +501,10 @@ class UIRenderer:
         key_surf = None
         if key_hint and self.pad_ui:
             from gamepad import pad_key_label
-            key_hint = pad_key_label(key_hint) or "A"       # 패드 버튼이 있는 키는 그 버튼(B/Y…), 없는 키(R/S/T)는 십자키로 고른 뒤 A(확인)로 누르므로 A
+            if key_hint == "R" and getattr(self, "pad_x_restart", False):
+                key_hint = "X"                                  # 일시정지/결과/순위표 화면에서는 패드 X가 다시 시작(R)
+            else:
+                key_hint = pad_key_label(key_hint) or ("A" if hover else None)       # 패드 버튼이 있는 키는 그 버튼(B/Y…). 없는 키(R/S/T)는 십자키로 고른 뒤 A(확인)로 누르므로, 지금 고른 버튼에만 A를 표시 (모든 버튼에 A가 붙어 같은 키처럼 보이지 않게)
         if key_hint:
             key_surf = self._text(key_hint, self.font_tiny, (20, 24, 36))
             total_w += key_surf.get_width() + 22
