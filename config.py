@@ -2,7 +2,7 @@
 Block Royale 100 - Configuration & Constants
 """
 
-APP_VERSION = "1.4.26"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
+APP_VERSION = "1.4.27"          # 프로그램 버전 (메인 화면 하단, --version, error.log에 표시)
 
 # 화면 해상도 설정
 SCREEN_WIDTH = 1366
@@ -204,9 +204,6 @@ MAX_GARBAGE_PER_LOCK = 8
 
 # 공격을 받으면 쓰레기 줄이 이 시간(초) 동안 "차징" 중이라 보드에 올라오지 않음 (그 사이에 줄을 지워 상쇄할 수 있음). 0이면 끔
 GARBAGE_CHARGE_DELAY = 0.8
-
-# 쓰레기 줄의 구멍 위치: 한 번에 올라오는 묶음 안에서 다음 줄로 넘어갈 때 구멍이 다른 칸으로 옮겨질 확률
-GARBAGE_MESSINESS = 0.25
 
 # 한 플레이어에게 쌓여 있을 수 있는 대기 쓰레기 줄 수의 상한 (블록 3번 고정분). 이미 탈락이 확정된 상대에게 100줄씩 쌓이는 것을 막음: 초과분은 버려짐
 MAX_INCOMING_GARBAGE = 24

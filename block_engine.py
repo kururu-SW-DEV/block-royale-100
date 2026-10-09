@@ -8,7 +8,7 @@ import random
 from config import (
     BOARD_WIDTH, BOARD_HEIGHT, SPAWN_Y, TETROMINOES,
     GARBAGE_ATTACK_TABLE, COMBO_BONUS, TSPIN_ATTACK_TABLE, TSPIN_MINI_ATTACK_TABLE,
-    MAX_GARBAGE_PER_LOCK, PERFECT_CLEAR_ATTACK, MAX_INCOMING_GARBAGE, GARBAGE_CHARGE_DELAY, GARBAGE_MESSINESS
+    MAX_GARBAGE_PER_LOCK, PERFECT_CLEAR_ATTACK, MAX_INCOMING_GARBAGE, GARBAGE_CHARGE_DELAY
 )
 
 # SRS 기본 오프셋 킥 데이터 (JLSTZ용)
@@ -226,13 +226,14 @@ class BlockEngine:
 
     # 180도 회전 킥 후보 (dx, 위쪽이 +): 제자리 -> 위 -> 좌우 -> 좌우 위
     ROT180_KICKS = [(0, 0), (0, 1), (1, 0), (-1, 0), (1, 1), (-1, 1)]
+    ROT180_KICKS_I = ROT180_KICKS + [(2, 0), (-2, 0), (0, 2)]       # 4칸짜리 I는 벽/구멍 근처에서 더 넓게 시도 (180도 회전이 쉽게 막히지 않게)
 
     def rotate180(self):
         """180도 회전(선택 키). SRS에는 없는 동작이라 간단한 킥 목록만 쓰며, T-스핀 판정은 기존 3-코너 규칙을 그대로 따름(킥 번호로 인한 정식 판정은 없음)"""
         if self.game_over or self.current_piece == 'O':
             return False
         new_rot = (self.current_rot + 2) % 4
-        for kick_idx, (kx, ky) in enumerate(self.ROT180_KICKS):
+        for kick_idx, (kx, ky) in enumerate(self.ROT180_KICKS_I if self.current_piece == 'I' else self.ROT180_KICKS):
             test_x = self.current_x + kx
             test_y = self.current_y - ky
             if not self._check_collision(test_x, test_y, new_rot):
@@ -378,9 +379,9 @@ class BlockEngine:
             else:
                 base_attack = GARBAGE_ATTACK_TABLE.get(cleared_lines, 0)
 
-            # B2B 보너스 (+1줄 공격력)
+            # B2B 보너스: 연쇄가 이어질수록 커짐 (연쇄 1~3: +1줄, 4~7: +2줄, 8 이상: +3줄) -> 어려운 클리어를 끊지 않고 모았다 터뜨리는 보람
             if is_b2b and is_difficult:
-                base_attack += 1
+                base_attack += 1 + (self.b2b_chain >= 4) + (self.b2b_chain >= 8)
 
             # 퍼펙트 클리어: 줄을 지운 뒤 보드에 블록이 하나도 없으면 큰 보너스 공격
             is_pc = all(cell is None for row in self.grid for cell in row)
@@ -477,10 +478,8 @@ class BlockEngine:
             rec = {"k": "G", "n": 0, "h": []}
             self.replay_log.append(rec)
         for i in range(count):
-            # 맨 위 줄이 비어있지 않으면 밀려 올라가면서 게임오버 (실제로 올라온 줄만 기록/집계)
-            if any(self.grid[0]):
-                self.game_over = True
-                break
+            # 맨 위 줄에 블록이 있어도 바로 탈락시키지 않음: 천장 밖으로 밀려난 칸은 사라지고, 새 블록이 나올 자리(또는 지금 조작 중인 블록)가 막힐 때만 탈락
+            # (가이드라인 게임의 숨김 구역처럼, 스폰 구역 밖의 모서리에 블록이 닿았다고 억울하게 죽지 않게. 실제로 올라온 줄만 기록/집계)
             self.push_holes.append(hole_x)
             del self.push_holes[:-12]
             self.garbage_pushed_total += 1

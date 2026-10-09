@@ -34,6 +34,7 @@ class CoreMixin:
         """진행 중인 경기에 설정(화면 흔들림 배율)을 반영. 조준 모드는 경기 시작 때와 모드를 바꿀 때만 저장/복원"""
         from app_common import SHAKE_SCALE
         if self.match is not None:
+            self.match.rumble_cb = self.gamepad.rumble
             self.match.shake_scale = SHAKE_SCALE.get(self.settings.get("screen_shake"), 1.0)
 
     def apply_handling(self):
@@ -381,6 +382,7 @@ class CoreMixin:
                                 "best_rank": int(self.stats_mgr.best_in_size("battle", self.match.total_players) or 0)}      # 경기 중 근접 실패/돌파 알림용
         self.apply_gameplay_options()
         if getattr(self, "use_bot_pool", False) and mode != "CLIENT":
+            bot_pool.revive()
             bot_pool.start()                       # 봇 계산을 여러 CPU 코어에 나눠 맡김 (준비될 때까지는 직접 계산)
         self.renderer.last_cleared_count = 0
         self.renderer.particles.particles.clear()
@@ -403,6 +405,15 @@ class CoreMixin:
                 self.start_game(mode="SOLO", total_players=self.target_player_count, quick=True)
         elif self.match is not None and self.match.match_finished:
             self._return_to_lobby()
+
+    def _challenge_next_difficulty(self):
+        """난이도 클리어 직후 '다음 난이도 도전': 봇 난이도를 다음 단계로 바꾸고 같은 규모로 새 판 (설정에도 반영됨)"""
+        nxt = getattr(self.match, "next_ladder", None) if self.match is not None else None
+        if not nxt or self.net_mgr.mode != "NONE":
+            return
+        self.settings.set("bot_difficulty", nxt)
+        self.bot_difficulty = self.settings.get("bot_difficulty")
+        self.start_game(mode="SOLO", total_players=self.target_player_count, quick=True)
 
     def _practice_after_match(self):
         """결과 화면 '연습하기'(P): 솔로 경기에서만 바로 연습 모드로 (네트워크 경기에서는 무시)"""

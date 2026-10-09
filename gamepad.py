@@ -118,6 +118,22 @@ class GamepadMapper:
         self.x_is_restart = False                       # 경기 일시정지/결과/순위표 화면에서만 켜짐: X 버튼을 Space(Enter와 같은 확인) 대신 R(다시 시작)로 보냄
         self.last_pad_t = 0.0                           # 마지막으로 패드 입력(또는 연결)이 있었던 시각 (게임 중 키 안내를 패드/키보드 중 어느 쪽으로 보일지 정하는 데 씀)
 
+    def rumble(self, power):
+        """패드 진동 (power 0~1: 클수록 세고 길게). 설정의 화면 흔들림이 '끔'이면 호출되지 않음. 진동을 지원하지 않는 장치는 조용히 무시"""
+        if not self.enabled() or power <= 0:
+            return
+        now = time.time()
+        if now - getattr(self, "_rumble_t", 0.0) < 0.12:
+            return                                      # 연속 호출로 계속 웅웅거리지 않게
+        self._rumble_t = now
+        p = max(0.0, min(1.0, power))
+        low, high, ms = int(0xFFFF * p * 0.8), int(0xFFFF * p * 0.5), int(80 + 170 * p)
+        for dev in list(self.ctrls.values()) + list(self.joys.values()):
+            try:
+                dev.rumble(low, high, ms)
+            except Exception:
+                pass
+
     # ---- 장치 연결/해제
     def on_device_event(self, event):
         try:

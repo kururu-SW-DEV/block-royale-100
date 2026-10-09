@@ -74,12 +74,28 @@ def start(workers=None):
             p.start()
             st["procs"].append(p)
     except Exception:
-        _mark_broken()
+        _mark_broken("worker start failed")
 
 
-def _mark_broken():
+_logged = [0]
+
+
+def _mark_broken(reason="unknown"):
     _state["broken"] = True
+    if _logged[0] < 3:                                 # 원인을 error.log에 남김 (판마다 반복되면 3번까지만)
+        _logged[0] += 1
+        try:
+            import crash_log
+            crash_log.write_error(f"bot_pool disabled: {reason}", "")
+        except Exception:
+            pass
     stop()
+
+
+def revive():
+    """새 경기를 시작할 때 호출: 이전에 꺼졌더라도 다시 켤 수 있게 함 (한 번 멈췄다고 그 실행 내내 직접 계산으로 남지 않게)"""
+    if _state["broken"] and not _state["procs"]:
+        _state["broken"] = False
 
 
 def stop():
@@ -132,7 +148,7 @@ def pump():
     except queue.Empty:
         pass
     except Exception:
-        _mark_broken()
+        _mark_broken("result queue read failed")
         return
     if st["born"]:                                     # 주인(탈락한 봇 등)이 가져가지 않은 오래된 요청/결과 정리
         cutoff = time.time() - STALE_AFTER
@@ -141,9 +157,9 @@ def pump():
             st["pending"].discard(rid)
             st["ready"].pop(rid, None)
     if any(not p.is_alive() for p in st["procs"]):
-        _mark_broken()
+        _mark_broken("worker process died")
     elif st["pending"] and st["hello"] > 0 and time.time() - st["last_res"] > STALL_AFTER:
-        _mark_broken()                                 # 멈춘 작업자: 봇은 메인 프로세스에서 직접 계산하는 방식으로 이어감
+        _mark_broken("worker stalled (no result for %.0fs)" % STALL_AFTER)   # 멈춘 작업자: 봇은 메인 프로세스에서 직접 계산하는 방식으로 이어감
 
 
 def enabled():
@@ -171,7 +187,7 @@ def submit(rows, cur, hold, qu, can_hold, combo, b2b, inc, depth, beam, atk, ts,
         st["req"].put((rid, rows, cur, hold, qu, can_hold, combo, b2b, inc, depth, beam, atk, ts,
                        (st["params_ver"], st["params_blob"])))
     except Exception:
-        _mark_broken()
+        _mark_broken("request queue write failed")
         return None
     if not st["pending"]:
         st["last_res"] = time.time()                   # 한가하다가 처음 맡기는 순간부터 응답 시간을 잼

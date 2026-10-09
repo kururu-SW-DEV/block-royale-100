@@ -355,6 +355,12 @@ class SoundManager:
         p2 = 2 * np.pi * np.cumsum(f2) / sr
         rot = (np.sin(p2) + 0.3 * np.sin(2 * p2)) * np.exp(-t2 * 70.0) * 0.45
         self.sounds['rotate'] = self._pack_sound(rot)
+
+        # 2b. 스핀 성립: T 블록이 T-스핀 자세로 회전했을 때 (회전음 대신) 맑은 두 음 (90ms)
+        t2b = np.arange(int(sr * 0.09)) / sr
+        t2c = np.clip(t2b - 0.035, 0, None)
+        spin = (np.sin(2 * np.pi * 1318.5 * t2b) * np.exp(-t2b * 34.0) + 0.8 * np.sin(2 * np.pi * 1760.0 * t2c) * (t2b >= 0.035) * np.exp(-t2c * 34.0)) * 0.34
+        self.sounds['spin_ready'] = self._pack_sound(spin)
         
         # 3. Hard Drop: 짧고 단단한 임팩트 쿵 (85ms)
         t3 = np.arange(int(sr * 0.085)) / sr

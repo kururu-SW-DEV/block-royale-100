@@ -16,7 +16,7 @@ from stats_manager import LADDER_NAMES, ACHIEVEMENTS, level_of
 from config import (
     SCREEN_WIDTH, SCREEN_HEIGHT,
     BOARD_WIDTH, BOARD_HEIGHT,
-    TETROMINOES, PIECE_COLORS, TARGET_MODES, BADGE_TIERS
+    TETROMINOES, PIECE_COLORS, TARGET_MODES, BADGE_TIERS, SPAWN_Y
 )
 
 # ---------------------------------------------------------------- 팔레트
@@ -286,6 +286,7 @@ class UIRenderer:
         self._tr_state = None
         self.result_return_btn = None
         self.result_restart_btn = None
+        self.result_next_btn = None
         self.result_spectate_btn = None
         self.result_focus_id = "return"     # 결과 화면 키보드 포커스 (restart/spectate/return)
         self._result_match = None           # 결과 화면 연출 시작 시각 기준 (경기마다 한 번만 재생)
@@ -764,7 +765,7 @@ class UIRenderer:
         if tier >= 3:                                                                # 가장 큰 기술: 금빛 광채
             CANVAS.alpha_rect(plate.inflate(14, 12), (255, 210, 80, int(alpha * 0.16)), radius=16)
             CANVAS.alpha_rect(plate.inflate(6, 5), (255, 225, 120, int(alpha * 0.22)), radius=13)
-        CANVAS.alpha_rect(plate, (10, 13, 24, int(alpha * 0.55)), radius=10)
+        CANVAS.alpha_rect(plate, (10, 13, 24, int(alpha * 0.34)), radius=10)            # 낙하 중인 블록이 비쳐 보이게 판을 더 투명하게
         flash = max(0.0, 1.0 - age / self.POP_SECS) if age < self.POP_SECS else 0.0
         edge = _mix(main["color"][:3], (255, 255, 255), flash)
         CANVAS.alpha_rect(plate, (*edge, int(alpha * 0.85)), width=2, radius=10)
@@ -1084,6 +1085,8 @@ class UIRenderer:
         match.ko_orbs = orbs = [o for o in orbs if now - o["t0"] < fly + 0.35]
         for o in orbs:
             age = now - o["t0"]
+            if age < 0:
+                continue                                                           # 아직 출발 전인 구슬 (흡수 구슬은 시차를 두고 출발)
             src_rect = self.mini_board_rects.get(o["victim"])
             src = src_rect.center if src_rect is not None else (self.main_board_x + self.main_board_w // 2, self.main_board_y + self.main_board_h // 2)
             if age < fly:
@@ -1352,8 +1355,9 @@ class UIRenderer:
             CANVAS.alpha_rect(r3.inflate(int(10 * (1.0 - t_age / 0.7)) + 2, int(10 * (1.0 - t_age / 0.7)) + 2), (*C_GOLD, int(230 * (1.0 - t_age / 0.7))), width=3, radius=12)
         title = f"배지 Lv.{tier}  +{pct}" if tier > 0 else "K.O. 처치"
         self._draw_text(title, self.font_tiny, border3 if tier > 0 or match.local_ko_count > 0 else C_DIM, r3.centerx, r3.y + 5, "midtop")
-        self._draw_text(f"{match.local_ko_count} K.O.", self.font_num, C_TEXT, r3.centerx, r3.y + 16, "midtop")
-        ko = match.local_ko_count
+        extra = match.players.get(match.local_player_id, {}).get("badge_extra", 0)
+        self._draw_text(f"{match.local_ko_count}" + (f"+{extra}" if extra else "") + " K.O.", self.font_num, C_TEXT, r3.centerx, r3.y + 16, "midtop")
+        ko = match.badge_points()
         cur_thr, next_thr = 0, None
         for thr, _rate in BADGE_TIERS:
             if ko >= thr:
@@ -1792,7 +1796,7 @@ class UIRenderer:
             self._draw_rise_line(bx, by, bw, cs, highest, ready_n)
 
         # 4. 위험 경고 (유입 쓰레기 4줄 이상 또는 블록이 천장 근처)
-        is_danger = (incoming >= 4) or (not engine.game_over and highest <= 5)
+        is_danger = (incoming >= 4 and highest - incoming <= 7) or (not engine.game_over and highest <= 5)      # 받을 줄이 많아도 스택이 낮아 여유 있으면 경고하지 않음 (늘 켜진 경고는 진짜 위기를 가림)
         if is_danger and not spectating:
             pulse = int(50 + 40 * math.sin(time.time() * 8.0))
             self._render_danger_breath(engine, highest, bx, by, bw, bh, cs, pulse)
@@ -1833,6 +1837,16 @@ class UIRenderer:
                 self._draw_active_rim(cur_cells, engine.current_piece, bx, by, cs, board_rect)
             if not spectating and cur_cells and engine.current_piece == 'T' and engine._is_touching_ground() and engine._detect_tspin():
                 self._render_tspin_hint(cur_cells, bx, by, cs)            # 지금 고정하면 T-스핀: 윤곽이 반짝이고 "T-SPIN" 글자가 뜸
+
+        if not spectating and not engine.game_over and engine.next_queue and highest <= 6:
+            nt = engine.next_queue[0]                                      # 다음 블록이 나올 자리가 막혀 있으면(고정하는 순간 탈락) 그 자리를 붉게 표시
+            sx0 = 3 if nt != 'O' else 4
+            if engine._check_collision(sx0, SPAWN_Y, 0, nt):
+                a_ = int(110 + 90 * math.sin(time.time() * 12.0))
+                for px, py in engine._get_blocks(nt, 0, sx0, SPAWN_Y):
+                    if 0 <= py:
+                        CANVAS.alpha_rect((bx + px * cs, by + py * cs, cs, cs), (255, 50, 60, max(0, min(255, a_))), radius=4)
+                self._draw_text("!", self.font_hud, (255, 90, 90), bx + bw // 2, by + 2, "midtop")
 
         pygame.draw.rect(self.screen, border_col, board_rect, 2, border_radius=6)
 
@@ -3476,22 +3490,36 @@ class UIRenderer:
         self.result_spectate_btn = None
         net_on = match.net_mgr is not None and match.net_mgr.mode != "NONE"
         self.result_practice_btn = None
+        self.result_next_btn = None
         if net_on:
             self.result_restart_btn = pygame.Rect(bx + box_w // 2 - 260, btn_y, 250, 46)
             self.result_return_btn = pygame.Rect(bx + box_w // 2 + 10, btn_y, 250, 46)
         else:
-            self.result_restart_btn = pygame.Rect(bx + box_w // 2 - 318, btn_y, 200, 46)
-            self.result_practice_btn = pygame.Rect(bx + box_w // 2 - 100, btn_y, 200, 46)
-            self.result_return_btn = pygame.Rect(bx + box_w // 2 + 118, btn_y, 200, 46)
+            nxt_diff = getattr(match, "next_ladder", None)
+            if nxt_diff:                                     # 난이도 클리어 직후: '다음 난이도 도전' 버튼을 맨 앞에 추가
+                w4, g4 = 196, 12
+                x4 = bx + (box_w - (w4 * 4 + g4 * 3)) // 2
+                self.result_next_btn = pygame.Rect(x4, btn_y, w4, 46)
+                self.result_restart_btn = pygame.Rect(x4 + (w4 + g4), btn_y, w4, 46)
+                self.result_practice_btn = pygame.Rect(x4 + (w4 + g4) * 2, btn_y, w4, 46)
+                self.result_return_btn = pygame.Rect(x4 + (w4 + g4) * 3, btn_y, w4, 46)
+            else:
+                self.result_restart_btn = pygame.Rect(bx + box_w // 2 - 318, btn_y, 200, 46)
+                self.result_practice_btn = pygame.Rect(bx + box_w // 2 - 100, btn_y, 200, 46)
+                self.result_return_btn = pygame.Rect(bx + box_w // 2 + 118, btn_y, 200, 46)
         ids = ["restart", "return"] if net_on else ["restart", "practice", "return"]
+        if self.result_next_btn:
+            ids = ["next"] + ids
         if self.result_focus_id not in ids:
             self.result_focus_id = ids[0]
         st_moved = (mx, my) != getattr(self, "_standings_last_mouse", None)       # 마우스가 실제로 움직였을 때만 포커스가 따라감
         self._standings_last_mouse = (mx, my)
         if st_moved:
-            for bid, rect in (("restart", self.result_restart_btn), ("practice", self.result_practice_btn), ("return", self.result_return_btn)):
+            for bid, rect in (("next", self.result_next_btn), ("restart", self.result_restart_btn), ("practice", self.result_practice_btn), ("return", self.result_return_btn)):
                 if rect and bid in ids and rect.collidepoint(mx, my):
                     self.result_focus_id = bid
+        if self.result_next_btn:
+            self._button(self.result_next_btn, "다음 난이도 도전", "gold", self.result_focus_id == "next", "N")
         self._button(self.result_restart_btn, "대기실로 돌아가기" if net_on else "재도전", "green",
                      self.result_focus_id == "restart", "R")
         if self.result_practice_btn:
@@ -4058,6 +4086,8 @@ class UIRenderer:
             gap -= 2
         while self._keycap_width(hints, gap) + 40 > center_w and droppable:
             hints.remove(droppable.pop())
+        if self.pad_ui:                                           # 패드: 관전 중 버튼 (LB 결과 화면 / Back 배속 / X 재도전 / Y 연습 / B 일시정지)
+            hints = [({"S": "LB", "F": "Back", "R": "X", "P": "Y", "ESC": "B"}.get(k, k), d) for k, d in hints]
         bar_w = max(min(580, center_w), min(center_w, self._keycap_width(hints, gap) + 40))
         bar_w = min(bar_w, self.width - 20)
         rect = pygame.Rect(self.width // 2 - bar_w // 2 + int(ox),

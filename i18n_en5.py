@@ -286,3 +286,30 @@ EXACT.update({
 })
 
 EXACT.update({"입력한 주소를 찾을 수 없습니다. 주소를 다시 확인해 주세요.": "Could not find that address. Please check it and try again."})
+
+# v1.4.27: 메인 메뉴 작은 카드, 다음 난이도 도전, K.O. 배지 흡수
+EXACT.update({"다음 난이도 도전": "Next difficulty", "오늘 아직 안 함": "Not played today", "이번 주 아직 안 함": "Not played this week"})
+TEMPLATES.update({
+    "완료한 과제 {#}개": "{} tasks done",
+    "★{#}/3 · 최고 {#}위": "★{}/3 · best #{}",
+    "이번 주 최고 {#}위": "Best this week: #{}",
+    "[K.O. 처치!] +{#} 배지 획득 >> {}": "[K.O.!] +{} badges >> {}",
+    "[K.O. 처치!] +{#} 배지 획득 >> {}  (상대 배지 {#} 흡수)": "[K.O.!] +{} badges >> {}  (absorbed {} from the victim)",
+})
+
+# v1.4.27 메인 화면 단순화 (목록 + 설명 패널)
+EXACT.update({"바로 실행": "Run now", "프로필": "Profile"})
+TEMPLATES.update({"★ 다음 도전: {} 봇 {#}인↑에서 {#}위 안": "★ Next goal: top {2} vs {0} bots in {1}+ players"})
+
+# v1.4.27 메인 화면 카테고리 (함께하기 / 혼자하기) + 한 줄 설명
+EXACT.update({
+    "함께하기": "Multiplayer", "혼자하기": "Solo",
+    "봇과 바로 대전합니다": "Jump into a match against bots",
+    "방을 열고 친구를 초대합니다. 빈 자리는 봇이 채웁니다": "Open a room and invite friends. Bots fill empty seats",
+    "LAN에서 방을 찾거나 IP로 직접 접속합니다": "Find a room on your LAN or connect by IP",
+    "혼자 자유롭게 연습합니다. 전적에는 남지 않아요": "Practice freely on your own. Not saved to your records",
+    "하루 한 번, 모두 같은 블록 순서로 순위를 겨룹니다": "Once a day, everyone gets the same pieces. Compete for rank",
+    "매주 규칙 하나가 바뀐 경기로 겨룹니다": "Compete with one rule changed each week",
+    "이름 · 인원 · 봇 난이도 설정": "Name · players · bot difficulty",
+})
+EXACT.update({"전적에 남지 않음": "Not recorded"})

@@ -15,7 +15,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -r requirements.txt pyinstaller
+      - run: pip install -r requirements.txt "pyinstaller>=6,<7" pyflakes
+      - name: 테스트 (실패하면 exe를 만들지 않음)
+        run: python run_all_tests.py
+        env:
+          PYTHONUTF8: "1"
       - run: .\build_exe.bat
       - name: exe selftest (영어 번역표가 exe 안에 들어갔는지 포함)
         shell: pwsh

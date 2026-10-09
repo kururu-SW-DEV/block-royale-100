@@ -326,6 +326,14 @@ def test_main_menu_interactions():
     assert app.target_player_count == n0 - 1, "방 만들기 포커스에서 ←가 인원을 바꿈"
     key(pygame.K_RIGHT)
     assert app._menu_focus_id() == "join_room"
+    # 혼자하기 줄 / 하단 줄도 ←→로 그 줄 안에서 돌아감
+    app._set_menu_focus("weekly", sound=False)
+    key(pygame.K_RIGHT)
+    assert app._menu_focus_id() == "practice"
+    app._set_menu_focus("quit_game", sound=False)
+    key(pygame.K_RIGHT)
+    assert app._menu_focus_id() == "records"
+    app._set_menu_focus("join_room", sound=False)
     # 마우스: 누르기만 해서는 실행되지 않고, 같은 버튼 위에서 뗄 때 실행. 호버=포커스 (강조는 하나)
     app._render_menu()
     r = app.menu_buttons["records"]

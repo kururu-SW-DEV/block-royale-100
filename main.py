@@ -231,6 +231,12 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
             return
         self.renderer.begin_transition(reduced=self.settings.get("screen_shake") == "off")
 
+    def _pad_in_game(self):
+        """패드 입력을 게임 조작(회전/홀드 등)으로 보낼 때인가. 카운트다운 중도 포함: 이때 회전/홀드를 눌러 두면 GO 직후 적용(IRS/IHS)되고, 메뉴 방식이면 B가 ESC로 바뀌어 일시정지됨"""
+        return (self.state == "GAME" and self.match is not None and not self.is_paused and self.modal is None and not self.rules_open
+                and self.match.local_is_alive and not self.match.match_finished
+                and not getattr(self.match, "brief_open", False))
+
     def run(self):
         self.use_bot_pool = True                 # 실제 실행에서만 봇 계산 작업 프로세스를 사용 (테스트/시뮬레이션은 직접 계산)
         running = True
@@ -247,9 +253,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
             self.gamepad.capture = self._pad_capture if (self.state == "SETTINGS" and str(self.rebinding_action or "").startswith("pad:")) else None
             
             # 이벤트 처리
-            pad_in_game = (self.state == "GAME" and self.match is not None and not self.is_paused and self.modal is None and not self.rules_open
-                           and self.match.local_is_alive and not self.match.match_finished and self.match.countdown_left() <= 0
-                           and not getattr(self.match, "brief_open", False))      # 그 밖에는 메뉴 방식(방향키/Enter/Esc)으로 변환
+            pad_in_game = self._pad_in_game()                       # 그 밖에는 메뉴 방식(방향키/Enter/Esc)으로 변환
             overlay = (self.state == "GAME" and self.match is not None and not pad_in_game and self.modal is None and not self.rules_open
                        and not getattr(self.match, "brief_open", False))              # 일시정지/탈락·결과/순위표 화면: X = 다시 시작(R)
             self.gamepad.x_is_restart = overlay

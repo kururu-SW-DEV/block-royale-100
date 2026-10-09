@@ -28,7 +28,8 @@ class ModalMixin:
     def _open_modal(self, title, lines, buttons):
         ids = [b[0] for b in buttons]
         focus = ids.index("stay") if "stay" in ids else 0        # 기본 포커스는 항상 안전한 쪽
-        self.modal = {"title": title, "lines": lines, "buttons": buttons, "rects": {}, "focus": focus}
+        self.modal = {"title": title, "lines": lines, "buttons": buttons, "rects": {}, "focus": focus,
+                      "last_mouse": pygame.mouse.get_pos()}
         self.sound_mgr.play('warning')
 
     def _modal_choose(self, bid):
@@ -99,8 +100,10 @@ class ModalMixin:
         sx = x + (w - (bw * n + gap * (n - 1))) // 2
         m["rects"] = {}
         rects = [pygame.Rect(sx + i * (bw + gap), y + h - 84, bw, 52) for i in range(n)]
+        moved = (mx, my) != m.get("last_mouse")      # 마우스가 실제로 움직였을 때만 포커스를 옮김 (가만히 있는 마우스 때문에 Space/Enter가 엉뚱한 버튼을 누르지 않게)
+        m["last_mouse"] = (mx, my)
         for i, rect in enumerate(rects):
-            if rect.collidepoint(mx, my):       # 마우스가 다른 버튼 위에 있으면 키보드 포커스도 그쪽으로 옮김 (이중 하이라이트 방지)
+            if moved and rect.collidepoint(mx, my):       # 마우스가 다른 버튼 위에 있으면 키보드 포커스도 그쪽으로 옮김 (이중 하이라이트 방지)
                 m["focus"] = i
                 break
         for i, (bid, label, style, hint) in enumerate(m["buttons"]):

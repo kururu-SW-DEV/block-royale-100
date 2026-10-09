@@ -17,21 +17,24 @@ from block_engine import BlockEngine
 
 
 def test_garbage_topout_records_only_pushed_rows():
+    # v1.4.27: 천장 쪽 블록은 밀려 올라가며 사라지고, 스폰/조작 자리가 막힐 때만 탈락 -> 올라온 줄은 모두 집계/기록됨
     e = BlockEngine(seed=1)
     e.replay_log = []
-    e.grid[0][4] = "J"                                           # 맨 위 줄이 이미 차 있으면 한 줄도 올라오지 못함
+    for x in range(3, 7):
+        for y in range(0, 6):
+            e.grid[y][x] = "J"                                   # 스폰 자리 아래가 높이 쌓여 있음
     before = e.garbage_pushed_total
     e._push_garbage(3)
+    if not e.game_over:
+        e.hard_drop()                                            # 조작 중이던 블록이 천장 위로 밀려 있으면 고정하는 순간(또는 다음 블록이 나올 때) 탈락
     assert e.game_over
-    assert e.garbage_pushed_total == before, "올라오지 못한 줄이 통계에 들어감"
-    assert not [ev for ev in e.replay_log if ev["k"] == "G"], "올라오지 못한 줄이 리플레이에 기록됨"
+    assert e.garbage_pushed_total == before + 3, "올라온 줄은 모두 통계에 들어가야 함"
+    g = [ev for ev in e.replay_log if ev["k"] == "G"]
+    assert len(g) == 1 and g[0]["n"] == 3 and len(g[0]["h"]) == 3, g
     e2 = BlockEngine(seed=1)
-    e2.replay_log = []
-    e2.grid[1][4] = "J"                                          # 한 줄은 올라오고 두 번째에서 탑아웃
+    e2.grid[0][0] = "J"                                          # 스폰 구역 밖 모서리 블록은 탈락 사유가 아님
     e2._push_garbage(3)
-    g = [ev for ev in e2.replay_log if ev["k"] == "G"]
-    assert e2.game_over and len(g) == 1 and g[0]["n"] == 1 and len(g[0]["h"]) == 1, g
-    assert e2.garbage_pushed_total == 1
+    assert not e2.game_over and e2.garbage_pushed_total == 3
 
 
 def test_instant_garbage_not_blocked_by_charging_batch():

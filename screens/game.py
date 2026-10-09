@@ -114,6 +114,8 @@ class GameMixin:
                 elif event.key == pygame.K_p and self.net_mgr.mode == "NONE":
                     self.sound_mgr.play('move')
                     self._practice_after_match()
+                elif event.key == pygame.K_n and "next" in self._standings_button_ids():
+                    self._activate_result_focus("next")
                 elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
                     ids = self._standings_button_ids()
                     self._activate_result_focus(self.renderer.result_focus_id if self.renderer.result_focus_id in ids else ids[0])
@@ -121,7 +123,7 @@ class GameMixin:
                     self._request_menu_exit()
                 return
             if self.match.match_finished or not self.match.local_is_alive:
-                if (event.key == pygame.K_f and self.net_mgr.mode == "NONE" and not self.match.match_finished
+                if (event.key in (pygame.K_f, pygame.K_TAB) and self.net_mgr.mode == "NONE" and not self.match.match_finished
                         and not self.match.local_is_alive):
                     # 솔로 탈락 뒤: F로 관전 배속 ×1 -> ×2 -> ×4 (결과까지 기다리는 시간을 줄임)
                     self.match.spectate_speed = {1: 2, 2: 4}.get(getattr(self.match, "spectate_speed", 1), 1)
@@ -136,7 +138,7 @@ class GameMixin:
                         self.match.cycle_spectate_target(1)
                         self.sound_mgr.play('move')
                         return
-                    elif event.key == pygame.K_s:
+                    elif event.key in (pygame.K_s, pygame.K_PAGEUP):         # 패드: LB = 결과 화면
                         self.match.is_spectating = False
                         self.sound_mgr.play('move')
                         return
@@ -182,7 +184,7 @@ class GameMixin:
                         self.renderer.result_focus_id = ids[(i + step) % len(ids)]
                         self.sound_mgr.play('move')
                         return
-                    elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
                         if time.time() < self.result_lock_until:      # 탈락 직후 하드드롭 연타로 결과 화면이 닫히는 것 방지
                             return
                         self._activate_result_focus()
@@ -227,15 +229,15 @@ class GameMixin:
             elif self.settings.is_action_key(event.key, "rotate_cw"):
                 self._flush_das_before_action()
                 if self.match.local_engine.rotate(clockwise=True):
-                    self.sound_mgr.play('rotate')
+                    self._play_rotate_sound()
             elif self.settings.is_action_key(event.key, "rotate_ccw"):
                 self._flush_das_before_action()
                 if self.match.local_engine.rotate(clockwise=False):
-                    self.sound_mgr.play('rotate')
+                    self._play_rotate_sound()
             elif self.settings.is_action_key(event.key, "rotate_180"):
                 self._flush_das_before_action()
                 if self.match.local_engine.rotate180():
-                    self.sound_mgr.play('rotate')
+                    self._play_rotate_sound()
             elif self.settings.is_action_key(event.key, "hard_drop"):
                 self._flush_das_before_action()
                 cleared = self.match.local_engine.hard_drop()
@@ -327,6 +329,9 @@ class GameMixin:
             if self.match.match_finished or (not self.match.local_is_alive and not getattr(self.match, 'is_spectating', False)):
                 if self.match.match_finished and time.time() < self.result_lock_until:
                     return                                       # 우승 세리머니 동안은 버튼 클릭 무시
+                if getattr(self.renderer, 'result_next_btn', None) and self.renderer.result_next_btn.collidepoint(mx, my):
+                    self._activate_result_focus("next")
+                    return
                 if hasattr(self.renderer, 'result_restart_btn') and self.renderer.result_restart_btn and self.renderer.result_restart_btn.collidepoint(mx, my):
                     self.sound_mgr.play('move')
                     self._restart_after_match()
@@ -488,7 +493,9 @@ class GameMixin:
 
     def _standings_button_ids(self):
         """최종 순위표(경기 종료)에 보이는 버튼 id 목록 (왼쪽부터). ui_renderer._render_standings_overlay와 맞춰야 함"""
-        return ["restart", "return"] if self.net_mgr.mode != "NONE" else ["restart", "practice", "return"]
+        if self.net_mgr.mode != "NONE":
+            return ["restart", "return"]
+        return (["next"] if getattr(self.match, "next_ladder", None) else []) + ["restart", "practice", "return"]
 
     def _activate_result_focus(self, bid=None):
         """결과 화면(K.O.) 버튼 실행 (키보드 엔터/마우스 클릭 공용)"""
@@ -497,6 +504,8 @@ class GameMixin:
         self.sound_mgr.play('move')
         if bid == "restart":
             self._restart_after_match()
+        elif bid == "next":
+            self._challenge_next_difficulty()
         elif bid == "practice":
             self._practice_after_match()
         elif bid == "spectate":
@@ -611,8 +620,19 @@ class GameMixin:
             name = datetime.datetime.now().strftime("match_%Y%m%d_%H%M%S.json")
             with open(os.path.join(folder, name), "w", encoding="utf-8") as f:
                 json.dump(log, f, ensure_ascii=False)
+            old_logs = sorted(x for x in os.listdir(folder) if x.startswith("match_") and x.endswith(".json"))
+            for x in old_logs[:-200]:                           # 기록이 끝없이 쌓이지 않게 최근 200개만 남김
+                try:
+                    os.remove(os.path.join(folder, x))
+                except OSError:
+                    pass
         except Exception as e:
             print(f"[MatchLog] 저장 실패: {e}")
+
+    def _play_rotate_sound(self):
+        """회전음. T 블록이 T-스핀이 성립하는 자세가 되면 전용 소리로 알림 (눈으로 보지 않아도 스핀을 알 수 있게)"""
+        eng = self.match.local_engine
+        self.sound_mgr.play('spin_ready' if (eng.current_piece == 'T' and eng._detect_tspin()) else 'rotate')
 
     def _das_step(self, dt):
         """방향키를 누르고 있는 동안의 DAS/ARR 연속 좌우 이동을 dt초만큼 진행"""
@@ -680,6 +700,8 @@ class GameMixin:
             return
             
         if self.is_paused:
+            if self.match.countdown_left() > 0:
+                self.match.countdown_until += dt             # 카운트다운 중 일시정지: 멈춘 시간만큼 카운트다운도 미룸 (풀면 남은 숫자부터 이어짐)
             return
         if getattr(self.match, "brief_open", False):
             return                                           # 도전 브리핑 카드가 열려 있는 동안은 경기를 시작하지 않음
@@ -729,6 +751,7 @@ class GameMixin:
         steps = 1
         if self.net_mgr.mode == "NONE" and not self.match.local_is_alive and not self.match.match_finished:
             steps = max(1, min(4, int(getattr(self.match, "spectate_speed", 1))))      # 솔로 관전 배속: 같은 시간 단위로 여러 번 진행
+        self.match.budget_share = 1.0 / steps                  # 배속 관전: 한 프레임의 봇 탐색 시간을 단계 수로 나눠 씀 (프레임 시간이 배속만큼 늘지 않게)
         for _ in range(steps):
             self.match.update(dt)
             if self.match.match_finished:
@@ -817,6 +840,11 @@ class GameMixin:
                 self._save_match_log(final_rank)
             self.match.new_achievements = list(getattr(self.stats_mgr, "last_new_achievements", []))
             self.match.ladder_clear = self.stats_mgr.last_ladder_clear
+            self.match.next_ladder = None
+            if self.match.ladder_clear and self.net_mgr.mode == "NONE" and not (self.match.daily or self.match.weekly):
+                from stats_manager import LADDER
+                _cl = self.stats_mgr.ladder_cleared(_mode)
+                self.match.next_ladder = next((d for d in LADDER if d not in _cl), None)       # 다음 난이도 (모두 클리어했으면 None)
             self._build_reward(final_rank, _hl, _skins_before)
             self.match.next_goal = ((f"오늘의 도전 최고 #{self.stats_mgr.daily_best(self.match.daily)}위" if self.match.daily and not self.match.ladder_clear else None)
                                     or (f"이번 주 변형({self.match.mutator['name']}) 최고 #{self.stats_mgr.weekly_best(self.match.weekly)}위" if self.match.weekly and self.match.mutator and not self.match.ladder_clear else None)

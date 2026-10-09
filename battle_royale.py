@@ -273,6 +273,8 @@ class BattleRoyaleMatch:
     def trigger_screen_shake(self, amount=8.0, direction=None):
         """화면 흔들림. direction=(dx, dy)면 그 축으로 감쇠 사인파처럼 떨림(쿼드는 세로 펀치, 피격은 아래쪽), 없으면 방향 없는 떨림"""
         amt = amount * self.shake_scale
+        if amt >= 8.0 and getattr(self, "rumble_cb", None) is not None:
+            self.rumble_cb(min(1.0, amt / 18.0))                       # 큰 순간(쿼드/T-스핀/K.O./피격)은 패드도 진동
         if amt >= self.screen_shake:
             self.screen_shake = amt
             self.shake_dir = direction if (direction and amt > 0) else None
@@ -356,6 +358,7 @@ class BattleRoyaleMatch:
             "bot": bot,
             "is_alive": True,
             "ko_count": 0,
+            "badge_extra": 0,                # K.O.로 흡수한 상대 배지 점수
             "rank": 0,
             "target_id": None,
             "trait": "",                    # 봇 성향 (반격형/저격형/균형형, 사람은 빈 문자열)
@@ -541,10 +544,19 @@ class BattleRoyaleMatch:
         """특정 플레이어를 조준 중인 살아있는 상대방 수 계산 (카운터 보너스 산정용)"""
         return sum(1 for p in self.players.values() if p["is_alive"] and p.get("target_id") == pid)
 
+    BADGE_ABSORB_MAX = 3         # K.O.로 상대에게서 흡수하는 배지 점수 상한 (상대의 실제 K.O. 수만큼, 연쇄 눈덩이를 막으려고 흡수분은 다시 흡수되지 않음)
+
+    def badge_points(self, pid=None):
+        """배지 단계 계산에 쓰는 점수 = 실제 K.O. 수 + 처치한 상대에게서 흡수한 점수 (전적/업적의 K.O. 수에는 흡수분이 들어가지 않음)"""
+        pid = self.local_player_id if pid is None else pid
+        p = self.players.get(pid, {})
+        ko = self.local_ko_count if pid == self.local_player_id else p.get("ko_count", 0)
+        return ko + p.get("badge_extra", 0)
+
     def get_badge_info(self, ko_count=None):
         """로컬 플레이어 또는 지정된 플레이어의 배지 등급 및 버프율 반환"""
         if ko_count is None:
-            ko_count = self.local_ko_count
+            ko_count = self.badge_points()
         if self._custom("badges", True) is False:
             return get_badge_info(0)                                        # 커스텀 규칙: 배지 보너스 없음
         return get_badge_info(ko_count)
@@ -719,7 +731,7 @@ class BattleRoyaleMatch:
                 return random.choice(attackers)
             return self._most_endangered(alive_candidates)
         elif strat == "BADGES":
-            return max(alive_candidates, key=lambda pid: self.players[pid].get("ko_count", 0))
+            return max(alive_candidates, key=lambda pid: self.badge_points(pid))
         elif strat == "RANDOM":
             current_target = self.players[attacker_id].get("target_id")
             if current_target and current_target in alive_candidates:
@@ -804,7 +816,7 @@ class BattleRoyaleMatch:
             kill = bool(attack) and attack >= 3 and danger + attack >= BOARD_HEIGHT - 1
             if load >= cap + (self.KILL_EXTRA if kill else 0):
                 continue                                         # 동시에 노리는 봇이 상한에 찼음 (마무리 공격만 KILL_EXTRA명까지 더 허용)
-            sc = danger + p.get("ko_count", 0) * 0.7 + random.uniform(0.0, 1.5) - load * self.FOCUS_PENALTY
+            sc = danger + self.badge_points(q) * 0.7 + random.uniform(0.0, 1.5) - load * self.FOCUS_PENALTY
             if p.get("target_id") == attacker_id:
                 sc += 4.0                                        # 나를 노리는 상대를 견제
             if kill:
@@ -963,8 +975,12 @@ class BattleRoyaleMatch:
 
         # 킬러에게 K.O. 부여 및 배지 등급 승급 판정
         if killer_id and killer_id in self.players:
-            old_lvl, _, _ = get_badge_info(self.players[killer_id]["ko_count"])
+            old_lvl, _, _ = get_badge_info(self.badge_points(killer_id))
+            gain = 0
+            if self.attacks_enabled and not self.practice and killer_id != victim_id and self._custom("badges", True) is not False:
+                gain = min(self.BADGE_ABSORB_MAX, int(self.players.get(victim_id, {}).get("ko_count", 0)))      # 처치한 상대의 K.O. 수만큼 배지 점수 흡수
             self.players[killer_id]["ko_count"] += 1
+            self.players[killer_id]["badge_extra"] = self.players[killer_id].get("badge_extra", 0) + gain
             if killer_id == self.local_player_id and self.challenge is not None:
                 self.challenge.on_ko()
                 self._challenge_events()
@@ -972,14 +988,15 @@ class BattleRoyaleMatch:
                 self.local_ko_count += 1
                 self.ko_times.append(self.elapsed)
                 gold = (victim_id == self.bounty_id and not self.bounty_claimed)
-                self.ko_orbs.append({"victim": victim_id, "t0": time.time(), "gold": gold})
-                new_lvl, _, new_pct = get_badge_info(self.local_ko_count)
+                for i in range(1 + gain):                                  # 구슬은 1개 + 흡수한 점수만큼 (0.1초 간격으로 쏟아짐)
+                    self.ko_orbs.append({"victim": victim_id, "t0": time.time() + 0.1 * i, "gold": gold})
+                new_lvl, _, new_pct = get_badge_info(self.badge_points())
                 self.trigger_screen_shake(10.0, (0, 1))
                 self.trigger_impact(0.4)                                   # K.O. 결정타: 약한 번쩍임 (첫 K.O.는 아래에서 더 강하게)
                 victim_name = self.players.get(victim_id, {}).get("name", "상대")
-                self.add_floating_text(f"[K.O. 처치!] +1 배지 획득 >> {victim_name}", (255, 220, 50), duration=2.5, size=24, category="ko")
+                self.add_floating_text(f"[K.O. 처치!] +{1 + gain} 배지 획득 >> {victim_name}" + (f"  (상대 배지 {gain} 흡수)" if gain else ""), (255, 220, 50), duration=2.5, size=24, category="ko")
                 # 보상을 두 번에 나눠 줌: 처치 순간(위) + 구슬이 K.O. 칸에 도착하는 순간(소리와 배지 승급, 0.7초 뒤)
-                self._ko_events.append({"due": time.time() + 0.7, "n": self.local_ko_count, "lvl_up": new_lvl > old_lvl, "lvl": new_lvl, "pct": new_pct})
+                self._ko_events.append({"due": time.time() + 0.7 + 0.1 * gain, "n": self.local_ko_count, "lvl_up": new_lvl > old_lvl, "lvl": new_lvl, "pct": new_pct})
                 if gold:
                     self.bounty_claimed = True
                     self.bounty_kills += 1
@@ -1356,10 +1373,7 @@ class BattleRoyaleMatch:
             if self.sound_mgr:
                 self.sound_mgr.play('perfect')
                 self.sound_mgr.play('vo_perfect')
-        if is_tspin:
-            self.add_commentary(f"{me}  {f'B2B x{chain} ' if is_b2b and chain >= 1 else ''}T-스핀!", (255, 150, 255), mine=True)
-        elif cleared >= 4:
-            self.add_commentary(f"{me}  {f'B2B x{chain} ' if is_b2b and chain >= 1 else ''}쿼드!", (255, 215, 0), mine=True)
+        # T-스핀/쿼드는 같은 순간의 액션 배너가 이미 보여 주므로 전광판 중계는 생략 (한 사건에 같은 말이 여러 곳에 뜨지 않게)
         if self.local_engine.combo >= 4:
             self.add_commentary(f"{me}  {self.local_engine.combo}연속 콤보!", (255, 120, 220), mine=True)
 
@@ -1683,7 +1697,7 @@ class BattleRoyaleMatch:
                 
                 # 배지 증폭은 엔진에서 상쇄 이전에 이미 적용됨
                 base_garbage = self.local_engine.garbage_to_send
-                badge_lvl, badge_rate, badge_pct = self.get_badge_info(self.local_ko_count)
+                badge_lvl, badge_rate, badge_pct = self.get_badge_info()
                 
                 # 조준당하고 있을 때 공격자 카운터 보너스
                 att_count = self.get_attackers_count_for(self.local_player_id)
@@ -1784,7 +1798,7 @@ class BattleRoyaleMatch:
 
         # 6. AI 봇들 업데이트 (분산 실행 및 실시간 난이도 스케일링)
         bot_pool.pump()                                 # 작업 프로세스가 끝낸 봇 계산 결과를 받아옴
-        bot_brain.begin_frame(BOT_SEARCH_BUDGET)        # 이번 프레임에 봇 전원이 함께 쓸 수 있는 탐색 시간
+        bot_brain.begin_frame(BOT_SEARCH_BUDGET * getattr(self, "budget_share", 1.0))       # 이번 프레임에 봇 전원이 함께 쓸 수 있는 탐색 시간
         items = list(self.players.items())
         if items:                                        # 예산이 모자라도 특정 봇만 굶지 않도록 시작 위치를 돌려 가며 처리
             off = self._bot_rr % len(items)
@@ -1813,8 +1827,8 @@ class BattleRoyaleMatch:
                     p["target_id"] = self._spread_random_target(pid)
                 
             # 봇도 K.O.를 쌓으면 배지로 공격력이 오름 (BADGES 조준 모드가 봇 상대로도 의미가 있도록). 봇 상한은 BOT_BADGE_CAP
-            if p.get("_badge_ko") != p.get("ko_count", 0):                      # K.O. 수가 바뀔 때만 다시 계산 (프레임마다 100번 부르지 않게)
-                p["_badge_ko"] = p.get("ko_count", 0)
+            if p.get("_badge_ko") != p.get("ko_count", 0) + p.get("badge_extra", 0):      # 배지 점수가 바뀔 때만 다시 계산 (프레임마다 100번 부르지 않게)
+                p["_badge_ko"] = p.get("ko_count", 0) + p.get("badge_extra", 0)
                 p["_badge_rate"] = min(self.BOT_BADGE_CAP, get_badge_info(p["_badge_ko"])[1]) if (self.attacks_enabled and self._custom("badges", True) is not False) else 0.0
             p["bot"].engine.badge_rate = p.get("_badge_rate", 0.0)
             # AI 틱
