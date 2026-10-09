@@ -639,6 +639,15 @@ class BlockEngine:
         self.lock_resets = 0
         self._refill_next_queue()                      # 스냅샷은 다음 블록을 3개만 담으므로 탐색에 필요한 만큼 채움
 
+    SPAWN_COLS = (3, 4, 5, 6)         # 새 블록이 나오는 열 (스폰 자리가 막히면 탈락)
+
+    def spawn_column_top(self):
+        """스폰 열(3~6)에서 가장 위에 있는 블록의 줄 번호 (없으면 보드 높이). 0 이하로 올라가면 새 블록이 나올 자리가 막힘"""
+        for y in range(self.height):
+            if any(self.grid[y][x] is not None for x in self.SPAWN_COLS):
+                return y
+        return self.height
+
     def get_compact_grid(self):
         """
         네트워크 전송 및 미니 렌더링 최적화를 위한 20x10 압축 표현

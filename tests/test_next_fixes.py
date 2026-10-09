@@ -171,15 +171,144 @@ def test_ko_absorbs_victim_badge_points():
     app.start_game(mode="SOLO", total_players=10)
     app.state = "GAME"
     m = app.match
-    victim = next(pid for pid in m.players if pid != m.local_player_id and m.players[pid]["is_alive"])
-    m.players[victim]["ko_count"] = 5                      # 상대가 5명을 처치해 둔 상태
-    before = m.badge_points()
+    alive = [pid for pid in m.players if pid != m.local_player_id and m.players[pid]["is_alive"]]
+    for pid in alive:
+        m.players[pid]["ko_count"] = 6                      # 상대들이 K.O.를 많이 쌓아 둔 상태
     m.local_ko_count = 0
-    m._eliminate_player(victim, m.local_player_id)
-    gained = m.badge_points() - before
-    assert m.local_ko_count == 1, "실제 K.O. 수는 1만 오름 (전적/업적에 흡수분은 들어가지 않음)"
-    assert gained == 1 + m.BADGE_ABSORB_MAX, gained
-    assert len([o for o in m.ko_orbs if o["victim"] == victim]) == 1 + m.BADGE_ABSORB_MAX
+    kills = 0
+    for victim in alive[:5]:
+        m._eliminate_player(victim, m.local_player_id)
+        kills += 1
+        assert m.local_ko_count == kills, "실제 K.O. 수는 처치한 만큼만 오름 (전적/업적에 흡수분은 들어가지 않음)"
+        extra = m.players[m.local_player_id].get("badge_extra", 0)
+        assert 0 <= extra <= kills, f"흡수 누적은 내 실제 K.O. 수 이하여야 함: {extra} > {kills}"
+        assert m.badge_points() <= 2 * kills, "눈덩이 방지: 배지 점수는 실제 K.O.의 2배를 넘지 않음"
+    assert m.badge_points() > m.local_ko_count, "강한 상대를 잡으면 흡수가 일어남"
+    assert m.BADGE_ABSORB_MAX == 2
+
+
+def test_badge_extra_sync_field_is_sanitized():
+    import network
+    st = {"id": "p1", "name": "x", "is_alive": True, "bx": 5, "ko_count": 3}
+    assert network._sanitize_world_state(st)["bx"] == 5
+    assert network._sanitize_world_state({**st, "bx": 10**6})["bx"] == 99
+    assert "bx" not in network._sanitize_world_state({**st, "bx": "9"}), "숫자가 아닌 값은 버림"
+
+
+def test_bot_danger_uses_spawn_columns():
+    from battle_royale import BattleRoyaleMatch as B
+    edge = [0] * 20
+    for y in range(2, 20):
+        edge[y] = 0b1000000001                              # 가장자리 열만 높게 (스폰 열 3~6은 비어 있음)
+    mid = [0] * 20
+    for y in range(2, 20):
+        mid[y] = 0b0001111000                               # 스폰 열이 높음
+    d_edge = B._spawn_danger({"compact_grid": edge, "ig": 0})
+    d_mid = B._spawn_danger({"compact_grid": mid, "ig": 0})
+    assert d_edge == 0 and d_mid == 18, (d_edge, d_mid)
+    assert B._spawn_danger({"compact_grid": mid, "ig": 3}) == 21
+
+
+def test_spawn_warning_counts_ready_garbage():
+    app = _app()
+    app.start_game(mode="SOLO", total_players=10)
+    app.state = "GAME"
+    m = app.match
+    m.countdown_until = 0.0
+    m.coach_until = 0.0
+    e = m.local_engine
+    for x in range(3, 7):
+        e.grid[3][x] = "G"                                  # 스폰 열의 맨 위가 3번 줄
+    assert e.spawn_column_top() == 3
+    e.queue_garbage(3, instant=True)                        # 바로 올라올 수 있는 쓰레기 3줄 -> 올라오면 스폰 열이 0번 줄까지 차서 막힘
+    assert e.ready_garbage == 3
+    app.renderer.render(m, app.sound_mgr)                   # 예외 없이 그려져야 함 (경고 포함)
+
+
+def test_menu_vertical_navigation_follows_layout():
+    app = _app()
+    app.state = "MENU"
+    app._menu_intro_t = 9
+    app._render_menu()
+    key = lambda k: app._handle_event(pygame.event.Event(pygame.KEYDOWN, key=k, mod=0, unicode="", scancode=0))
+    app._set_menu_focus("host_room", sound=False)
+    key(pygame.K_DOWN)
+    assert app._menu_focus_id() in ("practice", "daily"), "방 만들기 아래는 혼자하기 줄 (옆의 방 참가하기가 아님)"
+    app._set_menu_focus("join_room", sound=False)
+    key(pygame.K_DOWN)
+    assert app._menu_focus_id() in ("daily", "weekly")
+    key(pygame.K_UP)
+    assert app._menu_focus_id() == "join_room"
+    key(pygame.K_UP)
+    assert app._menu_focus_id() == "quick_play"
+    app._set_menu_focus("quick_play", sound=False)
+    key(pygame.K_UP)
+    assert app._menu_focus_id() in ("match_summary", "records", "settings", "toggle_sound", "toggle_fs", "quit_game")
+
+
+def test_menu_ignores_motion_without_movement():
+    app = _app()
+    app.state = "MENU"
+    app._menu_intro_t = 9
+    app._render_menu()
+    app._set_menu_focus("quick_play", sound=False)
+    r = app.menu_buttons["weekly"]
+    app._handle_event(pygame.event.Event(pygame.MOUSEMOTION, pos=r.center, rel=(0, 0), buttons=(0, 0, 0)))
+    assert app._menu_focus_id() == "quick_play", "움직이지 않은 마우스 이벤트로 포커스가 바뀌면 안 됨"
+    app._handle_event(pygame.event.Event(pygame.MOUSEMOTION, pos=r.center, rel=(3, 2), buttons=(0, 0, 0)))
+    assert app._menu_focus_id() == "weekly"
+
+
+def test_rumble_gating():
+    app = _app()
+    app.start_game(mode="SOLO", total_players=10)
+    m = app.match
+    calls = []
+    m.rumble_cb = lambda p: calls.append(p)
+    m.shake_scale = 0.4                                    # 흔들림 '약하게'에서도 진동은 같은 세기로
+    m.trigger_screen_shake(14.0)
+    assert calls and abs(calls[-1] - 14.0 / 18.0) < 1e-9, calls
+    m.shake_scale = 0.0                                    # 흔들림 '끔' -> 진동도 없음
+    n = len(calls)
+    m.trigger_screen_shake(14.0)
+    assert len(calls) == n
+    m.shake_scale = 1.0
+    m.local_is_alive = False                               # 탈락 뒤 관전 중에는 진동 없음
+    m.trigger_screen_shake(14.0)
+    assert len(calls) == n
+
+
+def test_spin_sound_needs_ground_and_next_ladder_above_current():
+    app = _app()
+    app.start_game(mode="SOLO", total_players=10)
+    app.state = "GAME"
+    played = []
+    app.sound_mgr.play = lambda name, *a, **k: played.append(name)
+    eng = app.match.local_engine
+    eng.current_piece = "T"
+    eng._detect_tspin = lambda: "full"
+    eng._is_touching_ground = lambda: False
+    app._play_rotate_sound()
+    assert played[-1] == "rotate", "공중에서는 스핀 소리가 나지 않음"
+    eng._is_touching_ground = lambda: True
+    app._play_rotate_sound()
+    assert played[-1] == "spin_ready"
+    from stats_manager import next_goal_text
+    txt = next_goal_text(1, 3, 100, 1, difficulty="hard", cleared=["hard"], ladder_clear="hard")
+    assert "마스터" in txt or "Master" in txt, txt                  # easy/normal이 미클리어여도 hard 다음은 master
+
+
+def test_next_goal_uses_badge_points():
+    from stats_manager import next_goal_text
+    assert "배지 Lv.2까지 1 K.O." in next_goal_text(20, 1, 100, 10, badge_pts=3)
+    assert "배지 Lv.1까지 1 K.O." in next_goal_text(20, 1, 100, 10), "흡수 점수가 없으면 실제 K.O. 수로 계산"
+
+
+def test_rules_card_lists_b2b_and_absorption():
+    from screens.rules import rules_card_data
+    cols = rules_card_data()
+    flat = " ".join(a + b for _t, rows in cols for a, b in rows)
+    assert "B2B" in flat and "흡수" in flat
 
 
 def test_garbage_does_not_top_out_unless_spawn_blocked():
@@ -226,6 +355,7 @@ def test_spin_ready_sound_and_i_180_kicks():
     app.sound_mgr.play = lambda name, *a, **k: played.append(name)
     app.match.local_engine.current_piece = "T"
     app.match.local_engine._detect_tspin = lambda: "full"
+    app.match.local_engine._is_touching_ground = lambda: True
     app._play_rotate_sound()
     assert played[-1] == "spin_ready"
     app.match.local_engine._detect_tspin = lambda: None

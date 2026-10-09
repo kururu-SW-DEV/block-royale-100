@@ -34,7 +34,7 @@ class CoreMixin:
         """진행 중인 경기에 설정(화면 흔들림 배율)을 반영. 조준 모드는 경기 시작 때와 모드를 바꿀 때만 저장/복원"""
         from app_common import SHAKE_SCALE
         if self.match is not None:
-            self.match.rumble_cb = self.gamepad.rumble
+            self.match.rumble_cb = lambda power: self.gamepad.rumble(power) if self._pad_hints_active() else None      # 마지막으로 패드를 쓴 경우에만 진동 (키보드로 하는 중에는 연결된 패드가 울리지 않게)
             self.match.shake_scale = SHAKE_SCALE.get(self.settings.get("screen_shake"), 1.0)
 
     def apply_handling(self):

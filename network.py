@@ -177,7 +177,7 @@ def _sanitize_world_state(st):
     if isinstance(grid, list) and len(grid) == 20 and all(isinstance(r, int) and not isinstance(r, bool) and 0 <= r < 1024 for r in grid):
         out["compact_grid"] = list(grid)
     out["highest_y"] = _num(st.get("highest_y"), 0, 20, 20)
-    for key, hi in (("ko_count", 99), ("rank", 100), ("score", 10**9), ("lines", 99999), ("atk", 10**6)):
+    for key, hi in (("ko_count", 99), ("bx", 99), ("rank", 100), ("score", 10**9), ("lines", 99999), ("atk", 10**6)):
         if isinstance(st.get(key), int) and not isinstance(st.get(key), bool):
             out[key] = _num(st.get(key), 0, hi, 0)
     sv = st.get("surv")

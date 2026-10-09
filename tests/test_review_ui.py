@@ -337,7 +337,7 @@ def test_main_menu_interactions():
     # 마우스: 누르기만 해서는 실행되지 않고, 같은 버튼 위에서 뗄 때 실행. 호버=포커스 (강조는 하나)
     app._render_menu()
     r = app.menu_buttons["records"]
-    app._handle_event(ev(pygame.MOUSEMOTION, pos=r.center, rel=(0, 0), buttons=(0, 0, 0)))
+    app._handle_event(ev(pygame.MOUSEMOTION, pos=r.center, rel=(4, 3), buttons=(0, 0, 0)))
     assert app._menu_focus_id() == "records"
     app._handle_event(ev(pygame.MOUSEBUTTONDOWN, button=1, pos=r.center))
     assert app.state == "MENU" and app._menu_press == "records"

@@ -230,14 +230,16 @@ def _backup_corrupt(path):
         pass
 
 
-def next_goal_text(rank, kos, total_players, best_in_size, difficulty=None, cleared=(), ladder_clear=None, max_ko=0):
+def next_goal_text(rank, kos, total_players, best_in_size, difficulty=None, cleared=(), ladder_clear=None, max_ko=0, badge_pts=None):
     """결과 화면의 '다음 목표: ...' 뒤에 붙는 문구. 우선순위: 방금 난이도 클리어 -> 배지 다음 단계가 2 K.O. 이내 -> 난이도 클리어까지 -> 순위 목표.
     best_in_size: 방금 경기를 포함한 같은 규모의 최고 순위 (없으면 0)"""
     if ladder_clear:
-        nxt = next((x for x in LADDER if x not in cleared), None)
+        above = LADDER[LADDER.index(ladder_clear) + 1:] if ladder_clear in LADDER else LADDER           # 방금 클리어한 난이도보다 위인 것 중에서 (버튼과 같은 기준)
+        nxt = next((x for x in above if x not in cleared), None)
         return f"{LADDER_NAMES[ladder_clear]} 클리어! " + (f"다음은 {LADDER_NAMES[nxt]}에 도전" if nxt else "모든 난이도 클리어")
-    need_ko = next((need - kos for need, _b in BADGE_TIERS if need > kos), None)
-    lv_next = next((lv for lv, (need, _b) in enumerate(BADGE_TIERS) if need > kos), None)
+    bp = kos if badge_pts is None else badge_pts                      # 배지 단계는 K.O. + 흡수한 배지 점수 기준 (K.O. 최고 기록은 실제 K.O. 수)
+    need_ko = next((need - bp for need, _b in BADGE_TIERS if need > bp), None)
+    lv_next = next((lv for lv, (need, _b) in enumerate(BADGE_TIERS) if need > bp), None)
     if need_ko is not None and 0 < need_ko <= 2 and total_players > 2:
         return f"배지 Lv.{lv_next}까지 {need_ko} K.O."
     if difficulty in LADDER and difficulty not in cleared and total_players >= LADDER_MIN_PLAYERS and rank > LADDER_RANK:

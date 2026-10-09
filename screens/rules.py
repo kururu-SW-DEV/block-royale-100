@@ -20,8 +20,10 @@ def rules_card_data(match=None):
                ("T-스핀 싱글/더블/트리플", f"{ts.get(1, 0)} / {ts.get(2, 0)} / {ts.get(3, 0)}줄"),
                ("T-스핀 미니 싱글/더블", f"{tm.get(1, 0)} / {tm.get(2, 0)}줄"),
                ("퍼펙트 클리어" + (" (이번 주 변형)" if pc != config.PERFECT_CLEAR_ATTACK else ""), f"+{pc}줄"),
-               ("연속 콤보", f"+{config.COMBO_BONUS[2]}~{config.COMBO_BONUS[-1]}줄")]
+               ("연속 콤보", f"+{config.COMBO_BONUS[2]}~{config.COMBO_BONUS[-1]}줄"),
+               ("B2B (연쇄 1~3/4~7/8~)", "+1 / +2 / +3줄")]
     badges = [(f"K.O. {need}개", f"공격력 +{int(pct * 100)}%") for need, pct in config.BADGE_TIERS if need > 0]
+    badges.append(("처치 시 상대 배지 흡수", f"K.O.의 절반 (최대 {BattleRoyaleMatch.BADGE_ABSORB_MAX})"))
     bonus = [(f"{n}명이 나를 노림", f"+{config.ATTACKER_BONUS[n]}줄") for n in (2, 3, 4, 5)]
     bonus.append(("6명 이상", f"+{config.ATTACKER_BONUS[6]}줄"))
     return [("공격 줄 수", attacks), ("K.O. 배지 (공격력 증폭)", badges), ("역습 보너스", bonus)]
@@ -79,7 +81,7 @@ class RulesMixin:
         r = self.renderer
         self.screen = CANVAS
         CANVAS.overlay((4, 6, 12, 215))
-        w, h = 1120, 620
+        w, h = 1120, 660
         x, y = (SCREEN_WIDTH - w) // 2, (SCREEN_HEIGHT - h) // 2
         r._panel((x, y, w, h), border=(64, 78, 118), bg=(14, 18, 32), radius=18, alpha=250, border_w=1)
         r._draw_text("규칙 요약", r.font_large, C_TEXT, x + 28, y + 16)
@@ -88,7 +90,7 @@ class RulesMixin:
         cols = rules_card_data(game_match)
         gap, pad = 14, 24
         col_w = (w - 2 * pad - 2 * gap) // 3
-        top, card_h = y + 68, 284
+        top, card_h = y + 68, 310
         accents = (C_ACCENT, C_GOLD, C_ORANGE)
         for ci, (title, rows) in enumerate(cols):
             rect = pygame.Rect(x + pad + ci * (col_w + gap), top, col_w, card_h)

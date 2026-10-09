@@ -273,8 +273,8 @@ class BattleRoyaleMatch:
     def trigger_screen_shake(self, amount=8.0, direction=None):
         """화면 흔들림. direction=(dx, dy)면 그 축으로 감쇠 사인파처럼 떨림(쿼드는 세로 펀치, 피격은 아래쪽), 없으면 방향 없는 떨림"""
         amt = amount * self.shake_scale
-        if amt >= 8.0 and getattr(self, "rumble_cb", None) is not None:
-            self.rumble_cb(min(1.0, amt / 18.0))                       # 큰 순간(쿼드/T-스핀/K.O./피격)은 패드도 진동
+        if amount >= 8.0 and self.shake_scale > 0 and self.local_is_alive and getattr(self, "rumble_cb", None) is not None:
+            self.rumble_cb(min(1.0, amount / 18.0))                    # 큰 순간(쿼드/T-스핀/K.O./피격)은 패드도 진동: 흔들림 '약하게'에서도 같은 세기 (흔들림이 '끔'이면 진동도 없음), 탈락 뒤 관전 중에는 없음
         if amt >= self.screen_shake:
             self.screen_shake = amt
             self.shake_dir = direction if (direction and amt > 0) else None
@@ -335,7 +335,7 @@ class BattleRoyaleMatch:
             if p["is_alive"] and p.get("bot"):
                 eng = p["bot"].engine
                 eng.queue_garbage(rows, source="PRESSURE", instant=True)
-                # 만약 대기열이 이미 24줄 상한까지 차 있다면 시간 압박 시 대기 쓰레기를 직접 보드로 밀어올려 확실한 서든데스 유도
+                # 만약 대기열이 이미 24줄 상한까지 차 있다면 시간 압박 시 대기 쓰레기를 직접 보드로 밀어올려 서든데스 유도 (v1.4.27부터 스폰 자리가 막히거나 다음 고정에서 탈락)
                 if eng.incoming_garbage >= MAX_INCOMING_GARBAGE:
                     push = min(eng.incoming_garbage, rows)
                     eng.incoming_garbage -= push
@@ -544,7 +544,7 @@ class BattleRoyaleMatch:
         """특정 플레이어를 조준 중인 살아있는 상대방 수 계산 (카운터 보너스 산정용)"""
         return sum(1 for p in self.players.values() if p["is_alive"] and p.get("target_id") == pid)
 
-    BADGE_ABSORB_MAX = 3         # K.O.로 상대에게서 흡수하는 배지 점수 상한 (상대의 실제 K.O. 수만큼, 연쇄 눈덩이를 막으려고 흡수분은 다시 흡수되지 않음)
+    BADGE_ABSORB_MAX = 2         # K.O.로 상대에게서 흡수하는 배지 점수 상한 (상대 실제 K.O. 수의 절반, 최대 2. 눈덩이를 막으려고 흡수분은 다시 흡수되지 않고, 흡수 누적은 내 실제 K.O. 수 이하)
 
     def badge_points(self, pid=None):
         """배지 단계 계산에 쓰는 점수 = 실제 K.O. 수 + 처치한 상대에게서 흡수한 점수 (전적/업적의 K.O. 수에는 흡수분이 들어가지 않음)"""
@@ -784,6 +784,20 @@ class BattleRoyaleMatch:
         """쌓인 높이 + 들어올 쓰레기 (한계에 가까울수록 큼)"""
         return (BOARD_HEIGHT - p.get("highest_y", BOARD_HEIGHT)) + p.get("ig", 0)
 
+    @staticmethod
+    def _spawn_danger(p):
+        """스폰 열(새 블록이 나오는 자리) 기준의 쌓인 높이 + 들어올 쓰레기: 가장자리 탑이 천장에 닿아도 죽지 않으므로 탈락 가능성은 이 값으로 가늠"""
+        cg = p.get("compact_grid")
+        top = BOARD_HEIGHT
+        if isinstance(cg, (list, tuple)) and len(cg) == BOARD_HEIGHT and any(cg):      # 보드 그림이 비어 있으면(아직 상태가 안 온 경우) 높이 값으로
+            for y, row in enumerate(cg):
+                if row & 0x78:                                     # 열 3~6 (왼쪽 열이 높은 비트)
+                    top = y
+                    break
+        else:
+            top = p.get("highest_y", BOARD_HEIGHT)
+        return (BOARD_HEIGHT - top) + p.get("ig", 0)
+
     def _target_loads(self, attacker_id):
         """지금 각 플레이어를 노리고 있는 (살아 있는) 봇 수"""
         loads = {}
@@ -813,7 +827,7 @@ class BattleRoyaleMatch:
                 fallback, fb_load = q, key_load
             if full and self.alive_count > 3:
                 continue
-            kill = bool(attack) and attack >= 3 and danger + attack >= BOARD_HEIGHT - 1
+            kill = bool(attack) and attack >= 3 and self._spawn_danger(p) + attack >= BOARD_HEIGHT - 1      # 스폰 열 기준으로 마무리 가능한지
             if load >= cap + (self.KILL_EXTRA if kill else 0):
                 continue                                         # 동시에 노리는 봇이 상한에 찼음 (마무리 공격만 KILL_EXTRA명까지 더 허용)
             sc = danger + self.badge_points(q) * 0.7 + random.uniform(0.0, 1.5) - load * self.FOCUS_PENALTY
@@ -978,8 +992,10 @@ class BattleRoyaleMatch:
             old_lvl, _, _ = get_badge_info(self.badge_points(killer_id))
             gain = 0
             if self.attacks_enabled and not self.practice and killer_id != victim_id and self._custom("badges", True) is not False:
-                gain = min(self.BADGE_ABSORB_MAX, int(self.players.get(victim_id, {}).get("ko_count", 0)))      # 처치한 상대의 K.O. 수만큼 배지 점수 흡수
+                gain = min(self.BADGE_ABSORB_MAX, int(self.players.get(victim_id, {}).get("ko_count", 0)) // 2)      # 처치한 상대 K.O. 수의 절반(최대 2)만큼 배지 점수 흡수
             self.players[killer_id]["ko_count"] += 1
+            room = max(0, self.players[killer_id]["ko_count"] - self.players[killer_id].get("badge_extra", 0))      # 흡수 누적은 내 실제 K.O. 수 이하
+            gain = min(gain, room)
             self.players[killer_id]["badge_extra"] = self.players[killer_id].get("badge_extra", 0) + gain
             if killer_id == self.local_player_id and self.challenge is not None:
                 self.challenge.on_ko()
@@ -1875,7 +1891,7 @@ class BattleRoyaleMatch:
                 if r_id in self.players and not self.players[r_id].get("bot"):       # 봇이 이어받은 자리는 늦게 도착한 원격 상태로 덮어쓰지 않음
                     self.players[r_id]["compact_grid"] = r_state.get("compact_grid", self.players[r_id]["compact_grid"])
                     self.players[r_id]["highest_y"] = r_state.get("highest_y", 20)
-                    for key, src in (("score", "score"), ("lines", "lines"), ("attacks", "atk"), ("ko_count", "ko_count")):   # 호스트/클라이언트가 보낸 성적
+                    for key, src in (("score", "score"), ("lines", "lines"), ("attacks", "atk"), ("ko_count", "ko_count"), ("badge_extra", "bx")):   # 호스트/클라이언트가 보낸 성적
                         v = r_state.get(src)
                         if isinstance(v, int) and not isinstance(v, bool):
                             self.players[r_id][key] = v

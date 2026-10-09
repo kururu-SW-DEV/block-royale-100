@@ -20,6 +20,8 @@ COL_SUB = (160, 172, 205)          # 보조 글자 (배경 대비 충분한 밝�
 COL_HINT = (140, 152, 185)         # 가장 어두운 글자의 하한
 UTIL_ROW = ["records", "settings", "toggle_sound", "toggle_fs", "quit_game"]   # 하단 오른쪽 줄 (← →로 이동)
 MODE_ROW = ["practice", "daily", "weekly"]                                    # 혼자하기 줄 (← →로 이동)
+LAYOUT_ROWS = [["quick_play"], ["host_room", "join_room"], ["practice", "daily", "weekly"],
+               ["match_summary", "records", "settings", "toggle_sound", "toggle_fs", "quit_game"]]      # 화면 배치대로의 줄 (↑↓는 줄 단위로 이동)
 
 CAPTIONS = {                       # 포커스된 항목의 한 줄 설명 (상태 값이 있으면 그쪽이 우선)
     "quick_play": "봇과 바로 대전합니다",
@@ -114,6 +116,24 @@ class MenuMixin:
         """실제로 화면에 그려지는 항목 id (Proton에서는 전체 화면 버튼이 없음: 보이지 않는 항목에 포커스가 멈추지 않게)"""
         from app_paths import running_under_wine
         return [b for b in self.MENU_FOCUS_ORDER if not (b == "toggle_fs" and running_under_wine())]
+
+    def _menu_move_vertical(self, step):
+        """↑↓: 화면 배치대로 한 줄 위/아래로 (같은 가로 위치에 가장 가까운 항목, 비슷하면 왼쪽). 위치를 모르면 목록 순서대로"""
+        vis = set(self._menu_visible_ids())
+        rows = [[b for b in row if b in vis] for row in LAYOUT_ROWS]
+        rows = [r for r in rows if r]
+        fid = self._menu_focus_id()
+        cur = next((i for i, r in enumerate(rows) if fid in r), None)
+        rect = self.menu_buttons.get(fid)
+        if cur is None or rect is None:
+            self._menu_step_focus(step)
+            return
+        target = rows[(cur + step) % len(rows)]
+        cands = [(round(abs(self.menu_buttons[b].centerx - rect.centerx) / 40), i, b) for i, b in enumerate(target) if b in self.menu_buttons]
+        if not cands:
+            self._menu_step_focus(step)
+            return
+        self.menu_focus = self.MENU_FOCUS_ORDER.index(min(cands)[2])
 
     def _menu_step_focus(self, step):
         vis = self._menu_visible_ids()
@@ -212,10 +232,16 @@ class MenuMixin:
                 self._menu_activate("daily")
             elif k == pygame.K_w:
                 self._menu_activate("weekly")
-            elif k == pygame.K_UP or (k == pygame.K_TAB and shift):
+            elif k == pygame.K_UP:
+                self._menu_move_vertical(-1)
+                self.sound_mgr.play('move')
+            elif k == pygame.K_DOWN:
+                self._menu_move_vertical(1)
+                self.sound_mgr.play('move')
+            elif k == pygame.K_TAB and shift:
                 self._menu_step_focus(-1)
                 self.sound_mgr.play('move')
-            elif k in (pygame.K_DOWN, pygame.K_TAB):
+            elif k == pygame.K_TAB:
                 self._menu_step_focus(1)
                 self.sound_mgr.play('move')
             elif k in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
@@ -237,6 +263,8 @@ class MenuMixin:
                 self.bot_difficulty = self.settings.get("bot_difficulty")
                 self._menu_flash = time.time()
         elif event.type == pygame.MOUSEMOTION:
+            if getattr(event, "rel", (1, 1)) == (0, 0):
+                return                                         # 창 포커스 복귀/화면 전환 때 생기는 '움직이지 않은' 이벤트로 포커스가 바뀌지 않게
             self._menu_kb = False
             for bid in self.MENU_FOCUS_ORDER:
                 rect = self.menu_buttons.get(bid)

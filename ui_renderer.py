@@ -1838,10 +1838,10 @@ class UIRenderer:
             if not spectating and cur_cells and engine.current_piece == 'T' and engine._is_touching_ground() and engine._detect_tspin():
                 self._render_tspin_hint(cur_cells, bx, by, cs)            # 지금 고정하면 T-스핀: 윤곽이 반짝이고 "T-SPIN" 글자가 뜸
 
-        if not spectating and not engine.game_over and engine.next_queue and highest <= 6:
+        if not spectating and not engine.game_over and engine.next_queue and highest - ready_n <= 6:
             nt = engine.next_queue[0]                                      # 다음 블록이 나올 자리가 막혀 있으면(고정하는 순간 탈락) 그 자리를 붉게 표시
             sx0 = 3 if nt != 'O' else 4
-            if engine._check_collision(sx0, SPAWN_Y, 0, nt):
+            if engine._check_collision(sx0, SPAWN_Y, 0, nt) or (ready_n > 0 and engine.spawn_column_top() - ready_n <= 0):      # 지금 막혔거나, 준비된 쓰레기가 올라오면 막힐 자리
                 a_ = int(110 + 90 * math.sin(time.time() * 12.0))
                 for px, py in engine._get_blocks(nt, 0, sx0, SPAWN_Y):
                     if 0 <= py:
@@ -2407,8 +2407,8 @@ class UIRenderer:
                                                      if pp["is_alive"] and pp.get("target_id") == match.local_player_id and q != match.local_player_id}
         leader_id, leader_ko = None, 1                             # 킬 리더: 살아 있는 상대 중 K.O.가 가장 많은 한 명 (2개 이상일 때만, 동률이면 먼저 나온 카드)
         for q, pp in match.players.items():
-            if pp["is_alive"] and q != match.local_player_id and pp.get("ko_count", 0) > leader_ko:
-                leader_id, leader_ko = q, pp.get("ko_count", 0)
+            if pp["is_alive"] and q != match.local_player_id and match.badge_points(q) > leader_ko:
+                leader_id, leader_ko = q, match.badge_points(q)                  # 왕관은 배지 점수(K.O. + 흡수분)가 가장 높은 상대: BADGES 조준 모드가 노리는 상대와 같게
 
         for idx, (pid, p) in enumerate(player_list):
             r, c = divmod(idx, cols)

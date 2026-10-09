@@ -313,3 +313,8 @@ EXACT.update({
     "이름 · 인원 · 봇 난이도 설정": "Name · players · bot difficulty",
 })
 EXACT.update({"전적에 남지 않음": "Not recorded"})
+
+# v1.4.27 규칙 카드: B2B 보너스 단계와 배지 흡수
+EXACT.update({"B2B (연쇄 1~3/4~7/8~)": "B2B (chain 1-3 / 4-7 / 8+)", "+1 / +2 / +3줄": "+1 / +2 / +3 lines",
+              "처치 시 상대 배지 흡수": "Absorb victim's badges", })
+TEMPLATES.update({"K.O.의 절반 (최대 {#})": "Half their K.O.s (max {})"})

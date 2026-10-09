@@ -632,7 +632,7 @@ class GameMixin:
     def _play_rotate_sound(self):
         """회전음. T 블록이 T-스핀이 성립하는 자세가 되면 전용 소리로 알림 (눈으로 보지 않아도 스핀을 알 수 있게)"""
         eng = self.match.local_engine
-        self.sound_mgr.play('spin_ready' if (eng.current_piece == 'T' and eng._detect_tspin()) else 'rotate')
+        self.sound_mgr.play('spin_ready' if (eng.current_piece == 'T' and eng._is_touching_ground() and eng._detect_tspin()) else 'rotate')      # 화면의 T-SPIN 힌트와 같은 조건 (바닥에 닿아 있을 때만)
 
     def _das_step(self, dt):
         """방향키를 누르고 있는 동안의 DAS/ARR 연속 좌우 이동을 dt초만큼 진행"""
@@ -844,7 +844,9 @@ class GameMixin:
             if self.match.ladder_clear and self.net_mgr.mode == "NONE" and not (self.match.daily or self.match.weekly):
                 from stats_manager import LADDER
                 _cl = self.stats_mgr.ladder_cleared(_mode)
-                self.match.next_ladder = next((d for d in LADDER if d not in _cl), None)       # 다음 난이도 (모두 클리어했으면 None)
+                _cur = self.match.bot_difficulty
+                _cand = LADDER[LADDER.index(_cur) + 1:] if _cur in LADDER else LADDER           # 방금 난이도보다 위인 것 중에서 (쉬움이 미클리어여도 낮은 쪽으로 보내지 않음)
+                self.match.next_ladder = next((d for d in _cand if d not in _cl), None)       # 다음 난이도 (더 어려운 게 모두 클리어됐으면 None)
             self._build_reward(final_rank, _hl, _skins_before)
             self.match.next_goal = ((f"오늘의 도전 최고 #{self.stats_mgr.daily_best(self.match.daily)}위" if self.match.daily and not self.match.ladder_clear else None)
                                     or (f"이번 주 변형({self.match.mutator['name']}) 최고 #{self.stats_mgr.weekly_best(self.match.weekly)}위" if self.match.weekly and self.match.mutator and not self.match.ladder_clear else None)
@@ -852,7 +854,7 @@ class GameMixin:
                                                   self.stats_mgr.best_in_size(_mode, self.match.total_players),
                                                   difficulty=self.match.bot_difficulty if _mode == "battle" else None,
                                                   cleared=self.stats_mgr.ladder_cleared(_mode), ladder_clear=self.match.ladder_clear,
-                                                  max_ko=_prev_max_ko if _mode == "battle" else 0)
+                                                  max_ko=_prev_max_ko if _mode == "battle" else 0, badge_pts=self.match.badge_points())
             
         # 주기적 네트워크 패킷 동기화 (15Hz)
         now = time.time()
@@ -888,7 +890,7 @@ class GameMixin:
             # 이미 탈락해 보드/점수가 굳은 플레이어는 직렬화한 상태를 재사용 (경기 중후반 절반 이상이 해당). 순위/K.O./보드가 바뀌면 다시 만듦
             sig = None
             if not p["is_alive"] and p.get("rank"):
-                sig = (p["rank"], p["ko_count"], p["name"], p.get("survival"), id(p.get("cg")), id(p["compact_grid"]), p["highest_y"])
+                sig = (p["rank"], p["ko_count"], p.get("badge_extra", 0), p["name"], p.get("survival"), id(p.get("cg")), id(p["compact_grid"]), p["highest_y"])
                 hit = dead_cache.get(pid)
                 if hit is not None and hit[0] == sig:
                     all_st.append(hit[1])
@@ -901,6 +903,7 @@ class GameMixin:
                 "compact_grid": p["compact_grid"],
                 "highest_y": p["highest_y"],
                 "ko_count": p["ko_count"],
+                "bx": p.get("badge_extra", 0),          # K.O.로 흡수한 배지 점수 (구버전은 이 필드를 무시)
                 "rank": p["rank"],
                 "score": ps["score"],
                 "lines": ps["lines"],
