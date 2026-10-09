@@ -232,6 +232,53 @@ def test_f12_saves_screenshot_and_i18n_missing_log():
         i18n.set_language("ko")
 
 
+def _match(n=20):
+    from battle_royale import BattleRoyaleMatch
+    m = BattleRoyaleMatch(total_players=n, local_player_id="ME")
+    m.setup_local_player("나") if hasattr(m, "setup_local_player") else None
+    return m
+
+
+def test_bot_styles_assigned_and_params_scaled():
+    import bot_brain
+    from battle_royale import BattleRoyaleMatch, BOT_STYLE_NAMES
+    assert BattleRoyaleMatch.BOT_STYLES_ENABLED and BattleRoyaleMatch.PHASE1_BOT_ATTACK_MULT == 1.25
+    m = _match(30)
+    bots = [p for p in m.players.values() if p.get("bot")]
+    styles = {p.get("style") for p in bots if p["bot"].brain}
+    assert styles and styles <= set(BOT_STYLE_NAMES) and "balanced" in styles
+    for p in bots:
+        if p.get("style") == "combo":
+            assert p["bot"].params["combo"] > bot_brain.PARAMS["combo"]
+
+
+def test_phase1_attack_multiplier_only_bot_to_bot_while_many_alive():
+    m = _match(20)
+    bots = [k for k, p in m.players.items() if p.get("bot")]
+    a, b = bots[0], bots[1]
+
+    def sent(frm, to, from_network=False):
+        before = m.players[frm]["attacks"]
+        m.apply_attack(frm, to, 4, from_network=from_network)
+        return m.players[frm]["attacks"] - before
+
+    m.PHASE1_BOT_ATTACK_MULT = 1.25
+    assert m.alive_count > m.total_players * 0.5
+    assert sent(a, b) == 5                                    # 봇→봇, 생존자 절반 초과: 4줄 → 5줄
+    assert sent(a, "ME") == 4                                 # 사람에게 가는 공격은 그대로
+    assert sent(a, b, from_network=True) == 4                 # 네트워크로 받은 공격은 보낸 쪽에서 이미 계산
+    m.PHASE1_BOT_ATTACK_MULT = 1.0
+    assert sent(a, b) == 4                                    # 끄면 그대로
+    m.PHASE1_BOT_ATTACK_MULT = 1.25
+    m.alive_count = m.total_players // 2
+    assert sent(a, b) == 4                                    # 생존자가 절반 이하이면 증폭 없음
+
+
+def test_panic_is_off_by_default():
+    import ai_bot
+    assert ai_bot.PANIC_ERROR_MULT == 1.0                     # 측정에서 일관된 효과가 없어 끔
+
+
 if __name__ == "__main__":
     pygame.init()
     for name, fn in list(globals().items()):

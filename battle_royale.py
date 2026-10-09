@@ -13,6 +13,13 @@ import bot_brain
 import bot_pool
 from config import bot_display_name, BOT_TRAITS, BOT_TRAIT_WEIGHTS, TARGET_MODES, DEFAULT_TARGET_MODE, BOARD_HEIGHT, ATTACKER_BONUS, BADGE_TIERS, MULTI_TARGET_MAX, MAX_INCOMING_GARBAGE
 
+# 봇 플레이 스타일(G4): 성향(반격/저격/균형)은 조준에만 영향을 주므로, 쌓는 방식(평가 가중치 배율)도 봇마다 다르게. 균형형은 기본 가중치 그대로
+BOT_STYLES = {"balanced": {}, "combo": {"combo": 1.5, "single_pen": 0.75, "b2b": 0.8}, "quad": {"b2b": 1.5, "hold_i": 1.4, "single_pen": 1.3, "combo": 0.6},
+              "spin": {"tslot": 1.6, "b2b": 1.2}}
+BOT_STYLE_NAMES = ("balanced", "combo", "quad", "spin")
+BOT_STYLE_WEIGHTS = (40, 20, 20, 20)
+
+
 def get_badge_info(ko_count):
     """K.O. 수 -> (배지 단계, 공격력 보너스 배율, 표시 문자열). 단계별 기준은 config.BADGE_TIERS"""
     level = 0
@@ -438,6 +445,14 @@ class BattleRoyaleMatch:
             bot = AIBot(bot_id=bid, name=bname, difficulty=diff)
             self.players[bid] = self._new_player(bid, bname, True, bot, bot.engine.get_compact_grid())
             self.players[bid]["trait"] = random.choices(BOT_TRAITS, weights=BOT_TRAIT_WEIGHTS)[0]
+            if self.BOT_STYLES_ENABLED and bot.brain:
+                style = random.choices(BOT_STYLE_NAMES, weights=BOT_STYLE_WEIGHTS)[0]
+                if style == "spin" and not bot.brain["tspin"]:
+                    style = "balanced"                                              # T-스핀을 못 보는 보통 봇은 스핀형이 될 수 없음
+                self.players[bid]["style"] = style
+                mult = BOT_STYLES[style]
+                if mult:
+                    bot.params = {k: (v * mult[k] if k in mult else v) for k, v in bot_brain.PARAMS.items()}
             bot_idx += 1
             registered_count += 1
 
@@ -877,6 +892,9 @@ class BattleRoyaleMatch:
         """공격 라인 전달 및 궤적 이펙트 생성 (from_network: 네트워크로 수신한 공격은 재전송하지 않음)"""
         if lines <= 0 or not self.attacks_enabled or self.is_ally(from_id, to_id):
             return                                                     # 서바이벌 모드(공격 없음) / 같은 편에게는 어떤 공격도 전달/표시하지 않음
+        if (self.PHASE1_BOT_ATTACK_MULT != 1.0 and not from_network and self.alive_count > self.total_players * 0.5
+                and self.players.get(from_id, {}).get("bot") is not None and self.players.get(to_id, {}).get("bot") is not None):
+            lines = max(1, int(math.ceil(lines * self.PHASE1_BOT_ATTACK_MULT)))      # 초반 봇끼리의 싸움만 소폭 증폭
         if not from_network:
             mult = self.attack_multiplier()
             if mult > 1.0:
@@ -1493,6 +1511,8 @@ class BattleRoyaleMatch:
 
     BOUNTY_SECS = 75.0                 # 골든 타깃 제한 시간(초): 1페이즈가 경기의 절반(약 4분)이라 한 명만 오래 걸려 있지 않게 돌려 가며 목표를 줌
     BOUNTY_MAX_REWARDS = 5
+    BOT_STYLES_ENABLED = True          # 봇 플레이 스타일(콤보형/쿼드형/스핀형) 사용 여부 (측정 결과로 켬)
+    PHASE1_BOT_ATTACK_MULT = 1.25    # 생존자가 절반을 넘는 동안 봇이 봇에게 보내는 공격에만 곱하는 배율 (1.0 = 끔). 사람이 받는 압박은 늘리지 않으면서 1페이즈를 줄이기 위함
     BOUNTY_GAP = 4.0                   # 처치한 뒤 다음 골든 타깃이 나오기까지(초)
 
     PREDICTION_TOP3_XP, PREDICTION_WIN_XP = 10, 30

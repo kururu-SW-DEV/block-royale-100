@@ -13,6 +13,9 @@ import bot_pool
 STUCK_LIMIT = 6.0            # 살아 있는데 이 시간(봇 시계 기준 초) 동안 블록을 하나도 못 놓으면 워치독이 강제로 풀어 줌 (어떤 원인이든 봇이 멈춘 채 남지 않게)
 EARLY_TEMPO = 3.0           # 생존자가 절반을 넘는 초반에 봇의 생각/입력 시간에 곱하는 배율 (클수록 초반이 느슨함). 1.8(25~50%) -> 1.25(10~25%) -> 1.0으로 줄어듦
 STARVE_LIMIT = 0.3          # 탐색 예산을 이 시간(봇 시계 기준 초) 넘게 못 받으면 예산과 무관하게 가볍게 계산
+PANIC_ERROR_MULT = 1.0      # 압박 패닉(쉬움/보통 봇): 쌓인 높이가 PANIC_HEIGHT칸 이상이고 받을 공격이 PANIC_INCOMING줄 이상이면 실수 확률에 이 배율을 곱함 (1.0 = 끔). 사람처럼 압박에 무너지는 모습을 위해
+PANIC_HEIGHT = 14
+PANIC_INCOMING = 4
 POOL_WAIT_TIMEOUT = 0.8      # 작업 프로세스 결과를 이 시간(봇 시계 기준 초)까지 기다리고, 그래도 안 오면 직접 계산
 
 # 쉬움을 뺀 난이도는 bot_brain(탐색형 계획기)으로 둠. think: 새 블록을 보고 고민하는 시간, interval: 입력 1개당 간격
@@ -93,6 +96,15 @@ class AIBot:
             self.action_interval = 0.28
             self.error_chance = 0.22
 
+    def _effective_error(self):
+        """실수 확률. 쉬움/보통 봇은 위기(높이 + 받을 공격)에 몰리면 배율만큼 올라감 (PANIC_ERROR_MULT가 1.0이면 변화 없음)"""
+        err = self.error_chance
+        if PANIC_ERROR_MULT != 1.0 and self.difficulty in ("easy", "normal"):
+            e = self.engine
+            if e.incoming_garbage >= PANIC_INCOMING and BOARD_HEIGHT - e.get_highest_block_row() >= PANIC_HEIGHT:
+                err = min(0.6, err * PANIC_ERROR_MULT)
+        return err
+
     def _at_spawn(self):
         """T-스핀 이동 경로는 항상 스폰 위치에서 출발하는 상대 경로라, 블록이 이미 내려와 있으면(봇 인계 직후 등) 쓰지 않음"""
         e = self.engine
@@ -124,7 +136,7 @@ class AIBot:
         if not results:
             return False
         pick = results[0]
-        if random.random() < self.error_chance and len(results) > 1:
+        if random.random() < self._effective_error() and len(results) > 1:
             pick = results[min(random.randint(1, 3), len(results) - 1)]      # 인간적인 실수: 2~4위 수
         _score, use_hold, rot, px, path = pick
         self.plan_hold = use_hold
@@ -268,7 +280,7 @@ class AIBot:
         candidates.sort(key=lambda item: item[0], reverse=True)
         
         # 인간적인 실수 확률: 일정 확률로 1위가 아닌 2~3위 수 선택
-        if random.random() < self.error_chance and len(candidates) > 1:
+        if random.random() < self._effective_error() and len(candidates) > 1:
             idx = min(random.randint(1, 3), len(candidates) - 1)
             return candidates[idx][1], candidates[idx][2]
             
