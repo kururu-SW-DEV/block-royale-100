@@ -469,14 +469,6 @@ class MenuMixin:
         self._t(lv_txt, self.font_tiny, ncol, badge.centerx, badge.centery, "center")
         self._t(name, self.font_mid, col, badge.right + 10, rect.centery, "midleft")
 
-    def _menu_category(self, label, y, h, accent):
-        """카테고리 틀 (함께하기 / 혼자하기): 열 전체 폭의 옅은 틀 + 왼쪽 위에 색 점과 이름. 카드는 이 틀 안에 놓임"""
-        box = pygame.Rect(self.COL_X, y, self.COL_W, h)
-        pygame.draw.rect(self.screen, (12, 16, 31), box, border_radius=14)
-        pygame.draw.rect(self.screen, (34, 43, 70), box, 1, border_radius=14)
-        pygame.draw.rect(self.screen, accent, (box.x + 16, box.y + 13, 6, 6), border_radius=2)
-        self._t(label, self.font_small, (196, 206, 230), box.x + 30, box.y + 16, "midleft")
-
     def _render_menu(self):
         self.menu_bg.draw(self.screen)
         self.menu_buttons.clear()
@@ -490,9 +482,9 @@ class MenuMixin:
         self.renderer._blit_overlay(("menu_scrim",), (SCREEN_WIDTH, 440), _scrim, (0, SCREEN_HEIGHT - 440))
 
         # 1. 로고
-        logo_top = 30                                      # 로고가 화면 맨 위에 붙어 불안해 보이지 않게 위쪽 여백을 둠 (아래쪽 여백과 비슷하게)
+        logo_top = 48                                      # 로고가 화면 맨 위에 붙어 불안해 보이지 않게 위쪽 여백을 둠 (아래쪽 여백과 비슷하게)
         logo_h = self.logo.draw(self.screen, cx, logo_top)
-        y0 = min(logo_top + logo_h + 10, 338)
+        y0 = min(logo_top + logo_h + 18, 362)
 
         # 2. 상태 값 (이미 있는 데이터만)
         n = self.target_player_count
@@ -509,17 +501,15 @@ class MenuMixin:
         # 3. 주 행동 + 카테고리 두 묶음 (함께하기 2장 · 혼자하기 3장, 카드 칸은 같은 폭/끝선)
         x0, w = self.COL_X, self.COL_W
         self._menu_card("quick_play", (x0, y0, w, 88), "quick", C_ACCENT, "빠른 시작", summary, COL_SUB, 0, hero=True)
-        pad, gap, ch_, head = 10, 10, 66, 28
-        fh = head + ch_ + pad
-        ix, iw = x0 + pad, w - 2 * pad
-        y1 = y0 + 88 + 10
-        self._menu_category("함께하기", y1, fh, C_GREEN)
+        pad, gap, ch_, head = 0, 12, 72, 0                 # 카테고리 틀/이름 없이 카드만 두 줄 (함께하기 2장 · 혼자하기 3장)
+        fh = ch_
+        ix, iw = x0, w
+        y1 = y0 + 88 + 12
         cw2 = (iw - gap) // 2
         self._menu_card("host_room", (ix, y1 + head, cw2, ch_), "host", C_GREEN, "방 만들기", f"내 IP {self.local_ip}", COL_SUB, 1)
         self._menu_card("join_room", (ix + cw2 + gap, y1 + head, iw - cw2 - gap, ch_), "join", C_GOLD, "방 참가하기",
                         f"LAN 방 {rooms}개 발견" if rooms else "IP 직접 접속도 가능", C_GOLD if rooms else COL_SUB, 2)
-        y2 = y1 + fh + 8
-        self._menu_category("혼자하기", y2, fh, C_ACCENT)
+        y2 = y1 + fh + 12
         cw3 = (iw - 2 * gap) // 3
         self._menu_card("practice", (ix, y2 + head, cw3, ch_), "practice", C_ACCENT, "연습",
                         f"완료한 과제 {n_prac}개" if n_prac else "전적에 남지 않음", COL_SUB, 3)
