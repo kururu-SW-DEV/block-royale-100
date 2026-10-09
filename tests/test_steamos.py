@@ -4,6 +4,7 @@ SteamOS/Proton 대응 테스트: 시작 단계 기록(startup.log) / 창·오디
 """
 import os
 import sys
+import shutil
 import tempfile
 
 os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -38,6 +39,7 @@ def test_unfinished_launch_is_reported_next_time():
     st._state.update(path=None, done=False)
     st.begin()                                                 # 성공으로 끝난 기록은 다시 알리지 않음
     assert len(open(os.path.join(tmp, "error.log"), encoding="utf-8").read()) == n
+    shutil.rmtree(tmp, ignore_errors=True)                     # 임시 폴더를 남기지 않음
 
 
 def test_trace_is_noop_before_begin_and_never_raises():
@@ -51,6 +53,8 @@ def test_trace_is_noop_before_begin_and_never_raises():
     st.begin()
     st.mark("y")
     st.finish()
+    shutil.rmtree(tmp, ignore_errors=True)
+    os.environ.pop("BR_DATA_DIR", None)
 
 
 def test_set_mode_retries_then_falls_back():

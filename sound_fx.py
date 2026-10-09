@@ -1842,9 +1842,12 @@ class SoundManager:
                     ch.play(snd)                                      # 예약 채널: 같은 계열의 앞 소리는 끊고 새 소리를 바로 냄
                 else:
                     ch = snd.play()
-                if pan is not None and ch is not None:
-                    p = max(-1.0, min(1.0, float(pan))) * self.PAN_MAX
-                    ch.set_volume(1.0 - max(0.0, p), 1.0 + min(0.0, p))      # 채널 음량은 소리를 새로 재생할 때마다 1.0으로 돌아오므로 매번 지정
+                if ch is not None:
+                    if pan is not None:
+                        p = max(-1.0, min(1.0, float(pan))) * self.PAN_MAX
+                        ch.set_volume(1.0 - max(0.0, p), 1.0 + min(0.0, p))
+                    else:
+                        ch.set_volume(1.0, 1.0)                              # 앞서 이 채널에서 치우쳐 낸 소리의 좌우 음량이 남지 않게 가운데로 되돌림 (예약 채널을 같은 계열이 계속 씀)
             except Exception:
                 pass
 

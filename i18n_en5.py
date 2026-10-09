@@ -382,3 +382,6 @@ EXACT.update({"지우기": "Delete", "공백": "Space", "취소": "Cancel", "완
 
 # v1.4.34 메인 화면 Start 버튼 = 설정
 EXACT.update({"설정 (Start)": "Settings (Start)"})
+
+# v1.4.36 패드 분리
+EXACT.update({"패드 연결이 끊겨 일시정지했습니다": "Controller disconnected - paused"})

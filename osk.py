@@ -53,6 +53,13 @@ class HangulComposer:
         self.cho = self.jung = self.jong = ""
         self._hist = []                                       # 지우기용: 직전 상태들
 
+    def snapshot(self):
+        return (self.cho, self.jung, self.jong, list(self._hist))
+
+    def restore(self, snap):
+        self.cho, self.jung, self.jong, hist = snap
+        self._hist = list(hist)
+
     def composing(self):
         return bool(self.cho or self.jung)
 

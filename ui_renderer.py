@@ -1862,9 +1862,10 @@ class UIRenderer:
                     clip = pygame.Rect(bx - 8, by + fl["row"] * cs - pad, max(8, int(ww * sweep)), hh)
                 else:
                     clip = pygame.Rect(bx - 8, by + fl["row"] * cs - pad, ww, hh)
+                prev_clip = CANVAS.display.get_clip()                    # 바깥에 걸려 있던 클립을 지우지 않고 되돌림
                 CANVAS.display.set_clip(CANVAS.rect(clip))
                 self._blit_overlay(("wipe", kind, ww, hh, flash_on), (ww, hh), _build_wipe, (bx - 8, by + fl["row"] * cs - pad), alpha=alpha)
-                CANVAS.display.set_clip(None)
+                CANVAS.display.set_clip(prev_clip)
         self.line_clear_flashes = alive_flashes
 
         # 3-3. 예상 상승선: 곧 올라올 준비가 끝난 쓰레기 줄이 있으면, 이번에 줄을 못 지울 때 가장 높은 블록이 어디까지 밀려 올라오는지 붉은 점선으로 보여 줌
@@ -3303,7 +3304,7 @@ class UIRenderer:
                 continue                                                # 다중 포격의 아직 발사 전인 빔
             progress = min(1.0, elapsed / eff.get("duration", 0.58))
             lines = eff.get("lines", 1)
-            travel_t = min(1.0, elapsed / 0.25)
+            travel_t = min(1.0, elapsed / getattr(match, "HIT_FLIGHT_SECS", 0.25))      # 도착 시각은 match가 같은 값으로 계산 (피격 흔들림/경고음/진동)
 
             if travel_t >= 1.0 and not eff.get("impacted", False):
                 eff["impacted"] = True

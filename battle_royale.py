@@ -1487,6 +1487,7 @@ class BattleRoyaleMatch:
             if self.sound_mgr and canceled >= 2:
                 self.sound_mgr.play('shield')
                 
+        self.log_event("clear", n=cleared, ts=int(is_tspin), mini=int(is_mini), b2b=(chain if is_b2b else -1), combo=max(0, self.local_engine.combo))      # 경기 기록 집계용 (tools/match_log_report.py)
         me = self._short_name(self.local_player_id)
         if info.get('is_pc'):
             self.pc_count += 1
@@ -1834,6 +1835,7 @@ class BattleRoyaleMatch:
                 bchain = e.b2b_chain if e.b2b else -1
                 if self._prev_b2b_chain >= 1 and bchain < 0:             # B2B 끊김: 보너스를 받던 연쇄(×1 이상)가 일반 클리어로 끝남
                     self.b2b_break_seq += 1
+                    self.log_event("b2b_break", chain=self._prev_b2b_chain)
                     self.add_floating_text(f"B2B ×{self._prev_b2b_chain} 끝", (190, 160, 230), duration=1.4, size=22, category="combo")
                     if self.sound_mgr:
                         self.sound_mgr.play('b2b_break')

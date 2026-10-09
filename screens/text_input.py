@@ -153,6 +153,8 @@ class TextInputMixin:
             for name, rect in self.text_rects.items():
                 if rect.collidepoint(event.pos):
                     if field == name:
+                        if self.osk is None and self._osk_wanted():
+                            self._osk_open("text")            # 화상 키보드를 '완료'로 내린 뒤(대기실 채팅은 입력 상태가 남음) 같은 칸을 다시 누르면 키보드를 다시 올림
                         return True                           # 이미 편집 중인 칸을 다시 클릭해도 입력한 글자를 지우지 않음
                     if field:
                         self._end_text()                      # 다른 칸을 편집 중이었다면 먼저 확정

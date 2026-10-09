@@ -253,6 +253,11 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                 and self.match.local_is_alive and not self.match.match_finished
                 and not getattr(self.match, "brief_open", False) and self.osk is None)           # 화상 키보드가 열려 있으면 패드는 키보드 조작
 
+    def _pad_overlay_active(self, pad_in_game):
+        """경기 중 일시정지/탈락·결과/순위표 화면인가 (이때만 패드 X가 다시 시작 R). 화상 키보드나 글자 입력 중에는 X가 '지우기'로 쓰이므로 아님"""
+        return (self.state == "GAME" and self.match is not None and not pad_in_game and self.modal is None and not self.rules_open
+                and not getattr(self.match, "brief_open", False) and self.osk is None)
+
     def run(self):
         self.use_bot_pool = True                 # 실제 실행에서만 봇 계산 작업 프로세스를 사용 (테스트/시뮬레이션은 직접 계산)
         running = True
@@ -274,13 +279,16 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
             
             # 이벤트 처리
             pad_in_game = self._pad_in_game()                       # 그 밖에는 메뉴 방식(방향키/Enter/Esc)으로 변환
-            overlay = (self.state == "GAME" and self.match is not None and not pad_in_game and self.modal is None and not self.rules_open
-                       and not getattr(self.match, "brief_open", False))              # 일시정지/탈락·결과/순위표 화면: X = 다시 시작(R)
+            overlay = self._pad_overlay_active(pad_in_game)                          # 일시정지/탈락·결과/순위표 화면: X = 다시 시작(R)
             self.gamepad.x_is_restart = overlay
             self.gamepad.start_is_settings = (self.state == "MENU" and self.modal is None and not self.rules_open and self.osk is None
                                               and self.text_focus is None and not self._attract_on())      # 메인 화면: Start = 설정
             self.renderer.pad_x_restart = overlay
-            for event in self.gamepad.translate(pygame.event.get(), pad_in_game):
+            events = self.gamepad.translate(pygame.event.get(), pad_in_game)
+            if self.gamepad.removed_all:
+                self.gamepad.removed_all = False
+                self._on_pad_lost()
+            for event in events:
                 if event.type == pygame.KEYDOWN and not getattr(event, "pad", False):
                     self._last_kb_t = time.time()                  # 진짜 키보드 입력 시각: 패드 입력이 더 최근이면 게임 중 키 안내를 패드 버튼으로 보여 줌
                 if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEWHEEL):      # 어트랙트 화면: 깨우는 입력은 메뉴 동작으로 넘기지 않고 소비
@@ -506,13 +514,13 @@ if __name__ == "__main__":
         print(f"BLOCK ROYALE 100 v{APP_VERSION}")
         sys.exit(0)
     crash_log.install()
+    if "--selftest" in sys.argv:
+        _selftest()                                          # (시작 기록은 실제 실행에서만: 자체 점검은 첫 화면을 그리지 않아 OK가 남지 않음)
+        pygame.quit()
+        sys.exit(0)
     import startup_trace
     startup_trace.begin()                                    # 시작 단계 기록 (창이 뜨기 전에 사라지는 문제를 다음 실행 때 error.log로 알려 줌)
     startup_trace.mark("imports done")
-    if "--selftest" in sys.argv:
-        _selftest()
-        pygame.quit()
-        sys.exit(0)
     app = None
     try:
         app = BlockRoyaleApp()

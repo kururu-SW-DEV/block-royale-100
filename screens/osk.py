@@ -73,7 +73,12 @@ class OskMixin:
         if isinstance(key, tuple):
             ch = key[1] if o["shift"] else key[0]
             if o["page"] == "ko" and ch in _osk.CHO + _osk.JUNG:
+                snap = comp.snapshot()
                 ndel, new = comp.feed(ch)
+                limit = self.TEXT_LIMITS.get(self._osk_field())
+                if limit is not None and len(self._text_get(self._osk_field())) - ndel + len(new) > limit:
+                    comp.restore(snap)                                            # 글자 수 상한: 받침이 다음 글자로 넘어가 한 글자가 더 필요하면 입력하지 않음 (잘린 글자를 조합기가 모르면 앞 글자가 지워짐)
+                    return
                 for _ in range(ndel):
                     self._osk_backspace()
                 self._osk_insert(new)

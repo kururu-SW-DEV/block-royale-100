@@ -120,6 +120,7 @@ class GamepadMapper:
         self._dpad = {}                                 # instance_id -> 눌린 십자키 방향 집합 (GameController는 십자키가 버튼으로 옴)
         self._rstick = {}                               # instance_id -> {'x','y','latched'}: 오른쪽 스틱 상태 (한 번 기울일 때 한 번만 모드 선택)
         self.x_is_restart = False                       # 경기 일시정지/결과/순위표 화면에서만 켜짐: X 버튼을 Space(Enter와 같은 확인) 대신 R(다시 시작)로 보냄
+        self.removed_all = False                        # 마지막 패드가 뽑힌 순간 True (앱이 확인하고 False로 되돌림: 솔로 경기 자동 일시정지용)
         self.start_is_settings = False                  # 메인 화면에서만 켜짐: Start 버튼을 Enter(확인) 대신 설정 열기(S)로 보냄
         self.last_pad_t = 0.0                           # 마지막으로 패드 입력(또는 연결)이 있었던 시각 (게임 중 키 안내를 패드/키보드 중 어느 쪽으로 보일지 정하는 데 씀)
 
@@ -331,6 +332,8 @@ class GamepadMapper:
         for e in events:
             if e.type in (pygame.JOYDEVICEADDED, pygame.JOYDEVICEREMOVED):
                 self.on_device_event(e)
+                if e.type == pygame.JOYDEVICEREMOVED and not self.connected():
+                    self.removed_all = True
                 if e.type == pygame.JOYDEVICEADDED:
                     self.last_pad_t = time.time()                      # 새로 연결하면 바로 패드 키 안내로
                 if e.type == pygame.JOYDEVICEREMOVED and getattr(e, "instance_id", None) is not None:

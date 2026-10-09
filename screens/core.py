@@ -239,6 +239,12 @@ class CoreMixin:
             return True
         return False
 
+    def _on_pad_lost(self):
+        """마지막 패드가 빠짐 (블루투스 끊김/배터리 방전/케이블): 패드로 하던 솔로 경기는 바로 죽지 않게 일시정지 (키보드로 하던 중이면 그대로)"""
+        pad_was_active = self.gamepad.last_pad_t > getattr(self, "_last_kb_t", 0.0)
+        if pad_was_active and self._auto_pause_solo():
+            self.match.add_floating_text("패드 연결이 끊겨 일시정지했습니다", (255, 190, 90), duration=3.0, size=22, category="alert")
+
     def toggle_mute(self):
         self.sound_mgr.toggle_sound()
 
