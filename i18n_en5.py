@@ -365,3 +365,11 @@ EXACT.update({"무거운 전장": "Heavy Front", "쓰레기 줄이 1.5배": "Gar
               "홀드 없이 줄 30개 지우기": "Clear 30 lines without hold", "홀드 없이 쿼드 1회": "One quad without hold", "쿼드 1회": "1 quad", "15위 안에 들기": "Finish in the top 15"})
 
 TEMPLATES.update({"{#}점": "{} pts"})
+
+# v1.4.33 게임 효과 개선 (패드 진동 설정, 미니 T-스핀, B2B 끊김, 공격 누적)
+EXACT.update({"패드 진동": "Controller rumble",
+              "쿼드/피격/K.O./하드 드롭 진동 (화면 흔들림과 따로 조절)": "Quad/hit/K.O./hard-drop rumble (separate from screen shake)",
+              "쿼드/피격/K.O. 때 화면이 흔들림 (패드 진동은 따로)": "Screen shakes on quads/hits/K.O.s (rumble is separate)",
+              "패드를 쓸 때 쿼드·피격·K.O.·하드 드롭에서 패드가 울리는 세기입니다. 화면 흔들림 설정과 따로 정할 수 있습니다.": "How strongly the controller rumbles on quads, hits, K.O.s and hard drops. Set separately from screen shake.",
+              "T-스핀 미니": "T-Spin Mini", "T-스핀 미니 싱글": "T-Spin Mini Single", "T-스핀 미니 더블": "T-Spin Mini Double"})
+TEMPLATES.update({"B2B ×{#} 끝": "B2B ×{} ended", "▶ {#}줄": "▶ {} lines"})

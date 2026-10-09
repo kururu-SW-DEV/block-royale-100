@@ -34,6 +34,11 @@ C_BG_BOTTOM = (8, 9, 16)
 from i18n import tr as _tr
 
 
+def _tr_stamp():
+    import i18n
+    return i18n._lang
+
+
 def _ease_out(x):
     """0~1 진행도를 처음엔 빠르게 끝에선 천천히 (연출용)"""
     x = 0.0 if x < 0.0 else (1.0 if x > 1.0 else x)
@@ -116,8 +121,22 @@ class ParticleManager:
     def __init__(self):
         self.particles = []
         self.rings = []
+        self.low = False                 # 화면이 느릴 때(fx_low): 파티클 수를 절반으로, 발광 파티클은 생략
+        self._amb = 0                    # 배경(봇끼리 공격 등) 파티클 수: 내 연출 파티클이 밀려 사라지지 않게 따로 제한
 
-    def add_sparks(self, x, y, color, count=30, speed_mult=1.0, glow=False):
+    AMBIENT_MAX = 60
+
+    def add_sparks(self, x, y, color, count=30, speed_mult=1.0, glow=False, ambient=False):
+        """ambient=True: 나와 무관한 연출용 (최대 AMBIENT_MAX개, 넘치면 새로 만들지 않음). 내 연출이 상한(320)을 넘기면 배경 파티클부터 지움"""
+        if self.low:
+            if glow:
+                return
+            count = max(1, count // 2)
+        if ambient:
+            count = min(count, self.AMBIENT_MAX - self._amb)
+            if count <= 0:
+                return
+            self._amb += count
         for _ in range(count):
             angle = random.uniform(0, math.pi * 2)
             speed = random.uniform(80, 340) * speed_mult
@@ -130,10 +149,21 @@ class ParticleManager:
                 "life": 0.0,
                 "max_life": random.uniform(0.3, 0.6),
                 "glow": glow,
+                "amb": ambient,
             })
-        # 과도한 파티클 누적 방지
-        if len(self.particles) > 320:
-            del self.particles[:len(self.particles) - 320]
+        # 과도한 파티클 누적 방지 (배경 파티클부터 지움)
+        extra = len(self.particles) - 320
+        if extra > 0:
+            keep = []
+            for p in self.particles:
+                if extra > 0 and p.get("amb"):
+                    extra -= 1
+                    continue
+                keep.append(p)
+            self.particles = keep
+            if extra > 0:
+                del self.particles[:extra]
+            self._amb = sum(1 for p in self.particles if p.get("amb"))
 
     def add_shockwave(self, x, y, color, max_radius=80):
         self.rings.append({
@@ -152,6 +182,7 @@ class ParticleManager:
                 p["vx"] *= (1.0 - dt * 2.0)
                 alive_p.append(p)
         self.particles = alive_p
+        self._amb = sum(1 for p in alive_p if p.get("amb"))
 
         alive_r = []
         for r in self.rings:
@@ -248,6 +279,7 @@ class UIRenderer:
         self._combo_break_n = 0
         self._cancel_seen = 0            # 방어(막은 줄) 반응
         self._cancel_t0 = -9.0
+        self._b2b_break_seen = 0         # B2B 끊김 연출
         self._pc_seen = 0                # 퍼펙트 금빛 쓸어올림
         self._pc_t0 = -9.0
         # v1.1.7 블록 반응 연출 (내 보드 전용)
@@ -534,6 +566,7 @@ class UIRenderer:
 
     # ---------------------------------------------------------------- 메인 렌더
     def render(self, match, sound_mgr=None):
+        self.particles.low = bool(getattr(match, "fx_low", False))
         shake = getattr(match, 'screen_shake', 0.0)
         sdir = getattr(match, 'shake_dir', None)
         if shake > 0 and sdir:                           # 방향성 흔들림: 그 축으로 감쇠하는 사인파(약 18Hz) + 아주 작은 수직 떨림. 쿼드는 세로 펀치, 피격은 아래쪽
@@ -562,12 +595,20 @@ class UIRenderer:
             self.particles.add_sparks(cx, cy, (255, 230, 120), count=40, speed_mult=1.4)
             self.particles.add_shockwave(cx, cy + 80, (110, 235, 255), max_radius=100)
             ci = getattr(engine, "last_clear_info", None) or {}
-            if (ci.get("cleared", 0) >= 4 or (ci.get("is_tspin") and ci.get("cleared", 0) >= 2) or ci.get("is_pc")) and getattr(match, "shake_scale", 1.0) > 0:
+            if (ci.get("cleared", 0) >= 4 or (ci.get("is_tspin") and not ci.get("is_mini") and ci.get("cleared", 0) >= 2) or ci.get("is_pc")) and getattr(match, "shake_scale", 1.0) > 0 and not self.particles.low:
                 self.speed_lines_t0 = self.zoom_t0 = time.time()                      # 큰 기술: 집중선 0.25초 + 보드 줌 펀치 0.12초 (흔들림 '약하게'는 절반)
                 self._zoom_power = min(1.0, getattr(match, "shake_scale", 1.0))
-            if ci.get("cleared", 0) >= 4 or ci.get("is_tspin"):                      # 큰 기술만 발광 파티클과 배경 링 (개수 제한)
+            if ci.get("cleared", 0) >= 4 or (ci.get("is_tspin") and not ci.get("is_mini")):                      # 큰 기술만 (미니 T-스핀은 제외) 발광 파티클과 배경 링 (개수 제한)
                 self.particles.add_sparks(cx, cy, (255, 235, 150), count=12, speed_mult=1.7, glow=True)
                 self._add_bg_pulse(cx, cy, (255, 215, 110) if ci.get("cleared", 0) >= 4 else (200, 130, 255))
+
+        if getattr(match, 'b2b_break_seq', 0) != self._b2b_break_seen:       # B2B 끊김: 보라색 오라가 조각나 흩어짐 (색 + 위쪽으로 흩어지는 모양)
+            self._b2b_break_seen = match.b2b_break_seq
+            if match.b2b_break_seq > 0 and not spectating:
+                bx0, bx1 = self.main_board_x, self.main_board_x + self.main_board_w
+                for k in range(4):
+                    self.particles.add_sparks(bx0 + (bx1 - bx0) * (k + 0.5) / 4, self.main_board_y + self.main_board_h * 0.35, (190, 150, 255), count=7, speed_mult=1.0)
+                self.particles.add_shockwave((bx0 + bx1) // 2, self.main_board_y + self.main_board_h // 2, (170, 130, 235), max_radius=90)
 
         if getattr(match, 'pc_count', 0) != self._pc_seen:             # 퍼펙트 클리어: 금빛 파티클과 쓸어올림 시작
             self._pc_seen = match.pc_count
@@ -599,8 +640,10 @@ class UIRenderer:
 
         # 라인 제거 시 수평 와이프 플래시
         if engine.cleared_row_indices:
-            for r_idx in engine.cleared_row_indices:
-                self.line_clear_flashes.append({"row": r_idx, "birth": time.time(), "duration": 0.40})
+            ci_ = getattr(engine, "last_clear_info", None) or {}
+            wkind = "quad" if ci_.get("cleared", 0) >= 4 else ("tspin" if ci_.get("is_tspin") and not ci_.get("is_mini") else "clear")
+            for n_, r_idx in enumerate(sorted(engine.cleared_row_indices)):
+                self.line_clear_flashes.append({"row": r_idx, "birth": time.time() + (0.035 * n_ if wkind == "tspin" else 0.0), "duration": 0.40, "kind": wkind, "combo": max(0, getattr(engine, "combo", 0))})
                 row_y = self.main_board_y + r_idx * self.cell_size + self.cell_size // 2
                 self.particles.add_sparks(self.main_board_x + 10, row_y, (110, 235, 255), count=10, speed_mult=1.2)
                 self.particles.add_sparks(self.main_board_x + self.main_board_w - 10, row_y, (110, 235, 255), count=10, speed_mult=1.2)
@@ -615,6 +658,7 @@ class UIRenderer:
 
         self._render_mini_boards(match, ox, oy)
         self._render_attack_effects(match, ox, oy)
+        self._render_send_counter(match, ox, oy)
         self._render_main_board(match, ox, oy)
         self.particles.draw(self.screen, ox, oy)
         self._apply_zoom_punch(ox, oy)
@@ -689,7 +733,7 @@ class UIRenderer:
         for ft in tips:
             progress = (now - ft["birth"]) / ft["duration"]
             alpha = max(0, min(255, int(255 * (1.0 - progress ** 6))))
-            surf = self.font_small.render(ft["text"], True, (250, 240, 200))
+            surf = self._cached_text(self.font_small, ft["text"], (250, 240, 200))
             tw, th = surf.get_size()
             plate = pygame.Rect(0, 0, tw + 28, th + 12)
             plate.midtop = (int(cx_board), 68 + 2 * 22 + 8 + int(oy))
@@ -702,7 +746,7 @@ class UIRenderer:
         for i, ft in enumerate(feed):
             progress = (now - ft["birth"]) / ft["duration"]
             alpha = max(0, min(255, int(255 * (1.0 - progress ** 4))))
-            surf = self.font_small.render(ft["text"], True, ft["color"])
+            surf = self._cached_text(self.font_small, ft["text"], ft["color"])
             tw, th = surf.get_size()
             plate = pygame.Rect(int(cx_board - (tw + 24) // 2), strip_y + i * 22 + int(oy), tw + 24, 22)
             CANVAS.alpha_rect(plate, (10, 13, 24, int(alpha * 0.88)), radius=11)
@@ -761,7 +805,7 @@ class UIRenderer:
             if cand.size(main["text"])[0] + 32 <= max_w:
                 font = cand
                 break
-        surf = font.render(main["text"], True, main["color"])
+        surf = self._cached_text(font, main["text"], main["color"])
         pop = 1.0
         if age < self.POP_SECS and getattr(self, "banner_pop", True):
             pop = 1.0 + 0.35 * (1.0 - age / self.POP_SECS) ** 2
@@ -779,7 +823,7 @@ class UIRenderer:
         surf.set_alpha(alpha)
         self.screen.blit(surf, (plate.x + 16, plate.y + 7))
         for k, sub in enumerate(subs):                                              # 같은 순간의 보조 배너: 메인 아래에 작게
-            s2 = self.font_hud.render(sub["text"], True, sub["color"])
+            s2 = self._cached_text(self.font_hud, sub["text"], sub["color"])
             sw, sh = s2.get_size()
             p2 = pygame.Rect(0, 0, sw + 26, sh + 8)
             p2.midtop = (int(cx_board), plate.bottom + 4 + k * (sh + 12))
@@ -1621,7 +1665,9 @@ class UIRenderer:
             return _mix((90, 225, 130), (255, 222, 90), t * 2.0)
         return _mix((255, 222, 90), (255, 84, 94), (t - 0.5) * 2.0)
 
-    def _draw_garbage_bar(self, engine, incoming, bar_x, by, bh, cs):
+    WIPE_COLORS = {"clear": (70, 205, 255), "quad": (255, 205, 70), "tspin": (190, 110, 255)}      # 줄 삭제 띠 색 (보통/쿼드/T-스핀)
+
+    def _draw_garbage_bar(self, engine, incoming, bar_x, by, bh, cs, flight=0):
         """받을 공격 게이지: 1줄 = 1칸, 아래쪽이 먼저 올라올 것. 색은 쌓인 양(초록 -> 빨강), 공격을 받은 묶음 사이는 한 칸 틈으로 구분.
         차징 중(아직 안 올라옴)은 어둡게, 다음 락다운에 올라올 수 있는 것은 밝게"""
         segs_fn = getattr(engine, "garbage_segments", None)
@@ -1634,6 +1680,8 @@ class UIRenderer:
                     break
                 base = self._garbage_level_color(i)
                 col = base if ready else _mix(base, bg, 0.6)
+                if i >= incoming - flight:
+                    col = _mix(base, bg, 0.82)                                # 빔이 아직 도착하지 않은 줄: 아주 흐리게 (도착하면 진해짐)
                 cy0 = by + bh - (i + 1) * cs
                 top_gap = 2 if (k == lines - 1 and i < incoming - 1) else 1      # 묶음의 맨 위 칸은 위쪽 틈을 넓혀 묶음 경계를 보이게
                 pygame.draw.rect(self.screen, col, (bar_x + 1, cy0 + top_gap, 6, cs - 1 - top_gap), border_radius=2)
@@ -1724,7 +1772,8 @@ class UIRenderer:
         bar_x = bx - 14                                                # 게이지는 배경/테두리 없이 칸만 그림 (복잡해 보이지 않게)
         incoming = engine.incoming_garbage
         if incoming > 0:
-            self._draw_garbage_bar(engine, incoming, bar_x, by, bh, cs)
+            flight_fn = getattr(match, "flight_lines", None)
+            self._draw_garbage_bar(engine, incoming, bar_x, by, bh, cs, flight=min(incoming, flight_fn()) if callable(flight_fn) and engine is match.local_engine else 0)
 
         # 3. 고정된 블록 (줄 제거 뒤 내려앉기 / 쓰레기 줄 상승 / 탑아웃 붕괴 / 우승 세리머니 반영)
         now = time.time()
@@ -1784,18 +1833,38 @@ class UIRenderer:
         self.lock_flashes = alive_lock
 
         # 3-2. 라인 클리어 와이프
+        # 종류마다 모양이 다름 (색에만 기대지 않게): 보통 = 가로 전체, 쿼드 = 가운데에서 바깥으로 번지는 금색 띠, T-스핀 = 줄마다 조금씩 늦게 왼쪽에서 오른쪽으로 쓸어가는 보라색 띠
+        # 서피스는 종류/크기별로 한 번만 만들고 투명도만 바꿈 (전에는 줄마다 매 프레임 새로 만듦). 번쩍임 설정이 꺼져 있으면 순백 대신 색을 씀
         alive_flashes = []
+        flash_on = getattr(match, 'flash_enabled', True)
         for fl in self.line_clear_flashes:
             elapsed = now - fl["birth"]
             if elapsed < fl["duration"]:
                 alive_flashes.append(fl)
+                if elapsed < 0:
+                    continue                                           # T-스핀 쓸기: 아직 차례가 안 온 줄
                 progress = elapsed / fl["duration"]
                 alpha = max(0, min(255, int(255 * (1.0 - progress))))
-                spread = int(4 * math.sin(progress * math.pi))
-                fs = pygame.Surface((bw + 16, cs + spread * 2), pygame.SRCALPHA)
-                fs.fill((70, 205, 255, alpha // 3))
-                pygame.draw.rect(fs, (255, 255, 255, alpha), (0, spread + 3, bw + 16, cs - 6), border_radius=6)
-                self.screen.blit(fs, (bx - 8, by + fl["row"] * cs - spread))
+                kind = fl.get("kind", "clear")
+                col = self.WIPE_COLORS.get(kind, self.WIPE_COLORS["clear"])
+                pad = 4 + (2 if fl.get("combo", 0) >= 3 else 0)       # 콤보가 이어질수록 띠가 두꺼워짐
+                ww, hh = bw + 16, cs + pad * 2
+                core = (255, 255, 255) if flash_on else tuple(min(255, c + 70) for c in col)
+
+                def _build_wipe(s, col=col, core=core, ww=ww, hh=hh, pad=pad):
+                    pygame.draw.rect(s, (*col, 85), (0, 0, ww, hh), border_radius=8)
+                    pygame.draw.rect(s, (*core, 255), (0, pad - 1, ww, hh - 2 * pad + 2), border_radius=6)
+                sweep = _ease_out(min(1.0, progress * 2.4))
+                if kind == "quad":
+                    cw = max(8, int(ww * sweep))
+                    clip = pygame.Rect(bx - 8 + (ww - cw) // 2, by + fl["row"] * cs - pad, cw, hh)
+                elif kind == "tspin":
+                    clip = pygame.Rect(bx - 8, by + fl["row"] * cs - pad, max(8, int(ww * sweep)), hh)
+                else:
+                    clip = pygame.Rect(bx - 8, by + fl["row"] * cs - pad, ww, hh)
+                CANVAS.display.set_clip(CANVAS.rect(clip))
+                self._blit_overlay(("wipe", kind, ww, hh, flash_on), (ww, hh), _build_wipe, (bx - 8, by + fl["row"] * cs - pad), alpha=alpha)
+                CANVAS.display.set_clip(None)
         self.line_clear_flashes = alive_flashes
 
         # 3-3. 예상 상승선: 곧 올라올 준비가 끝난 쓰레기 줄이 있으면, 이번에 줄을 못 지울 때 가장 높은 블록이 어디까지 밀려 올라오는지 붉은 점선으로 보여 줌
@@ -2427,7 +2496,7 @@ class UIRenderer:
 
             flash_age = now - self.board_impact_flashes.get(pid, 0)
             is_flashing = flash_age < 0.22
-            if is_flashing:
+            if is_flashing and getattr(match, "shake_scale", 1.0) > 0:          # 흔들림 설정이 '끔'이면 떨리지 않음
                 bx += random.uniform(-2.0, 2.0)
                 by += random.uniform(-2.0, 2.0)
 
@@ -2676,7 +2745,7 @@ class UIRenderer:
                 wipe_h = int((board_rect.h - 2) * min(1.0, ko_age / 0.5))
                 if wipe_h > 0:
                     CANVAS.alpha_rect((board_rect.x + 1, board_rect.y + 1, board_rect.w - 2, wipe_h), (10, 11, 16, 240))
-                if ko_age < 0.12:
+                if ko_age < 0.12 and getattr(match, "flash_enabled", True):
                     CANVAS.alpha_rect(board_rect, (255, 255, 255, int(200 * (1.0 - ko_age / 0.12))))
                 if ko_age > 0.12 and p.get("ko_by") == match.local_player_id and bw >= 30:
                     self._fade_text("K.O.", self.font_tiny if bw < 90 else self.font_small, (255, 215, 90), board_rect.centerx, board_rect.centery, 255 * min(1.0, (ko_age - 0.12) / 0.15), "center")
@@ -2704,8 +2773,11 @@ class UIRenderer:
 
             if is_flashing:
                 a = max(0, min(255, int(220 * (1.0 - flash_age / 0.22))))
-                self._blit_overlay(("mini_flash", board_rect.w, board_rect.h), (board_rect.w, board_rect.h),
-                                   lambda surf: surf.fill((255, 255, 255, 255)), board_rect.topleft, alpha=a)
+                if getattr(match, "flash_enabled", True):
+                    self._blit_overlay(("mini_flash", board_rect.w, board_rect.h), (board_rect.w, board_rect.h),
+                                       lambda surf: surf.fill((255, 255, 255, 255)), board_rect.topleft, alpha=a)
+                else:
+                    CANVAS.alpha_rect(board_rect, (255, 90, 100, 255 if a > 110 else 150), width=2, radius=3)      # 번쩍임 대신 붉은 테두리
 
             if strip_w and is_alive:
                 # 보드 오른쪽: 홀드 1칸 + 다음 블록 (최대 3칸). 홀드/다음 블록이 바뀔 때만 다시 그림
@@ -3128,9 +3200,17 @@ class UIRenderer:
         # 빈 칸까지 붉은 상자로 칠하지 않고, 쌓인 블록만 맥박에 맞춰 붉게 달아오르고 스택 윗면에서 열기가 올라오는 느낌으로
         for y in range(max(0, highest), BOARD_HEIGHT):
             row = engine.grid[y]
-            for x in range(BOARD_WIDTH):
-                if row[x]:
-                    self._blit_overlay(("danger_cell", cs, cb), (cs, cs), lambda ds: ds.fill((*col, 120)), (bx + x * cs, by + y * cs), alpha=a)
+            x = 0
+            while x < BOARD_WIDTH:                                       # 이어진 칸은 한 장으로 합쳐 그림 (칸마다 따로 그리면 위기 때 프레임당 최대 약 200번)
+                if not row[x]:
+                    x += 1
+                    continue
+                x2 = x
+                while x2 < BOARD_WIDTH and row[x2]:
+                    x2 += 1
+                n_ = x2 - x
+                self._blit_overlay(("danger_run", n_, cs, cb), (n_ * cs, cs), lambda ds: ds.fill((*col, 120)), (bx + x * cs, by + y * cs), alpha=a)
+                x = x2
         if highest >= 2:
             def _build_haze(ds):
                 for i in range(cs * 2):
@@ -3156,6 +3236,32 @@ class UIRenderer:
         self._draw_text("T-SPIN", self.font_tiny, col, bx + int((mid + 0.5) * cs), by + top * cs - 8, "midbottom")
 
     # ---------------------------------------------------------------- 공격 이펙트
+    def _incoming_anchor(self, match, ox=0, oy=0):
+        """내게 오는 공격 빔이 꽂히는 자리: 받을 공격 게이지 쌓인 줄의 맨 위 (보드 왼쪽)"""
+        cs = self.cell_size
+        n = min(BOARD_HEIGHT, max(1, getattr(match.local_engine, "incoming_garbage", 0) or 1))
+        bottom = self.main_board_y + oy + self.main_board_h
+        return (self.main_board_x + ox - 10, int(bottom - (n - 0.5) * cs))
+
+    def _render_send_counter(self, match, ox=0, oy=0):
+        """내가 보낸 공격의 누적 줄 수: 이어서 보낼수록 숫자가 커지고 색이 달아오름 (1.5초 동안 보이다 사라짐)"""
+        agg = getattr(match, "send_agg", None)
+        if not agg or not match.local_is_alive or getattr(match, "is_spectating", False):
+            return
+        age = time.time() - agg["t"]
+        n = agg["lines"]
+        if n < 2 or age > match.SEND_AGG_WINDOW:
+            return
+        tier = 2 if n >= 20 else (1 if n >= 10 else 0)
+        col = ((255, 235, 120), (255, 170, 80), (255, 90, 90))[tier]
+        font = (self.font_hud, self.font_big_num, self.font_large)[tier]            # 이어서 보낼수록 숫자가 커짐
+        fade = 255 if age < 1.1 else int(255 * (1.0 - (age - 1.1) / (match.SEND_AGG_WINDOW - 1.1)))
+        ir = self._hud_rects.get("incoming")                                   # 오른쪽 '받을 공격' 칸 바로 아래 (위쪽은 조준/상태 표시와 겹침)
+        if ir is None:
+            return
+        y = ir.bottom + 10 + oy - (4 if age < 0.12 else 0)
+        self._fade_text(f"▶ {n}줄", font, col, ir.centerx + ox, y, fade, "midtop")
+
     def _render_attack_effects(self, match, ox=0, oy=0):
         now = time.time()
         main_center = (self.main_board_x + self.main_board_w // 2 + ox, self.main_board_y + self.main_board_h // 2 + oy)
@@ -3188,7 +3294,7 @@ class UIRenderer:
                 oage = now - eff["start_time"]
                 if 0.0 <= oage < 0.3:
                     draw_glow(self.screen, p1[0], p1[1], 26, (255, 235, 150) if eff.get("lines", 1) >= 4 else (120, 235, 255), 1.0 - oage / 0.3)
-            p2 = main_center if tid == match.local_player_id else (self.mini_board_rects[tid].center if tid in self.mini_board_rects else None)
+            p2 = self._incoming_anchor(match, ox, oy) if tid == match.local_player_id else (self.mini_board_rects[tid].center if tid in self.mini_board_rects else None)
             if not p1 or not p2:
                 continue
 
@@ -3204,7 +3310,7 @@ class UIRenderer:
                 self.board_impact_flashes[tid] = now
                 if tid == match.local_player_id:
                     impact_col = (255, 70, 75)
-                    match.trigger_screen_shake(min(14.0, 5.0 + lines * 2.2), (0, 1))
+                    pass                                                       # 흔들림/경고음/진동은 match가 같은 시각(빔 도착)에 처리
                 elif fid == match.local_player_id:
                     impact_col = (255, 230, 90)
                 else:
@@ -3215,8 +3321,9 @@ class UIRenderer:
                     self.particles.add_sparks(p2[0], p2[1], impact_col, count=20 + min(30, lines * 6), speed_mult=1.5)
                     self.particles.add_shockwave(p2[0], p2[1], impact_col, max_radius=35 + min(35, lines * 8) + (18 if eff.get("multi", 1) >= 2 else 0))
                 else:                                                   # 나와 무관한 봇끼리의 공격은 작고 가볍게
-                    self.particles.add_sparks(p2[0], p2[1], impact_col, count=5, speed_mult=1.2)
-                    self.particles.add_shockwave(p2[0], p2[1], impact_col, max_radius=22)
+                    self.particles.add_sparks(p2[0], p2[1], impact_col, count=5, speed_mult=1.2, ambient=True)
+                    if not getattr(match, "fx_low", False):
+                        self.particles.add_shockwave(p2[0], p2[1], impact_col, max_radius=22)
 
             self._draw_energy_laser_beam(p1, p2, eff, travel_t, progress, fid == match.local_player_id, tid == match.local_player_id)
 
@@ -3333,7 +3440,7 @@ class UIRenderer:
             pygame.draw.circle(self.screen, glow_c, (hx, hy), r + 4)
             pygame.draw.circle(self.screen, mid_c, (hx, hy), r)
             pygame.draw.circle(self.screen, (255, 255, 255), (hx, hy), max(2, r - 3))
-            if random.random() < 0.5:
+            if is_heavy and random.random() < 0.5:                       # 나와 무관한 빔은 꼬리 스파크 없음 (내 연출 파티클 예산 보호)
                 self.particles.add_sparks(hx, hy, mid_c, count=2, speed_mult=0.5)
 
         if travel_t >= 0.95 and progress < 0.75:
@@ -3376,11 +3483,29 @@ class UIRenderer:
         t = max(0.0, min(1.0, t))
         return 1 - (1 - t) ** 3
 
+    def _cached_text(self, font, text, color):
+        """같은 글자는 한 번만 렌더링 (토스트/배너/점수 팝처럼 몇 초 동안 매 프레임 같은 글자를 그리는 곳용). 해상도/언어가 바뀌면 비움.
+        돌려받은 서피스는 공유되므로 set_alpha만 하고 다른 방식으로 고치지 말 것"""
+        key = (id(font), text, tuple(color[:3]))
+        stamp = (CANVAS.version, _tr_stamp())
+        cache = self.__dict__.setdefault("_text_cache", {})
+        if cache.get("_stamp") != stamp:
+            cache.clear()
+            cache["_stamp"] = stamp
+        surf = cache.get(key)
+        if surf is None:
+            if len(cache) > 160:
+                cache.clear()
+                cache["_stamp"] = stamp
+            surf = cache[key] = font.render(text, True, color)
+        surf.set_alpha(255)                                     # 앞선 페이드아웃이 남긴 투명도를 지움 (알파 0인 채로 확대하면 팝인 동안 글자가 사라짐)
+        return surf
+
     def _fade_text(self, text, font, color, x, y, alpha, anchor="topleft"):
         """투명도를 줄 수 있는 텍스트 (순위표 행 등장 애니메이션용)"""
         if alpha <= 0:
             return
-        surf = font.render(text, True, color)
+        surf = self._cached_text(font, text, color)
         surf.set_alpha(max(0, min(255, int(alpha))))
         rect = surf.get_rect()
         setattr(rect, anchor, (int(x), int(y)))

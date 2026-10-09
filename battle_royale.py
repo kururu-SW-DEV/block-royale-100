@@ -74,6 +74,9 @@ class BattleRoyaleMatch:
         self.challenge_saved = []                       # 새로 달성해 앱이 저장해야 하는 과제 id 목록
         self.rival_defeated = False                    # 이번 경기에서 라이벌을 내가 처치했는가 (복수 성공)
         # ---- v1.1.6 도파민 연출 상태
+        self._prev_b2b_chain = -1                      # B2B 끊김 알림용 (이전 프레임의 B2B 연쇄. -1 = B2B 아님)
+        self.send_agg = {"t": -9.0, "lines": 0, "tier": 0}      # 1.5초 안에 보낸 공격 줄 수 누적 (렌더러가 보드 위에 커지는 숫자로 표시)
+        self.b2b_break_seq = 0                         # B2B가 끊길 때마다 +1 (렌더러가 오라가 깨지는 연출을 시작)
         self._prev_combo = -1                          # 콤보 끊김 알림용 (이전 프레임의 콤보)
         self._ko_events = []                           # 예약된 K.O. 후속 연출 (구슬이 K.O. 칸에 도착하는 시점에 소리/배지 승급)
         self._top_announced = set()                    # 이미 알린 TOP N
@@ -176,6 +179,7 @@ class BattleRoyaleMatch:
         self.drill_best = 0               # 가장 오래 버틴 시간(초): 앱이 설정에서 읽어 넣고 갱신분을 저장
         self.drill_last = 0               # 방금 끝난 드릴에서 버틴 시간(초)
         self.local_hits_from = {}         # 내가 받은 공격 줄 수: 보낸 사람 id -> 합계 (결과 화면 "패인 한 줄"용)
+        self._pending_hits = []           # (도착 시각, 줄 수): 날아오는 중인 공격. 도착하는 순간에 흔들림/경고음/진동
         self._hit_agg = None              # 1초 안에 연달아 받은 피격을 한 토스트로 합치기 위한 상태
         self.events = []                  # 사람 테스트용 경기 로그(설정에서 켠 경우만 기록): (경기 시각, 종류, 내용)
         self.log_enabled = False
@@ -287,11 +291,37 @@ class BattleRoyaleMatch:
 
     shake_scale = 1.0                  # 설정의 화면 흔들림 배율 (0=끔, 0.4=약하게, 1.0=보통). 앱이 경기 시작 때 지정
 
-    def trigger_screen_shake(self, amount=8.0, direction=None):
+    rumble_scale = 1.0                 # 설정의 패드 진동 배율 (0=끔, 0.5=약하게, 1.0=보통). 화면 흔들림과 따로
+
+    def rumble(self, power, kind="hit"):
+        """패드 진동. 살아 있을 때만(관전 중에는 없음), 마지막으로 패드를 쓴 경우에만(rumble_cb가 판단)"""
+        cb = getattr(self, "rumble_cb", None)
+        if cb is not None and self.rumble_scale > 0 and self.local_is_alive:
+            cb(min(1.0, power * self.rumble_scale), kind)
+
+    pan_fn = None                      # 앱이 지정: 플레이어 id -> 화면 가로 위치(-1~1) 또는 None (그 플레이어의 카드가 보이는 쪽에서 효과음이 나게)
+
+    def _pan(self, pid):
+        fn = self.pan_fn
+        try:
+            return fn(pid) if fn is not None and pid else None
+        except Exception:
+            return None
+
+    def _play_fx(self, name, pid=None, **kw):
+        """효과음 재생: pid가 화면에 카드가 있는 플레이어면 그쪽에서 들리게"""
+        if not self.sound_mgr:
+            return
+        pan = self._pan(pid)
+        if pan is not None:
+            kw["pan"] = pan
+        self.sound_mgr.play(name, **kw)
+
+    def trigger_screen_shake(self, amount=8.0, direction=None, rumble_kind="hit"):
         """화면 흔들림. direction=(dx, dy)면 그 축으로 감쇠 사인파처럼 떨림(쿼드는 세로 펀치, 피격은 아래쪽), 없으면 방향 없는 떨림"""
         amt = amount * self.shake_scale
-        if amount >= 8.0 and self.shake_scale > 0 and self.local_is_alive and getattr(self, "rumble_cb", None) is not None:
-            self.rumble_cb(min(1.0, amount / 18.0))                    # 큰 순간(쿼드/T-스핀/K.O./피격)은 패드도 진동: 흔들림 '약하게'에서도 같은 세기 (흔들림이 '끔'이면 진동도 없음), 탈락 뒤 관전 중에는 없음
+        if amount >= 8.0:
+            self.rumble(min(1.0, amount / 18.0), rumble_kind)           # 큰 순간(쿼드/T-스핀/K.O./피격)은 패드도 진동 (진동 설정은 흔들림과 따로)
         if amt >= self.screen_shake:
             self.screen_shake = amt
             self.shake_dir = direction if (direction and amt > 0) else None
@@ -709,7 +739,7 @@ class BattleRoyaleMatch:
         self.spectate_target_id = nxt
         self.spectate_notice = {"text": f"{dead_name} 패배!", "sub": f"관전 대상을 {self.players[nxt]['name']}(으)로 전환합니다", "t0": now}
         if self.sound_mgr:
-            self.sound_mgr.play('ko')
+            self._play_fx('ko', tid)
 
     def cycle_spectate_target(self, direction=1):
         """탈락 후 관전 모드에서 다른 생존자 전환 (방향키 조작)"""
@@ -936,8 +966,7 @@ class BattleRoyaleMatch:
         # 1. 로컬 플레이어가 피격 대상인 경우
         if to_id == self.local_player_id and self.local_is_alive:
             self.local_engine.queue_garbage(lines, source=from_id)
-            self.trigger_screen_shake(min(14.0, 5.0 + lines * 2.2))
-            self._play_hit_alarm(lines)
+            self._pending_hits.append((time.time() + self.HIT_FLIGHT_SECS + order * 0.07, lines, from_id))      # 흔들림/경고음/진동은 빔이 도착하는 순간에 (받을 공격 칸은 그때까지 흐리게)
             attacker_p = self.players.get(from_id, {})
             attacker_name = attacker_p.get("name", "적 플레이어")
             self.local_hits_from[from_id] = self.local_hits_from.get(from_id, 0) + lines          # 결과 화면 "패인 한 줄"용: 누가 얼마나 보냈나
@@ -1048,7 +1077,7 @@ class BattleRoyaleMatch:
                 for i in range(1 + gain):                                  # 구슬은 1개 + 흡수한 점수만큼 (0.1초 간격으로 쏟아짐)
                     self.ko_orbs.append({"victim": victim_id, "t0": time.time() + 0.1 * i, "gold": gold})
                 new_lvl, _, new_pct = get_badge_info(self.badge_points())
-                self.trigger_screen_shake(10.0, (0, 1))
+                self.trigger_screen_shake(10.0, (0, 1), rumble_kind="ko")
                 self.trigger_impact(0.4)                                   # K.O. 결정타: 약한 번쩍임 (첫 K.O.는 아래에서 더 강하게)
                 victim_name = self.players.get(victim_id, {}).get("name", "상대")
                 self.add_floating_text(f"[K.O. 처치!] +{1 + gain} 배지 획득 >> {victim_name}" + (f"  (상대 배지 {gain} 흡수)" if gain else ""), (255, 220, 50), duration=2.5, size=24, category="ko")
@@ -1136,14 +1165,50 @@ class BattleRoyaleMatch:
         """받은 공격 줄 수 -> 경고음 단계 (1: 1~2줄, 2: 3~5줄, 3: 6줄 이상)"""
         return 3 if lines >= 6 else (2 if lines >= 3 else 1)
 
-    def _play_hit_alarm(self, lines):
+    HIT_FLIGHT_SECS = 0.25             # 공격 빔이 날아가는 시간 (렌더러의 빔 이동 시간과 같음)
+
+    SEND_AGG_WINDOW = 1.5
+
+    def _add_send_agg(self, lines):
+        """보낸 공격을 1.5초 안에 이어서 보내면 합산 (10줄 / 20줄을 넘기는 순간 더 높은 효과음)"""
+        now = time.time()
+        a = self.send_agg
+        if now - a["t"] > self.SEND_AGG_WINDOW:
+            a["lines"], a["tier"] = 0, 0
+        a["lines"] += int(lines)
+        a["t"] = now
+        tier = 2 if a["lines"] >= 20 else (1 if a["lines"] >= 10 else 0)
+        if tier > a["tier"]:
+            a["tier"] = tier
+            if self.sound_mgr:
+                self.sound_mgr.play('attack_big', combo=tier)
+
+    def flight_lines(self):
+        """아직 빔이 도착하지 않은(날아오는 중인) 받을 공격 줄 수"""
+        return sum(h[1] for h in self._pending_hits)
+
+    def _process_pending_hits(self):
+        """빔이 내 보드에 도착한 공격: 그 순간 흔들림 + 경고음 + 진동 (원인과 결과가 한 번에 읽히게)"""
+        if not self._pending_hits:
+            return
+        now = time.time()
+        due = [h for h in self._pending_hits if now >= h[0]]
+        if not due:
+            return
+        self._pending_hits = [h for h in self._pending_hits if now < h[0]]
+        lines = sum(h[1] for h in due)
+        if self.local_is_alive:
+            self.trigger_screen_shake(min(14.0, 5.0 + lines * 2.2), (0, 1))
+            self._play_hit_alarm(lines, max(due, key=lambda h: h[1])[2])
+
+    def _play_hit_alarm(self, lines, from_id=None):
         if not self.sound_mgr:
             return
         tier = self.hit_alarm_tier(lines)
         now = time.time()
         if tier > getattr(self, "_last_hit_tier", 0) or now - getattr(self, "_last_hit_t", 0.0) >= self.HIT_ALARM_MIN_GAP:
             self._last_hit_t, self._last_hit_tier = now, tier
-            self.sound_mgr.play(f"hit_{tier}")
+            self._play_fx(f"hit_{tier}", from_id)             # 가장 많이 보낸 상대의 카드 쪽에서 들림
         elif now - getattr(self, "_last_hit_t", 0.0) > 1.0:
             self._last_hit_tier = 0
 
@@ -1381,6 +1446,7 @@ class BattleRoyaleMatch:
             
         info = getattr(self.local_engine, 'last_clear_info', None) or {}
         is_tspin = info.get('is_tspin', False)
+        is_mini = bool(is_tspin and info.get('is_mini', False))             # 미니 T-스핀: 공격력이 낮아 큰 기술만큼 축하하지 않음 (작은 배너, 흔들림/발광 없음)
         is_b2b = info.get('is_b2b', False)
         chain = info.get('b2b_chain', 0)
         if self.practice:
@@ -1393,7 +1459,7 @@ class BattleRoyaleMatch:
             combo = max(0, self.local_engine.combo)          # 0 = 첫 클리어, 이어질수록 증가 -> 삭제음이 한 음씩 올라감
             if is_tspin:
                 self.sound_mgr.play('tspin', combo=combo)
-                if cleared >= 2:
+                if cleared >= 2 and not is_mini:
                     self.sound_mgr.play('tspin_big')          # T-스핀 더블/트리플: 저음 붐을 겹쳐 짧은 tspin 음보다 크게
             elif cleared >= 4:
                 self.sound_mgr.play('quad', combo=combo)
@@ -1405,7 +1471,7 @@ class BattleRoyaleMatch:
                 self.sound_mgr.play('b2b', combo=chain)       # B2B가 이어질수록 높고 화려해지는 반짝임
             if combo >= 1:
                 self.sound_mgr.play('combo', combo=combo)    # 콤보 차임 (콤보 단계에 맞는 음)
-            if is_tspin and cleared >= 2:                    # 로봇 아나운서 (설정이 켜져 있을 때만, 큰 순간에만)
+            if is_tspin and cleared >= 2 and not is_mini:                    # 로봇 아나운서 (설정이 켜져 있을 때만, 큰 순간에만)
                 self.sound_mgr.play('vo_tspin')
             elif cleared >= 4:
                 self.sound_mgr.play('vo_quad')
@@ -1435,8 +1501,12 @@ class BattleRoyaleMatch:
         if self.local_engine.combo >= 4:
             self.add_commentary(f"{me}  {self.local_engine.combo}연속 콤보!", (255, 120, 220), mine=True)
 
-        if is_tspin:
-            self.trigger_screen_shake(14.0, (1, 0))
+        if is_mini:
+            self.trigger_screen_shake(5.0, (1, 0))
+            word = {1: "싱글", 2: "더블"}.get(cleared)
+            self.add_floating_text(f"T-스핀 미니 {word}" if word else "T-스핀 미니", (210, 160, 240), duration=1.4, size=22, category="action", tier=1)
+        elif is_tspin:
+            self.trigger_screen_shake(14.0, (1, 0), rumble_kind="quad")
             prefix = f"★ B2B x{chain} " if (is_b2b and chain >= 1) else ("★ B2B " if is_b2b else "★ ")
             if cleared == 3:
                 self.trigger_impact(0.8)
@@ -1449,7 +1519,7 @@ class BattleRoyaleMatch:
             else:
                 self.add_floating_text("★ T-스핀 보너스! ★", (255, 180, 255), duration=1.4, size=22, category="action")
         elif cleared >= 4:
-            self.trigger_screen_shake(14.0, (0, 1))
+            self.trigger_screen_shake(14.0, (0, 1), rumble_kind="quad")
             self.trigger_impact(0.45)
             if is_b2b:
                 self.add_floating_text(f"★ B2B x{chain} 쿼드! ★" if chain >= 1 else "★ B2B 쿼드! ★", (255, 235, 80), duration=2.4, size=34, category="action", tier=2)
@@ -1731,6 +1801,7 @@ class BattleRoyaleMatch:
             self.screen_shake = max(0.0, self.screen_shake - dt * 25.0)
         if self.screen_shake <= 0:
             self.shake_dir = None
+        self._process_pending_hits()
         self._process_ko_events()                                # (경기가 끝난 뒤에도 마지막 K.O.의 구슬 도착 연출은 마저 처리)
         self._update_combo_layer()
         if self.match_finished:
@@ -1759,6 +1830,14 @@ class BattleRoyaleMatch:
                     if self.sound_mgr:
                         self.sound_mgr.play('combo_break')
                 self._prev_combo = c
+                e = self.local_engine
+                bchain = e.b2b_chain if e.b2b else -1
+                if self._prev_b2b_chain >= 1 and bchain < 0:             # B2B 끊김: 보너스를 받던 연쇄(×1 이상)가 일반 클리어로 끝남
+                    self.b2b_break_seq += 1
+                    self.add_floating_text(f"B2B ×{self._prev_b2b_chain} 끝", (190, 160, 230), duration=1.4, size=22, category="combo")
+                    if self.sound_mgr:
+                        self.sound_mgr.play('b2b_break')
+                self._prev_b2b_chain = bchain
             if self.elapsed - self._tl_t >= 1.0:
                 self._tl_t = self.elapsed
                 self._record_timeline()
@@ -1826,8 +1905,8 @@ class BattleRoyaleMatch:
                 self.total_attacks_sent += total_attack * len(targets)
                 if self.challenge is not None:
                     self.challenge.on_attack(shown_attack, len(targets))
-                if self.sound_mgr:
-                    self.sound_mgr.play('attack')
+                self._add_send_agg(shown_attack * len(targets))
+                self._play_fx('attack', targets[0] if targets else None)           # 쏜 방향(대상 카드가 있는 쪽)에서 들림
                 if len(targets) >= 2:
                     self.add_floating_text(f"★ 다중 포격! +{shown_attack}줄 × {len(targets)}명 ★", (255, 170, 90), duration=2.6, size=28, category="action")
                     self.add_commentary(f"{self._short_name(self.local_player_id)}  {len(targets)}명에게 동시 포격! {shown_attack}줄", (255, 170, 90), mine=True)

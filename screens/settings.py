@@ -55,6 +55,7 @@ TAB_NAV = {
               ("attack", "attack_toggle", "attack=on", "attack=off"),
               ("name", "name_edit", None, None), ("color", None, "color_prev", "color_next"),
               ("shake", None, "shake_prev", "shake_next"),
+              ("rumble", None, "rumble_prev", "rumble_next"),
               ],
     "help": [("title", None, "title_prev", "title_next"), ("rules", "open_rules", None, None), ("tips_replay", "tips_replay", None, None),
              ("matchlog", "matchlog_toggle", "matchlog=off", "matchlog=on"),
@@ -96,6 +97,7 @@ HELP = {
     "attack": "배틀로얄: 줄을 지워 상대에게 쓰레기 줄을 보내 서로 공격하는 모드 · 서바이벌: 서로 공격하지 않고 각자 끝까지 버티는 모드(K.O.·배지 없음, 3분 뒤부터 쓰레기 줄이 주기적으로 올라옴). 방을 열면 호스트의 설정이 모두에게 적용됩니다.",
     "name": "채팅, 대기실 명단, 미니 보드에 표시되는 이름입니다. 클릭하거나 Enter로 수정 (최대 16자).",
     "color": "이름 색: 채팅과 대기실 명단, 미니 보드의 내 이름에 쓰입니다.",
+    "rumble": "패드를 쓸 때 쿼드·피격·K.O.·하드 드롭에서 패드가 울리는 세기입니다. 화면 흔들림 설정과 따로 정할 수 있습니다.",
     "shake": "공격을 받거나 K.O.가 났을 때 화면이 흔들리는 정도입니다. 멀미가 나면 '약하게'나 '끔'을 고르세요.",
     "tips_replay": "처음 일어나는 일(받은 공격, 역습 보너스, 첫 K.O., 후반전)에 한 번씩 뜨는 도움말 팁과 첫 판 설명 말풍선을 다음 경기부터 다시 보여 줍니다.",
     "title": "달성한 업적의 이름을 칭호로 달 수 있습니다. 메인 메뉴의 프로필에 표시됩니다. 업적은 전적 기록실의 '업적' 탭에서 확인하세요.",
@@ -139,7 +141,7 @@ HELP = {
 
 # 탭별 '기본값으로' 대상 설정 키
 TAB_DEFAULT_KEYS = {
-    "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake", "language"],
+    "match": ["target_player_count", "bot_difficulty", "game_mode", "screen_shake", "pad_rumble", "language"],
     "help": ["match_log", "ghost_race", "board_skyline", "screen_flash"],
     "general": ["fullscreen", "resolution", "mini_detail", "color_mode", "text_size", "block_skin", "key_hints"],
     "audio": ["bgm_enabled", "bgm_volume", "bgm_stage_set", "sfx_enabled", "sfx_volume", "warn_volume", "announcer"],
@@ -440,6 +442,12 @@ class SettingsMixin:
             self.sound_mgr.play('rotate')
             self.settings.cycle_screen_shake(-1 if btn_id == "shake_prev" else 1)
             self.apply_gameplay_options()
+        elif btn_id in ("rumble_prev", "rumble_next"):
+            self.sound_mgr.play('rotate')
+            self.settings.cycle_pad_rumble(-1 if btn_id == "rumble_prev" else 1)
+            self.apply_gameplay_options()
+            if self.settings.get("pad_rumble", "normal") != "off":
+                self.gamepad.rumble(0.7, "hit")                                  # 바꾼 세기를 바로 느껴 보게
         elif btn_id in ("skin_prev", "skin_next"):
             self.sound_mgr.play('rotate')
             self.settings.cycle_block_skin(-1 if btn_id == "skin_prev" else 1, available=__import__("stats_manager").unlocked_skin_ids(self.stats_mgr.data))      # 잠긴 스킨은 건너뜀
@@ -723,44 +731,44 @@ class SettingsMixin:
     def _render_tab_match(self):
         y = TOP
         lang = self.settings.get("language", "ko")
-        self._s_row("language", y, 52, "언어 / Language", "The whole UI switches language (some saved names stay as they were)" if lang == "en" else "화면의 글이 모두 바뀝니다 (저장된 데이터 속 이름 등 일부는 그대로)")
-        self._s_seg([("lang=ko", "한국어"), ("lang=en", "English")], "lang=" + lang, RIGHT, y + 26)
-        y += 52
+        self._s_row("language", y, 46, "언어 / Language", "The whole UI switches language (some saved names stay as they were)" if lang == "en" else "화면의 글이 모두 바뀝니다 (저장된 데이터 속 이름 등 일부는 그대로)")
+        self._s_seg([("lang=ko", "한국어"), ("lang=en", "English")], "lang=" + lang, RIGHT, y + 22)
+        y += 46
         # 참가 인원
-        self._s_row("players", y, 56, "참가 인원", "2 ~ 100명  ·  부족한 인원은 AI 봇이 채웁니다")
-        cy = y + 28
+        self._s_row("players", y, 46, "참가 인원", "2 ~ 100명  ·  부족한 인원은 AI 봇이 채웁니다")
+        cy = y + 23
         parts = [("dec_10", "-10", 56), ("dec_1", "-1", 46), None, ("inc_1", "+1", 46), ("inc_10", "+10", 56)]
         total = sum(p[2] if p else 110 for p in parts) + 8 * (len(parts) - 1)
         x = RIGHT - total
         for p in parts:
             if p is None:
-                box = pygame.Rect(x, cy - 19, 110, 38)
+                box = pygame.Rect(x, cy - 18, 110, 36)
                 pygame.draw.rect(self.screen, COL_CTL_BG, box, border_radius=10)
                 pygame.draw.rect(self.screen, C_GOLD, box, 1, border_radius=10)
                 self._t(f"{self.target_player_count}명", self.font_row, C_GOLD, box.centerx, box.centery, "center")
                 x += 110 + 8
             else:
-                self._s_btn(p[0], pygame.Rect(x, cy - 19, p[2], 38), p[1])
+                self._s_btn(p[0], pygame.Rect(x, cy - 18, p[2], 36), p[1])
                 x += p[2] + 8
-        y += 56
+        y += 46
         # 봇 난이도 (설명은 현재 난이도에 따라 바뀌는 값이라 보조 줄로 유지)
         cur = self.settings.get("bot_difficulty", "mixed")
         dc = {"easy": C_GREEN, "normal": C_ACCENT, "hard": C_ORANGE, "master": C_DANGER, "mixed": C_GOLD}.get(cur, C_TEXT)
         cleared = self.stats_mgr.ladder_cleared("battle")            # 100인급 대전에서 10위 안에 들어 클리어한 난이도는 ★ 표시
         # 난이도 이름에 "★ 클리어"를 글자로 붙이면 번역표에 없는 합친 글이 되어 영어에서 한글로 남고, 설명을 40자로 잘라야 했음 -> 클리어 표시는 제목 옆에 따로 그림
-        self._s_row("diff", y, 56, "AI 봇 난이도", BOT_DIFFICULTY_DESCS.get(cur, ""))
+        self._s_row("diff", y, 46, "AI 봇 난이도", BOT_DIFFICULTY_DESCS.get(cur, ""))
         if cur in cleared:
-            self._t("  ★ 클리어", self.font_help, C_GOLD, IX + 22 + self.font_row.size("AI 봇 난이도")[0], y + 12)
-        self._s_cycler("diff_prev", "diff_next", BOT_DIFFICULTY_LABELS.get(cur, "혼합"), RIGHT, y + 28, color=dc)
-        y += 56
+            self._t("  ★ 클리어", self.font_help, C_GOLD, IX + 22 + self.font_row.size("AI 봇 난이도")[0], y + 5)
+        self._s_cycler("diff_prev", "diff_next", BOT_DIFFICULTY_LABELS.get(cur, "혼합"), RIGHT, y + 22, color=dc)
+        y += 46
         # 게임 모드: 배틀로얄(공격을 주고받음) / 서바이벌(공격 없이 각자 생존 경쟁)
         atk_on = self.settings.get("game_mode") != "survival"
-        self._s_row("attack", y, 52, "게임 모드", "줄을 지워 서로 공격하는 모드" if atk_on else "서로 방해하지 않고 각자 끝까지 생존하는 모드")
-        self._s_seg([("attack=on", "배틀로얄"), ("attack=off", "서바이벌")], "attack=on" if atk_on else "attack=off", RIGHT, y + 26)
-        y += 52
+        self._s_row("attack", y, 46, "게임 모드", "줄을 지워 서로 공격하는 모드" if atk_on else "서로 방해하지 않고 각자 끝까지 생존하는 모드")
+        self._s_seg([("attack=on", "배틀로얄"), ("attack=off", "서바이벌")], "attack=on" if atk_on else "attack=off", RIGHT, y + 22)
+        y += 46
         # 이름
-        self._s_row("name", y, 52, "플레이어 이름 · 이니셜")
-        ini_box = pygame.Rect(RIGHT - 232 - 12 - 84, y + 8, 84, 36)                 # 점수표에 올릴 이니셜 3글자 (이름 입력칸 왼쪽)
+        self._s_row("name", y, 46, "플레이어 이름 · 이니셜")
+        ini_box = pygame.Rect(RIGHT - 232 - 12 - 84, y + 5, 84, 36)                 # 점수표에 올릴 이니셜 3글자 (이름 입력칸 왼쪽)
         self.text_rects["initials"] = ini_box
         ini_edit = (self.text_focus == "initials")
         pygame.draw.rect(self.screen, (11, 13, 24), ini_box, border_radius=10)
@@ -769,7 +777,7 @@ class SettingsMixin:
         itr = self._t(ini_txt, self.font_val, C_GOLD, ini_box.centerx, ini_box.centery, "center")
         if ini_edit and int(time.time() * 2) % 2 == 0:
             pygame.draw.rect(self.screen, C_GOLD, (itr.right + 3, ini_box.y + 8, 2, ini_box.h - 16))
-        box = pygame.Rect(RIGHT - 232, y + 8, 232, 36)
+        box = pygame.Rect(RIGHT - 232, y + 5, 232, 36)
         self.text_rects["player_name"] = box
         editing = (self.text_focus == "player_name")
         pygame.draw.rect(self.screen, (11, 13, 24), box, border_radius=10)
@@ -782,16 +790,20 @@ class SettingsMixin:
             self._t("클릭해서 수정", self.font_tiny, COL_SUB, box.right - 12, box.centery, "midright")
         if not ini_edit:
             self._t("이니셜", self.font_tiny, COL_SUB, ini_box.x - 10, ini_box.centery, "midright")      # 칸 왼쪽에 (위에 두면 줄 경계선과 겹쳐 보임)
-        y += 52
+        y += 46
         # 이름 색
-        self._s_row("color", y, 52, "이름 색")
+        self._s_row("color", y, 44, "이름 색")
         size, gap = 26, 8
-        self.color_rects = self._draw_color_swatches(RIGHT - (size * len(NAME_COLORS) + gap * (len(NAME_COLORS) - 1)), y + 13, size=size, gap=gap)
-        y += 52
+        self.color_rects = self._draw_color_swatches(RIGHT - (size * len(NAME_COLORS) + gap * (len(NAME_COLORS) - 1)), y + 9, size=size, gap=gap)
+        y += 44
         shake = self.settings.get("screen_shake", "normal")
-        self._s_row("shake", y, 52, "화면 흔들림", "쿼드/피격/K.O. 흔들림, 큰 순간의 번쩍임 (끔: 둘 다 없음)")
-        self._s_cycler("shake_prev", "shake_next", SHAKE_LABELS.get(shake, "보통"), RIGHT, y + 26)
-        y += 52
+        self._s_row("shake", y, 46, "화면 흔들림", "쿼드/피격/K.O. 때 화면이 흔들림 (패드 진동은 따로)")
+        self._s_cycler("shake_prev", "shake_next", SHAKE_LABELS.get(shake, "보통"), RIGHT, y + 22)
+        y += 46
+        rum = self.settings.get("pad_rumble", "normal")
+        self._s_row("rumble", y, 46, "패드 진동", "쿼드/피격/K.O./하드 드롭 진동 (화면 흔들림과 따로 조절)")
+        self._s_cycler("rumble_prev", "rumble_next", SHAKE_LABELS.get(rum, "보통"), RIGHT, y + 22)
+        y += 46
     def _render_tab_help(self):
         y = TOP
         done_ids = self.stats_mgr.achievements_done()

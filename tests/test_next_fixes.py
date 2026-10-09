@@ -264,15 +264,18 @@ def test_rumble_gating():
     app.start_game(mode="SOLO", total_players=10)
     m = app.match
     calls = []
-    m.rumble_cb = lambda p: calls.append(p)
-    m.shake_scale = 0.4                                    # 흔들림 '약하게'에서도 진동은 같은 세기로
-    m.trigger_screen_shake(14.0)
-    assert calls and abs(calls[-1] - 14.0 / 18.0) < 1e-9, calls
-    m.shake_scale = 0.0                                    # 흔들림 '끔' -> 진동도 없음
+    m.rumble_cb = lambda p, kind="hit": calls.append((p, kind))
+    m.shake_scale = 0.0                                    # 흔들림을 꺼도 패드 진동은 따로 유지됨 (진동 설정은 별개)
+    m.trigger_screen_shake(14.0, rumble_kind="quad")
+    assert calls and abs(calls[-1][0] - 14.0 / 18.0) < 1e-9 and calls[-1][1] == "quad", calls
+    m.rumble_scale = 0.5                                   # 진동 '약하게'는 절반 세기
+    m.trigger_screen_shake(18.0)
+    assert abs(calls[-1][0] - 0.5) < 1e-9, calls
     n = len(calls)
+    m.rumble_scale = 0.0                                   # 진동 '끔'
     m.trigger_screen_shake(14.0)
     assert len(calls) == n
-    m.shake_scale = 1.0
+    m.rumble_scale = 1.0
     m.local_is_alive = False                               # 탈락 뒤 관전 중에는 진동 없음
     m.trigger_screen_shake(14.0)
     assert len(calls) == n

@@ -56,6 +56,7 @@ TARGET_MODE_OPTIONS = ("AUTO", "KO", "ATTACKERS", "BADGES", "RANDOM")      # con
 SHAKE_OPTIONS = ("off", "low", "normal")
 SHAKE_SCALE = {"off": 0.0, "low": 0.4, "normal": 1.0}
 SHAKE_LABELS = {"off": "끔", "low": "약하게", "normal": "보통"}
+RUMBLE_SCALE = {"off": 0.0, "low": 0.5, "normal": 1.0}      # 패드 진동 세기 (화면 흔들림 설정과 따로)
 
 # 블록 스킨: 게임 화면의 블록 모양 (색은 색상 모드 설정을 따름)
 BLOCK_SKIN_OPTIONS = ["classic", "neon", "flat", "jelly", "pixel", "glass", "starlight", "ember", "prism"]      # pixel/glass/starlight/ember/prism은 해금 스킨 (stats_manager.SKIN_UNLOCKS)
@@ -180,6 +181,7 @@ DEFAULT_SETTINGS = {
     "onboard_done": False,       # 첫 실행 기본값(50인 쉬움 봇)을 이미 적용했는지. 전적이 있는 사용자는 설정을 바꾸지 않고 표시만 함
     "coach_done": False,         # 첫 경기 코치 마크(핵심 HUD 3곳 설명)를 이미 보여줬는지
     "target_mode": "AUTO",       # 마지막으로 쓴 조준 모드 (다음 경기도 이어서 사용): TARGET_MODE_OPTIONS 중 하나
+    "pad_rumble": "normal",      # 패드 진동: "off"(끔) / "low"(약하게) / "normal"(보통). 화면 흔들림을 꺼도 진동은 따로 유지할 수 있음
     "screen_shake": "normal",    # 화면 흔들림: "off"(끔) / "low"(약하게) / "normal"(보통)
     "game_mode": "battle",       # 게임 모드: "battle"(배틀로얄: 공격을 주고받음) / "survival"(서바이벌: 공격 없이 각자 생존 경쟁)
     "mini_detail": "focus",      # 미니 보드 표시: "detailed"(자세히) / "focus"(자세히 + 나를 노리는/조준/위기 카드만 또렷하게) / "simple"(간략)
@@ -291,7 +293,7 @@ def _valid_setting(key, value):
             value = "".join(ch for ch in value if ch.isalnum())[:3].upper()
         if key == "target_mode" and value not in TARGET_MODE_OPTIONS:
             return False, None
-        if key == "screen_shake" and value not in SHAKE_OPTIONS:
+        if key in ("screen_shake", "pad_rumble") and value not in SHAKE_OPTIONS:
             return False, None
         return True, value
     if isinstance(default, list):
@@ -390,6 +392,14 @@ class SettingsManager:
             cur = opts[0]
         new_val = opts[(opts.index(cur) + step) % len(opts)]
         self.set("block_skin", new_val)
+        return new_val
+
+    def cycle_pad_rumble(self, step=1):
+        cur = self.get("pad_rumble", "normal")
+        if cur not in SHAKE_OPTIONS:
+            cur = "normal"
+        new_val = SHAKE_OPTIONS[(SHAKE_OPTIONS.index(cur) + step) % len(SHAKE_OPTIONS)]
+        self.set("pad_rumble", new_val)
         return new_val
 
     def cycle_screen_shake(self, step=1):

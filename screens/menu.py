@@ -498,9 +498,9 @@ class MenuMixin:
         self.renderer._blit_overlay(("menu_scrim",), (SCREEN_WIDTH, 440), _scrim, (0, SCREEN_HEIGHT - 440))
 
         # 1. 로고
-        logo_top = 48                                      # 로고가 화면 맨 위에 붙어 불안해 보이지 않게 위쪽 여백을 둠 (아래쪽 여백과 비슷하게)
+        logo_top = 64                                      # 로고가 화면 맨 위에 붙어 불안해 보이지 않게 위쪽 여백을 둠 (아래쪽 여백과 비슷하게)
         logo_h = self.logo.draw(self.screen, cx, logo_top)
-        y0 = min(logo_top + logo_h + 18, 362)
+        y0 = min(logo_top + logo_h + 18, 386)
 
         # 2. 상태 값 (이미 있는 데이터만)
         n = self.target_player_count
@@ -549,7 +549,7 @@ class MenuMixin:
         elif fid == "toggle_fs":
             cap = "창 모드" if self.is_fullscreen else "전체 화면"
         if fid in self.MENU_FOCUS_ORDER[:6]:                 # 가운데 열 항목: 열 바로 아래 가운데
-            y = y2 + fh + 14
+            y = y2 + fh + 24
             for line in self._wrap_text(cap, self.font_help, w)[:2]:
                 self._t(line, self.font_help, ccol, cx, y, "midtop")
                 y += 20

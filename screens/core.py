@@ -58,14 +58,23 @@ class CoreMixin:
         CANVAS.alpha_rect(rect, (110, 200, 255, 200), width=1, radius=10)
         r._draw_text(text, r.font_small, (225, 235, 255), rect.centerx, rect.centery, "center")
 
+    def _card_pan(self, pid):
+        """플레이어 카드가 화면 가로 어디에 있는지 -1(왼쪽)~1(오른쪽). 카드가 안 보이면 None"""
+        rect = self.renderer.mini_board_rects.get(pid)
+        if rect is None:
+            return None
+        return max(-1.0, min(1.0, (rect.centerx / float(SCREEN_WIDTH)) * 2.0 - 1.0))
+
     def apply_gameplay_options(self):
         """진행 중인 경기에 설정(화면 흔들림 배율)을 반영. 조준 모드는 경기 시작 때와 모드를 바꿀 때만 저장/복원"""
-        from app_common import SHAKE_SCALE
+        from app_common import SHAKE_SCALE, RUMBLE_SCALE
         if self.match is not None:
             from stats_manager import orb_theme_for_level
             self.renderer.orb_theme = orb_theme_for_level(self.stats_mgr.level()[0])            # 레벨 보상: K.O. 구슬 색
-            self.match.rumble_cb = lambda power: self.gamepad.rumble(power) if self._pad_hints_active() else None      # 마지막으로 패드를 쓴 경우에만 진동 (키보드로 하는 중에는 연결된 패드가 울리지 않게)
+            self.match.rumble_cb = lambda power, kind="hit": self.gamepad.rumble(power, kind) if self._pad_hints_active() else None      # 마지막으로 패드를 쓴 경우에만 진동 (키보드로 하는 중에는 연결된 패드가 울리지 않게)
             self.match.shake_scale = SHAKE_SCALE.get(self.settings.get("screen_shake"), 1.0)
+            self.match.pan_fn = self._card_pan
+            self.match.rumble_scale = RUMBLE_SCALE.get(self.settings.get("pad_rumble"), 1.0)      # 패드 진동은 흔들림 설정과 따로
             self.match.flash_enabled = bool(self.settings.get("screen_flash", True))      # 번쩍임은 흔들림과 별개로 켜고 끔
 
     def apply_handling(self):
@@ -494,6 +503,7 @@ class CoreMixin:
             cleared = (e.last_clear_info or {}).get('cleared', 0)
             if self._hard_drop_pending:
                 self.sound_mgr.play('drop')
+                self.match.rumble(0.35, "drop")                # 하드 드롭: 짧고 낮은 '쿵' (진동 설정이 켜져 있을 때만)
             if cleared == 0:
                 self.sound_mgr.play('lock', piece=e.last_locked_piece)
             self._hard_drop_pending = False

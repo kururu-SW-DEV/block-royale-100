@@ -578,6 +578,11 @@ class SoundManager:
             self.sounds[f"ko_orb_{i}"] = pack(bell(f, t, 9.0, 0.42) + bell(f * 2.0, t, 13.0, 0.16))
         t = T(0.34)
         self.sounds['combo_break'] = pack(bell(329.63, t, 11.0, 0.3) + bell(261.63, t, 9.0, 0.3, 0.1))
+        for tier, (f0, f1) in ((1, (783.99, 1174.66)), (2, (987.77, 1567.98))):             # 연속 공격이 10줄 / 20줄을 넘길 때: 높이가 오르는 반짝 + 저음
+            t = T(0.4)
+            self.sounds[f"attack_big_{tier}"] = pack(bell(f0, t, 8.0, 0.3) + bell(f1, t, 9.0, 0.3, 0.07) + boom(t, 80.0, 9.0, 0.3 + 0.1 * tier, 0.0))
+        t = T(0.5)
+        self.sounds['b2b_break'] = pack(bell(587.33, t, 10.0, 0.28) + bell(440.0, t, 9.0, 0.28, 0.08) + bell(293.66, t, 8.0, 0.3, 0.16) + boom(t, 90.0, 12.0, 0.25, 0.16))
         t = T(1.3)
         lv = sum(bell(f, t, 4.0, 0.3, t0) for f, t0 in ((523.25, 0.0), (659.25, 0.1), (783.99, 0.2), (1046.5, 0.3), (1318.5, 0.42), (1568.0, 0.55)))
         self.sounds['levelup'] = pack(lv + boom(t, 70.0, 7.0, 0.4, 0.3))
@@ -1788,8 +1793,11 @@ class SoundManager:
     def set_warn_scale(self, scale):
         self.warn_scale = max(0.0, min(1.0, float(scale)))
 
-    def play(self, sound_name, piece=None, combo=None):
-        """효과음 재생. piece: 블록 종류에 따라 음높이 변경(lock/land), combo: 콤보 단계에 따라 음높이 변경(clear/quad/tspin)"""
+    PAN_MAX = 0.75                     # 좌우 패닝의 최대 치우침 (완전히 한쪽으로만 들리면 귀가 피곤함)
+
+    def play(self, sound_name, piece=None, combo=None, pan=None):
+        """효과음 재생. piece: 블록 종류에 따라 음높이 변경(lock/land), combo: 콤보 단계에 따라 음높이 변경(clear/quad/tspin),
+        pan: -1(왼쪽)~1(오른쪽) 소리가 나는 방향 (None이면 가운데) — 공격한 상대/처치한 상대의 카드가 있는 쪽에서 들리게"""
         if piece and sound_name in ('lock', 'land'):
             if sound_name == 'lock':
                 sound_name = random.choice(['lock', 'lock2', 'lock3']) + f"_{piece}"
@@ -1801,6 +1809,8 @@ class SoundManager:
             sound_name = f"combo_{min(max(1, combo or 1), len(self.COMBO_LADDER) - 1)}"
         elif sound_name == 'b2b':
             sound_name = f"b2b_{min(max(1, combo or 1), 5)}"
+        elif sound_name == 'attack_big':
+            sound_name = f"attack_big_{min(max(1, combo or 1), 2)}"
         elif sound_name == 'ko_orb':
             sound_name = f"ko_orb_{min(max(1, combo or 1), 8)}"
         if not (self.enabled and self.sfx_enabled) or self.sfx_volume <= 0.001:
@@ -1824,7 +1834,10 @@ class SoundManager:
                 if ch is not None:
                     ch.play(snd)                                      # 예약 채널: 같은 계열의 앞 소리는 끊고 새 소리를 바로 냄
                 else:
-                    snd.play()
+                    ch = snd.play()
+                if pan is not None and ch is not None:
+                    p = max(-1.0, min(1.0, float(pan))) * self.PAN_MAX
+                    ch.set_volume(1.0 - max(0.0, p), 1.0 + min(0.0, p))      # 채널 음량은 소리를 새로 재생할 때마다 1.0으로 돌아오므로 매번 지정
             except Exception:
                 pass
 

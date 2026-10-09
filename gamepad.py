@@ -122,16 +122,24 @@ class GamepadMapper:
         self.x_is_restart = False                       # 경기 일시정지/결과/순위표 화면에서만 켜짐: X 버튼을 Space(Enter와 같은 확인) 대신 R(다시 시작)로 보냄
         self.last_pad_t = 0.0                           # 마지막으로 패드 입력(또는 연결)이 있었던 시각 (게임 중 키 안내를 패드/키보드 중 어느 쪽으로 보일지 정하는 데 씀)
 
-    def rumble(self, power):
-        """패드 진동 (power 0~1: 클수록 세고 길게). 설정의 화면 흔들림이 '끔'이면 호출되지 않음. 진동을 지원하지 않는 장치는 조용히 무시"""
+    RUMBLE_KINDS = {                                    # 종류 -> (저음 모터 비율, 고음 모터 비율, 기본 ms, 세기에 따라 늘어나는 ms)
+        "hit": (0.8, 0.5, 80, 170),                     # 피격/일반 큰 순간
+        "drop": (0.6, 0.0, 30, 15),                     # 하드 드롭: 짧고 낮은 '쿵'
+        "quad": (1.0, 0.7, 150, 160),                   # 쿼드/T-스핀: 길고 묵직하게
+        "ko": (0.3, 1.0, 70, 60),                       # K.O.: 짧고 날카롭게
+    }
+
+    def rumble(self, power, kind="hit"):
+        """패드 진동 (power 0~1: 클수록 세고 길게, kind: 모터 배합/길이 패턴). 진동 설정이 '끔'이면 호출되지 않음. 진동을 지원하지 않는 장치는 조용히 무시"""
         if not self.enabled() or power <= 0:
             return
         now = time.time()
-        if now - getattr(self, "_rumble_t", 0.0) < 0.12:
-            return                                      # 연속 호출로 계속 웅웅거리지 않게
-        self._rumble_t = now
         p = max(0.0, min(1.0, power))
-        low, high, ms = int(0xFFFF * p * 0.8), int(0xFFFF * p * 0.5), int(80 + 170 * p)
+        if now - getattr(self, "_rumble_t", 0.0) < 0.12 and p <= getattr(self, "_rumble_p", 0.0):
+            return                                      # 연속 호출로 계속 웅웅거리지 않게 (더 센 진동은 끼어들 수 있음)
+        self._rumble_t, self._rumble_p = now, p
+        lo, hi, base, extra = self.RUMBLE_KINDS.get(kind, self.RUMBLE_KINDS["hit"])
+        low, high, ms = int(0xFFFF * p * lo), int(0xFFFF * p * hi), int(base + extra * p)
         for dev in list(self.ctrls.values()) + list(self.joys.values()):
             try:
                 dev.rumble(low, high, ms)

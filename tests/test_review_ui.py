@@ -676,12 +676,20 @@ def test_hit_alarm_sounds():
             self.played.append(name)
     fs = Fake()
     m = BattleRoyaleMatch(total_players=4, local_player_id="ME", local_player_name="Me", sound_mgr=fs, bot_difficulty="easy")
+    def land():                                          # 경고음/흔들림은 공격 빔이 도착하는 순간에 (v1.4.33)
+        m._pending_hits = [(0.0,) + h[1:] for h in m._pending_hits]
+        m._process_pending_hits()
     m.apply_attack("BOT_01", "ME", 2)
-    assert fs.played[-1] == "hit_1" and "garbage" not in fs.played
+    assert not fs.played, "빔이 날아오는 동안에는 아직 울리지 않음"
+    assert m.flight_lines() == 2
+    land()
+    assert fs.played[-1] == "hit_1" and "garbage" not in fs.played and m.flight_lines() == 0
     n = len(fs.played)
     m.apply_attack("BOT_02", "ME", 1)                    # 바로 이어진 같은 단계 피격은 소리를 겹치지 않음
+    land()
     assert len([p for p in fs.played[n:] if p.startswith("hit_")]) == 0
     m.apply_attack("BOT_02", "ME", 7)                    # 더 센 공격은 간격과 무관하게 바로 울림
+    land()
     assert fs.played[-1] == "hit_3"
     print("  OK hit alarm sounds")
 
