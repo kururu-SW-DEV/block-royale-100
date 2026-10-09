@@ -37,15 +37,29 @@ from screens.settings import SettingsMixin
 from screens.records import RecordsMixin
 from screens.widgets import WidgetsMixin
 from screens.text_input import TextInputMixin
+from screens.osk import OskMixin
 from screens.modal import ModalMixin
 from screens.rules import RulesMixin, BriefMixin
 from screens.menu import MenuMixin
 from screens.lobby import LobbyMixin
 
 
-class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsMixin, TextInputMixin, ModalMixin, MenuMixin, LobbyMixin, RulesMixin, BriefMixin):
+class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsMixin, TextInputMixin, OskMixin, ModalMixin, MenuMixin, LobbyMixin, RulesMixin, BriefMixin):
+    _startup_marked = False
+    _startup_done = False
+
     def __init__(self):
+        import startup_trace
         pygame.init()
+        if not pygame.display.get_init():                    # 화면 시스템이 아직 준비되지 않은 드문 경우: 잠깐 뒤 다시 시도
+            for _ in range(3):
+                time.sleep(0.4)
+                try:
+                    pygame.display.init()
+                    break
+                except pygame.error:
+                    continue
+        startup_trace.mark("pygame init")
         pygame.display.set_caption("BLOCK ROYALE 100 (배틀로얄 블록 퍼즐)")
         
         # 사이버펑크 블록 로열 게임 아이콘 설정
@@ -63,9 +77,11 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         # 논리 좌표(1366x768)로 그리면 gfx.CANVAS가 실제 창/모니터 해상도로 선명하게 변환한다
         self.screen = CANVAS
         self._create_window()
+        startup_trace.mark("window created")
         self.clock = pygame.time.Clock()
         
         self.sound_mgr = SoundManager(enabled=True)
+        startup_trace.mark("sound ready")
         # 저장된 오디오 환경설정 적용
         self._apply_sound_settings()
         from gamepad import GamepadMapper
@@ -235,7 +251,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         """패드 입력을 게임 조작(회전/홀드 등)으로 보낼 때인가. 카운트다운 중도 포함: 이때 회전/홀드를 눌러 두면 GO 직후 적용(IRS/IHS)되고, 메뉴 방식이면 B가 ESC로 바뀌어 일시정지됨"""
         return (self.state == "GAME" and self.match is not None and not self.is_paused and self.modal is None and not self.rules_open
                 and self.match.local_is_alive and not self.match.match_finished
-                and not getattr(self.match, "brief_open", False))
+                and not getattr(self.match, "brief_open", False) and self.osk is None)           # 화상 키보드가 열려 있으면 패드는 키보드 조작
 
     def run(self):
         self.use_bot_pool = True                 # 실제 실행에서만 봇 계산 작업 프로세스를 사용 (테스트/시뮬레이션은 직접 계산)
@@ -246,6 +262,10 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                 self._on_long_frame(raw_dt)              # 창 드래그/크기 조절로 루프가 멈췄다 돌아온 경우
             dt = min(raw_dt, self.MAX_FRAME_DT)
             self.sound_mgr.tick()
+            if not self._startup_marked:
+                self._startup_marked = True
+                import startup_trace
+                startup_trace.mark("main loop started")
             self.renderer.pad_ui = self._pad_hints_active()          # 패드로 조작 중이면 버튼/안내의 키 표시를 패드 버튼으로
             if self.match is not None:
                 self.match.pad_ui = self.renderer.pad_ui             # 경기 중 문구(패인 팁 등)도 패드 기준으로
@@ -275,6 +295,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                                     getattr(pygame, "WINDOWSIZECHANGED", -1)):
                     if pygame.display.get_surface() is not None:
                         CANVAS.attach(pygame.display.get_surface())
+                if self.osk is not None and event.type != pygame.QUIT and self._osk_event(event):
+                    continue                                     # 화상 키보드가 처리한 입력 (아래 화면으로 넘기지 않음)
                 if event.type == pygame.QUIT:
                     if self._quit_confirmed:
                         running = False
@@ -348,6 +370,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                 
             if self.modal is not None:
                 self._render_modal()
+            if self.osk is not None:
+                self._render_osk()
             if self.rules_open:
                 self._render_rules()
             if self.state == "GAME" and self.match is not None and getattr(self.match, "brief_open", False):
@@ -357,6 +381,10 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
             self.renderer.draw_transition()
             self._draw_shot_msg()
             pygame.display.flip()
+            if not self._startup_done:
+                self._startup_done = True
+                import startup_trace
+                startup_trace.finish()                       # 첫 화면까지 그렸으면 시작 성공
             
         self.settings.save()
         self.net_mgr.stop()
@@ -476,6 +504,9 @@ if __name__ == "__main__":
         print(f"BLOCK ROYALE 100 v{APP_VERSION}")
         sys.exit(0)
     crash_log.install()
+    import startup_trace
+    startup_trace.begin()                                    # 시작 단계 기록 (창이 뜨기 전에 사라지는 문제를 다음 실행 때 error.log로 알려 줌)
+    startup_trace.mark("imports done")
     if "--selftest" in sys.argv:
         _selftest()
         pygame.quit()

@@ -130,7 +130,14 @@ class SoundManager:
             
         try:
             if not pygame.mixer.get_init():
-                pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+                for attempt in range(3):                        # Proton: 시작 직후에는 오디오 장치가 아직 준비되지 않아 간헐적으로 실패할 수 있어 잠깐 쉬고 다시 시도
+                    try:
+                        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+                        break
+                    except pygame.error:
+                        if attempt == 2:
+                            raise
+                        time.sleep(0.4)
                 
             pygame.mixer.set_num_channels(24)          # 효과음이 몰려도 부족하지 않게
             pygame.mixer.set_reserved(8)               # 0~7번 채널은 BGM/승패 음악 전용 (일반 효과음이 가로채지 못함)

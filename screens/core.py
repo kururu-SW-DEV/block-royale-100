@@ -152,13 +152,33 @@ class CoreMixin:
         w, h = int(w * scale), int(h * scale)
         return max(640, w), max(360, h), (ax, ay, dw, dh)
 
+    @staticmethod
+    def _set_mode_retry(size, flags, fallback=None, tries=3):
+        """창 만들기: 실패하면 잠깐 쉬었다가 다시 시도 (SteamOS/Proton에서 게임 시작 직후 화면 시스템이 아직 준비되지 않아 간헐적으로 실패하던 경우 대비).
+        끝까지 안 되면 가장 단순한 창으로 한 번 더 (그것도 안 되면 원래 오류를 그대로 냄)"""
+        last = None
+        for i in range(tries):
+            try:
+                return pygame.display.set_mode(size, flags)
+            except pygame.error as e:
+                last = e
+                try:
+                    import crash_log
+                    crash_log.write_error(f"display.set_mode failed (try {i + 1}/{tries}, size={size}, flags={flags})", str(e))
+                except Exception:
+                    pass
+                time.sleep(0.4)
+        if fallback is not None:
+            return pygame.display.set_mode(*fallback)
+        raise last
+
     def _create_window(self):
         """현재 설정(전체화면 / 창 해상도)에 맞춰 디스플레이를 (재)생성하고 CANVAS에 연결"""
         if self.is_fullscreen and not running_under_wine():
-            surf = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+            surf = self._set_mode_retry((0, 0), pygame.FULLSCREEN, fallback=((1366, 768), pygame.RESIZABLE))
         else:
             w, h, (ax, ay, dw, dh) = self._target_window_size()
-            surf = pygame.display.set_mode((w, h), pygame.RESIZABLE)
+            surf = self._set_mode_retry((w, h), pygame.RESIZABLE, fallback=((1366, 768), 0))
             try:
                 from pygame import _sdl2
                 win = _sdl2.video.Window.from_display_module()

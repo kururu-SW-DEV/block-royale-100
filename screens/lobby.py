@@ -120,6 +120,8 @@ class LobbyMixin:
                     cur = None if (cur is None or cur <= 0) else cur - 1
                 self.join_sel = cur
                 self.sound_mgr.play('move')
+            elif event.key == pygame.K_p and getattr(event, "pad", False) and self._osk_wanted():
+                self._osk_open("join_ip")                        # 패드 Y: 화상 키보드로 주소 입력
             elif event.key == pygame.K_BACKSPACE:
                 self.join_sel = None
                 self.join_ip_input = self.join_ip_input[:-1]
@@ -150,6 +152,10 @@ class LobbyMixin:
             if hasattr(self, 'join_back_btn') and self.join_back_btn.collidepoint(mx, my):
                 self.sound_mgr.play('move')
                 self.state = "MENU"
+                return
+            if getattr(self, "join_osk_btn", None) is not None and self.join_osk_btn.collidepoint(mx, my) and self.osk is None and self._osk_wanted():
+                self.sound_mgr.play('move')
+                self._osk_open("join_ip")
                 return
             # 접속 버튼
             if hasattr(self, 'join_connect_btn') and self.join_connect_btn.collidepoint(mx, my):
@@ -450,6 +456,13 @@ class LobbyMixin:
 
         self.join_connect_btn = pygame.Rect(input_rect.right + 14, input_rect.y, box_w - 64 - 440 - 14, 48)
         self.renderer._button(self.join_connect_btn, "접속하기", "blue", self.join_connect_btn.collidepoint(mx, my), "ENTER")
+        self.join_osk_btn = pygame.Rect(self.join_connect_btn.x, input_rect.bottom + 8, self.join_connect_btn.w, 28)       # 화상 키보드 (터치/패드로 주소를 칠 때)
+        if self.osk is None and self._osk_wanted():
+            hov = self.join_osk_btn.collidepoint(mx, my)
+            pygame.draw.rect(self.screen, (34, 46, 76) if hov else (24, 32, 54), self.join_osk_btn, border_radius=8)
+            pygame.draw.rect(self.screen, C_ACCENT if hov else (52, 66, 100), self.join_osk_btn, 1, border_radius=8)
+            self._t("화상 키보드 (Y)" if getattr(self.renderer, "pad_ui", False) else "화상 키보드", self.font_tiny, C_TEXT,
+                    self.join_osk_btn.centerx, self.join_osk_btn.centery, "center")
 
         self._t("방 목록", self.font_mid, C_ACCENT, box_x + 32, box_y + 150)
         self._t("입력한 주소, LAN에서 찾은 방, 최근 접속한 주소가 표시됩니다  ·  클릭하면 참가", self.font_tiny, C_DIM,

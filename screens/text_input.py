@@ -39,6 +39,8 @@ class TextInputMixin:
             pygame.key.set_repeat(400, 45)          # 지우기 키 반복
         except Exception:
             pass
+        if self._osk_wanted():
+            self._osk_open("text")                  # Proton(SteamOS)/패드: Steam 키보드가 안 뜨므로 게임이 직접 화상 키보드를 띄움
 
     def _end_text(self, commit=True):
         """입력 끝내기. commit=False(ESC 취소 / 화면 이동 / 초기화)면 입력한 내용을 저장하지 않고 입력 전 값으로 되돌림"""

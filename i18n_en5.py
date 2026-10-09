@@ -373,3 +373,9 @@ EXACT.update({"패드 진동": "Controller rumble",
               "패드를 쓸 때 쿼드·피격·K.O.·하드 드롭에서 패드가 울리는 세기입니다. 화면 흔들림 설정과 따로 정할 수 있습니다.": "How strongly the controller rumbles on quads, hits, K.O.s and hard drops. Set separately from screen shake.",
               "T-스핀 미니": "T-Spin Mini", "T-스핀 미니 싱글": "T-Spin Mini Single", "T-스핀 미니 더블": "T-Spin Mini Double"})
 TEMPLATES.update({"B2B ×{#} 끝": "B2B ×{} ended", "▶ {#}줄": "▶ {} lines"})
+
+# v1.4.34 화상 키보드 (SteamOS/Proton)
+EXACT.update({"지우기": "Delete", "공백": "Space", "취소": "Cancel", "완료": "Done", "한글": "KR", "채팅": "Chat", "플레이어 이름": "Player name", "이니셜": "Initials", "호스트 주소": "Host address", "화상 키보드": "On-screen keyboard",
+              "화상 키보드 (Y)": "On-screen keyboard (Y)",
+              "십자키 이동  ·  A 입력  ·  X 지우기  ·  Y 대문자  ·  LB 한/영  ·  RB 기호  ·  Back 완료  ·  B 취소": "D-pad move  ·  A type  ·  X delete  ·  Y shift  ·  LB language  ·  RB symbols  ·  Back done  ·  B cancel",
+              "터치/클릭으로 입력  ·  다 쓰면 '완료'를 누르세요  ·  물리 키보드로 치면 이 키보드는 닫힙니다": "Tap or click to type  ·  press Done when finished  ·  typing on a physical keyboard closes this one"})
