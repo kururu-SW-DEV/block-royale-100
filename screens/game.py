@@ -618,6 +618,7 @@ class GameMixin:
         self.renderer.chat_input = self.chat_input if self.text_focus == "chat" else None
         self.renderer.chat_comp = self.chat_comp if self.text_focus == "chat" else ""
         self.renderer.chat_my_id = self.net_mgr.my_player_id or ""
+        self.renderer.fx_setting = self.settings.get("visual_fx", "normal")       # 빛 연출 단계: 설정값을 매 프레임 직접 반영
         self.renderer.render(self.match, self.sound_mgr)
 
     def _save_match_log(self, final_rank):

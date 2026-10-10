@@ -390,3 +390,7 @@ EXACT.update({"패드 연결이 끊겨 일시정지했습니다": "Controller di
 EXACT.update({"빛 연출": "Light effects", "최소": "Minimal", "화려하게": "Fancy",
               "줄 삭제·하드 드롭의 빛 번짐, 배경과 우승 연출 (최소 = 예전 화면)": "Glow on line clears and hard drops, backgrounds and victory scenes (Minimal = old look)",
               "줄 삭제·하드 드롭의 빛 번짐, 단계별 배경, 우승 연출의 화려함입니다. 화면이 느려지면 '최소'로 두세요 (최소 = 예전과 같은 화면). 화면 흔들림/번쩍임 설정도 따릅니다.": "How flashy the glow on line clears and hard drops, the stage backgrounds and the victory scene are. Choose Minimal if the game runs slowly (Minimal = the old look). Screen shake and flash settings are respected."})
+
+# v1.4.38 빛 연출 설명 갱신
+EXACT.update({"빛 번짐·불씨·우승 연출, 화려하게는 음악에 맞춘 배경 맥동까지": "Glow, embers and victory scenes; Fancy adds background pulsing to the music",
+              "빛 연출의 정도입니다. 최소 = 빛 번짐·불씨·박자 연출 없이 정지된 배경 장식만, 보통 = 빛 번짐과 불씨(배경은 번쩍이지 않음), 화려하게 = 음악에 맞춘 배경 맥동까지. 화면이 느려지면 '최소'로 두세요. 화면 흔들림/번쩍임 설정도 따릅니다.": "How strong the light effects are. Minimal = no glow, embers or beat effects, only still background decoration; Normal = glow and embers (the background does not flash); Fancy = also pulses the background to the music. Choose Minimal if the game runs slowly. Screen shake and flash settings are respected."})

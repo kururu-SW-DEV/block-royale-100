@@ -10,6 +10,8 @@ import time
 import pygame
 
 from gfx import CANVAS, mix_color as _mix
+import numpy as np
+
 from ui_glow import FX_FANCY, FX_NORMAL, glow_sprite
 
 
@@ -18,8 +20,8 @@ class GlowBgMixin:
     def _beat_k(self, match):
         """BGM 박자에 맞춰 0~4 (박자 직후 가장 밝고 천천히 가라앉음). 박자 정보가 없거나 움직임/위기/최소 모드면 0.
         박자 주파수는 2~2.7Hz(3Hz 미만), 밝기 변화는 4% 안쪽이라 광과민 기준 안"""
-        if self._fx_mode(match) < FX_NORMAL or not self._fx_motion(match) or getattr(self, "_danger_now", False):
-            return 0
+        if self._fx_mode(match) < FX_FANCY or not self._fx_motion(match) or getattr(self, "_danger_now", False):
+            return 0                                                          # 음악에 맞춘 밝기 맥동은 '화려하게'에서만 (보통은 배경이 번쩍이지 않음)
         info = getattr(self, "_beat_info", None)
         if not info:
             return 0
@@ -71,22 +73,18 @@ class GlowBgMixin:
                 y = int(hz + (h - hz) * (k / 10.0) ** 2)
                 pygame.draw.line(surf, _mix(bg_at(y), (60, 170, 220), 0.08 + 0.10 * k / 10.0), (0, y), (w, y), lw_)
         elif phase == 2:
-            lw, lh = max(8, w // 8), max(8, h // 8)
-            lr = pygame.Surface((lw, lh))
-            for (fx, fy, fr, col) in ((0.12, 0.30, 0.30, (46, 20, 70)), (0.90, 0.22, 0.28, (30, 26, 78)), (0.18, 0.80, 0.26, (36, 18, 64)),
-                                      (0.88, 0.76, 0.30, (50, 24, 72)), (0.50, 0.10, 0.20, (28, 20, 60))):
-                for rr in range(int(fr * lw), 0, -2):
-                    f = (1.0 - rr / (fr * lw)) ** 1.4
-                    pygame.draw.circle(lr, (int(col[0] * f), int(col[1] * f), int(col[2] * f)), (int(fx * lw), int(fy * lh)), rr)
-            big = pygame.transform.smoothscale(lr, (w, h))
-            pygame.Surface.blit(surf, big, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
-            for _ in range(150):
-                x, y = rng.randrange(w), rng.randrange(int(h * 0.9))
+            pygame.Surface.blit(surf, self._nebula_surface(w, h, rng, kx0, kx1, 110 * S), (0, 0), special_flags=pygame.BLEND_RGB_ADD)
+            for _ in range(170):                                            # 별: 대부분 1px, 일부 2px, 몇 개는 작게 빛남
+                x, y = rng.randrange(w), rng.randrange(int(h * 0.92))
                 c = _mix(bg_at(y), (205, 200, 255), rng.choice((0.18, 0.28, 0.4, 0.6)))
                 if rng.random() < 0.12:
                     pygame.draw.rect(surf, c, (x, y, max(2, int(2 * S)), max(2, int(2 * S))))
                 else:
                     surf.set_at((x, y), c)
+            for _ in range(14):
+                sx, sy = rng.randrange(w), rng.randrange(int(h * 0.85))
+                r_ = rng.choice((5, 6, 8))
+                pygame.Surface.blit(surf, glow_sprite("orb", 2 * r_, 2 * r_, (170, 160, 255), 1), (sx - r_, sy - r_), special_flags=pygame.BLEND_RGB_ADD)
         else:
             for y in range(int(h * 0.62), h):
                 t = max(0.0, (y - h * 0.62) / (h * 0.38))
@@ -97,16 +95,63 @@ class GlowBgMixin:
         for y in range(h):                                                  # 보드 둘레는 장식을 지우고 원래 그라데이션으로 되돌림
             pygame.draw.line(surf, bg_at(y), (kx0, y), (kx1, y))
 
+    @staticmethod
+    def _noise_field(w, h, cells, rng):
+        """부드러운 2차원 노이즈(0~1): 작은 무작위 격자를 두 번 나눠 키워 구름 같은 덩어리 모양을 만듦"""
+        gw, gh = max(2, cells), max(2, int(cells * h / w))
+        g = np.array([[rng.random() for _ in range(gw)] for _ in range(gh)], dtype=np.float32)
+        small = pygame.Surface((gw, gh))
+        pygame.surfarray.blit_array(small, (np.repeat(g.T[:, :, None], 3, axis=2) * 255).astype(np.uint8))
+        mid = pygame.transform.smoothscale(small, (max(gw * 4, 8), max(gh * 4, 8)))
+        big = pygame.transform.smoothscale(mid, (w, h))
+        return pygame.surfarray.array3d(big)[:, :, 0].T.astype(np.float32) / 255.0      # (h, w)
+
+    def _nebula_surface(self, w, h, rng, kx0=0, kx1=0, ramp=100.0):
+        """2단계 성운: 1/3 해상도에서 큰 가우시안 덩어리에 3겹 노이즈를 곱해 구름결을 내고, 두 색을 섞고, 디더링으로 색 띠(banding)를 없앤 뒤 2배로 키움.
+        (전에는 1/8 해상도에 원을 겹쳐 그린 뒤 확대해 계단과 띠가 보였음). 경기 시작 직후 세 프레임에 나눠 한 번만 굽는 배경 안에서만 계산됨 (비움 구간 가장자리는 ramp로 서서히)"""
+        hw, hh = max(32, w // 3), max(32, h // 3)                       # 3분의 1 해상도로 계산해(약 100ms) 부드럽게 키움: 구름은 원래 흐려서 충분
+        yy, xx = np.mgrid[0:hh, 0:hw].astype(np.float32)
+        xx /= hw
+        yy /= hh
+        blobs = ((0.10, 0.28, 0.34, 0.20, 0.5), (0.92, 0.20, 0.30, 0.22, -0.4), (0.16, 0.82, 0.30, 0.18, 0.3),
+                 (0.88, 0.78, 0.34, 0.20, -0.2), (0.50, 0.06, 0.26, 0.10, 0.0), (0.04, 0.55, 0.20, 0.30, 0.0), (0.97, 0.50, 0.20, 0.28, 0.0))
+        field = np.zeros((hh, hw), dtype=np.float32)
+        for cx, cy, sx, sy, rot in blobs:
+            dx, dy = xx - cx, yy - cy
+            c_, s_ = np.cos(rot), np.sin(rot)
+            u, v = dx * c_ + dy * s_, -dx * s_ + dy * c_
+            field += np.exp(-((u / sx) ** 2 + (v / sy) ** 2) * 1.6)
+        n1 = self._noise_field(hw, hh, 5, rng)
+        n2 = self._noise_field(hw, hh, 11, rng)
+        n3 = self._noise_field(hw, hh, 23, rng)
+        cloud = np.clip(0.30 + 0.55 * n1 + 0.30 * n2 + 0.16 * n3 - 0.45, 0.0, 1.0)             # 덩어리 사이가 비는 구름결
+        inten = np.clip(field, 0.0, 1.4) * cloud
+        if kx1 > kx0:                                                                          # 보드 둘레 비움 구간 가장자리는 급히 끊지 않고 ramp 폭으로 서서히 사라짐
+            px = (np.arange(hw, dtype=np.float32) + 0.5) * (w / hw)
+            outside = np.maximum(kx0 - px, px - kx1)
+            inten = inten * np.clip(outside / max(1.0, ramp), 0.0, 1.0)[None, :]
+        mix = self._noise_field(hw, hh, 4, rng)[..., None]
+        c1 = np.array((88.0, 40.0, 132.0), dtype=np.float32)                                   # 보라
+        c2 = np.array((40.0, 62.0, 150.0), dtype=np.float32)                                   # 파랑
+        rgb = inten[..., None] * (c1 * (1.0 - mix) + c2 * mix) * 0.62
+        dither = (np.random.default_rng(11).random((hh, hw, 1)).astype(np.float32) - 0.5) * 1.6
+        rgb = np.clip(rgb + dither, 0, 255).astype(np.uint8)                                   # (hh, hw, 3)
+        small = pygame.Surface((hw, hh))
+        pygame.surfarray.blit_array(small, np.transpose(rgb, (1, 0, 2)))
+        return pygame.transform.smoothscale(small, (w, h))
+
     def _render_embers(self, match):
-        """3단계에서 아래에서 천천히 올라오는 주황 불씨 (화려하게 모드 + 움직임 허용 + 평소일 때만, 20개 안팎의 작은 빛 구슬)"""
-        if self._fx_mode(match) < FX_FANCY or not self._fx_motion(match) or getattr(match, "phase", 1) < 3 or getattr(self, "_danger_now", False):
+        """3단계에서 아래에서 천천히 올라오는 주황 불씨 (보통 이상 + 움직임 허용 + 평소일 때만, 20개 안팎의 작은 빛 구슬)"""
+        if self._fx_mode(match) < FX_NORMAL or not self._fx_motion(match) or getattr(match, "phase", 1) < 3 or getattr(self, "_danger_now", False):
             return
         now = time.time()
         em = self.__dict__.setdefault("_embers", [])
         dt = min(0.1, now - getattr(self, "_embers_t", now))
         self._embers_t = now
         zx0, zx1 = self.main_board_x - 170, self.main_board_x + self.main_board_w + 170
-        while len(em) < 20:
+        want = 26 if self._fx_mode(match) >= FX_FANCY else 18                # 보통 18개, 화려하게 26개
+        del em[want:]
+        while len(em) < want:
             x = random.choice((random.uniform(10, zx0), random.uniform(zx1, self.width - 10)))
             em.append({"x": x, "y": random.uniform(self.height * 0.5, self.height + 20), "v": random.uniform(14, 34),
                        "r": random.choice((5, 7, 9)), "ph": random.random() * 6.28})

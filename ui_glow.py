@@ -95,7 +95,8 @@ class GlowMixin:
         """빛 연출 단계: FX_MIN(끔: 지금까지와 같음) / FX_NORMAL / FX_FANCY. 화면이 느려 fx_low면 최소"""
         if match is None or getattr(match, "fx_low", False):
             return FX_MIN
-        return FX_NAMES.get(getattr(match, "visual_fx", "normal"), FX_NORMAL)
+        live = getattr(self, "fx_setting", None)                              # 앱이 매 프레임 설정에서 직접 지정 (없으면 경기 객체의 값)
+        return FX_NAMES.get(live if live is not None else getattr(match, "visual_fx", "normal"), FX_NORMAL)
 
     def _fx_level(self, match, fade, cap=4):
         """페이드(1~0)를 0~4 밝기 단계로. 번쩍임이 꺼져 있으면 밝기 상한을 낮춤"""

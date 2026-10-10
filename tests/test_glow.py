@@ -179,6 +179,11 @@ def test_beat_phase_and_bg_variants():
     m = _game(app)
     r = app.renderer
     m.visual_fx = "normal"
+    r._beat_info = (0.0, 3)
+    assert r._beat_k(m) == 0, "보통에서는 음악에 맞춰 배경이 번쩍이지 않음"
+    m.visual_fx = "min"
+    assert r._beat_k(m) == 0
+    m.visual_fx = "fancy"
     r._beat_info = (0.0, 3)                                # 박자 직후: 가장 밝음
     assert r._beat_k(m) == 3
     r._beat_info = (0.9, 3)
@@ -230,12 +235,15 @@ def test_embers_only_in_fancy_phase3_with_motion():
     m = _game(app)
     r = app.renderer
     m.phase = 3
+    m.visual_fx = "min"
+    r._render_embers(m)
+    assert not getattr(r, "_embers", []), "최소에서는 불씨 없음"
     m.visual_fx = "normal"
     r._render_embers(m)
-    assert not getattr(r, "_embers", [])
+    assert len(r._embers) == 18, "보통에서도 불씨가 있음 (18개)"
     m.visual_fx = "fancy"
     r._render_embers(m)
-    assert len(r._embers) == 20
+    assert len(r._embers) == 26
     zx0, zx1 = r.main_board_x - 170, r.main_board_x + r.main_board_w + 170
     assert all(not (zx0 < e["x"] < zx1) for e in r._embers), "보드 둘레에는 불씨가 없음"
     m.shake_scale = 0.0
@@ -243,6 +251,72 @@ def test_embers_only_in_fancy_phase3_with_motion():
     time.sleep(0.02)
     r._render_embers(m)
     assert [e["y"] for e in r._embers] == before, "흔들림이 꺼지면 정지"
+
+
+def test_min_mode_keeps_backdrops_but_nothing_moves_or_flashes_to_the_music():
+    """'최소': 단계별 배경 장식(정지된 그림)은 적용되지만 박자 맞춤 번쩍임/불씨/빛 번짐은 없음. 설정값을 렌더러가 직접 읽음"""
+    app = _app()
+    app.state = "SETTINGS"
+    app.settings_tab = "general"
+    app._render_settings()
+    while app.settings.get("visual_fx") != "min":
+        app._settings_activate("fx_next")
+    m = _game(app, 30)
+    r = app.renderer
+    m.visual_fx = "fancy"                                  # 경기 객체의 값이 어긋나 있어도 설정(최소)이 우선
+    app.state = "GAME"
+    sm = app.sound_mgr
+    sm._beat = (120.0, time.time() - 0.01)
+    sm.is_bgm_playing, sm.bgm_enabled, sm._bgm_paused = True, True, False
+    frames = []
+    for ph in (1, 2, 3):
+        m.phase = ph
+        r._theme_match_id = None
+        for _ in range(5):
+            r.fx_setting = app.settings.get("visual_fx")
+            r.render(m, sm)
+        assert (ph, "deco") in r._bg_by_phase, "배경 장식은 최소에서도 적용"
+        assert not getattr(r, "_embers", []), "불씨 없음"
+        assert r._beat_k(m) == 0, "박자에 맞춘 번쩍임 없음"
+        assert not getattr(r, "_bg_beat_cache", {}).get(1), "밝기 변형 배경을 쓰지 않음"
+        frames.append(pygame.surfarray.array3d(pygame.display.get_surface()).sum())
+    # 박자 위상이 달라져도 배경 픽셀이 변하지 않음 (번쩍임 없음)
+    m.phase = 1
+    r._theme_match_id = None
+    sums = []
+    for off in (0.01, 0.2, 0.4):
+        sm._beat = (120.0, time.time() - off)
+        r.fx_setting = "min"
+        r.render(m, sm)
+        sums.append(pygame.Surface.get_at(pygame.display.get_surface(), (40, 700))[:3])
+    assert sums[0] == sums[1] == sums[2], sums
+    r.fx_setting = None
+
+
+def test_nebula_is_smooth_not_blocky_or_banded():
+    app = _app()
+    r = app.renderer
+    import random
+    w, h = CANVAS.length(r.width), CANVAS.length(r.height)
+    neb = r._nebula_surface(w, h, random.Random(1), 0, 0, 100.0)
+    assert neb.get_size() == (w, h)
+    # 이웃 픽셀 차이가 아주 작음 (계단/블록 없음) + 값이 여러 단계로 퍼짐 (색 띠 없음, 디더링)
+    big_jumps = 0
+    levels = set()
+    for y in range(h // 3, h // 3 + 60):
+        prev = neb.get_at((w // 8, y))[:3]
+        for x in range(w // 8 + 1, w // 8 + 120):
+            c = neb.get_at((x, y))[:3]
+            levels.add(c[0])
+            if max(abs(c[i] - prev[i]) for i in range(3)) > 4:
+                big_jumps += 1
+            prev = c
+    assert big_jumps == 0, big_jumps
+    assert len(levels) >= 6, levels
+    # 비움 구간(보드 둘레) 가장자리는 서서히: 구간 안은 0, 바깥으로 갈수록 증가
+    neb2 = r._nebula_surface(w, h, random.Random(1), int(w * 0.3), int(w * 0.7), 120.0)
+    inside = sum(neb2.get_at((int(w * 0.5), y))[0] for y in range(0, h, 30))
+    assert inside == 0, inside
 
 
 def test_victory_rays_fountain_ring_and_standings_shine():
@@ -322,7 +396,14 @@ def test_menu_background_fx_only_on_main_menu_and_respects_settings():
     app.settings.set("visual_fx", "min")
     app._render_menu()
     assert mb.fx_mode == 0 and mb._streak is not None or mb.fx_mode == 0
-    app.settings.set("visual_fx", "normal")
+    app.settings.set("visual_fx", "normal")                # 보통: 빛 띠는 지나가지만 음악에 맞춘 밝기 변화는 없음
+    mb._streak = None
+    mb._clock = mb._next_streak + 1.0
+    app._render_menu()
+    mb.update(0.1)
+    assert mb._streak is not None and mb.fx_mode == 1, "보통에서도 가끔 빛 띠가 지나감"
+    assert mb.beat is not None
+    mb._streak = None
     app.settings.set("screen_shake", "off")
     app._render_menu()
     assert mb.motion is False and mb.mouse is None, "흔들림이 꺼지면 시차 없음"

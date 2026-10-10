@@ -492,8 +492,8 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin):
                 self._phase_fx = {"t0": now, "phase": phase}
                 self._add_bg_pulse(self.width // 2, self.height // 2, STAGE_THEMES[phase]["border"])
         t = min(1.0, (now - self._theme_t0) / 1.4)
-        deco = self._fx_mode(match) >= 1
-        if deco and self._deco_prebaked < 3:                    # 단계 장식(약 20ms)을 경기 시작 직후 세 프레임에 하나씩 미리 구워 둠 (단계가 바뀌는 순간에 프레임이 끊기지 않게)
+        deco = True                                             # 단계별 배경 장식(그리드/성운/주황빛)은 정지된 그림이라 모든 단계에서 적용 (음악에 맞춘 번쩍임/움직임/빛 번짐은 빛 연출 설정에 따름)
+        if self._deco_prebaked < 3:                    # 단계 장식(약 20ms)을 경기 시작 직후 세 프레임에 하나씩 미리 구워 둠 (단계가 바뀌는 순간에 프레임이 끊기지 않게)
             self._deco_prebaked += 1
             self._bg(self._deco_prebaked, True)
         if t >= 1.0:

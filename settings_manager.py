@@ -181,7 +181,7 @@ DEFAULT_SETTINGS = {
     "onboard_done": False,       # 첫 실행 기본값(50인 쉬움 봇)을 이미 적용했는지. 전적이 있는 사용자는 설정을 바꾸지 않고 표시만 함
     "coach_done": False,         # 첫 경기 코치 마크(핵심 HUD 3곳 설명)를 이미 보여줬는지
     "target_mode": "AUTO",       # 마지막으로 쓴 조준 모드 (다음 경기도 이어서 사용): TARGET_MODE_OPTIONS 중 하나
-    "visual_fx": "normal",       # 빛 연출(가산 글로우/배경 연출): "min"(최소: 예전과 같음) / "normal"(보통) / "fancy"(화려하게)
+    "visual_fx": "normal",       # 빛 연출: "min"(최소: 빛 번짐/움직임/박자 연출 없음, 정지된 배경 장식만) / "normal"(보통: 빛 번짐·불씨) / "fancy"(화려하게: 박자 맞춤 맥동·더 많은 효과)
     "pad_rumble": "normal",      # 패드 진동: "off"(끔) / "low"(약하게) / "normal"(보통). 화면 흔들림을 꺼도 진동은 따로 유지할 수 있음
     "screen_shake": "normal",    # 화면 흔들림: "off"(끔) / "low"(약하게) / "normal"(보통)
     "game_mode": "battle",       # 게임 모드: "battle"(배틀로얄: 공격을 주고받음) / "survival"(서바이벌: 공격 없이 각자 생존 경쟁)

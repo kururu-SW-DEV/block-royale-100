@@ -42,7 +42,7 @@ class NeonMenuBackground:
 
     def update(self, dt):
         self._clock += dt
-        if self.fx_mode >= FX_NORMAL and self.motion:
+        if self.fx_mode >= FX_NORMAL and self.motion:                      # 8~12초마다 지나가는 빛 띠는 보통 이상 (박자에 맞춘 밝기 변화와는 별개)
             if self._streak is None and self._clock >= self._next_streak:                # 8~12초마다 한 번, 줄이 '지워지듯' 지나가는 빛 띠 (0.9초)
                 self._streak = {"t0": self._clock, "y": random.uniform(self.height * 0.35, self.height * 0.9)}
                 self._next_streak = self._clock + random.uniform(8.0, 12.0)
@@ -107,7 +107,7 @@ class NeonMenuBackground:
             return
         fx = self.fx_mode
         beat_up = 0
-        if fx >= FX_NORMAL and self.beat is not None and self.motion:
+        if fx >= FX_FANCY and self.beat is not None and self.motion:          # 음악에 맞춘 밝기 변화는 '화려하게'에서만
             beat_up = int(round(3 * (1.0 - self.beat[0]) ** 3))               # 박자 직후 3 -> 0 (박자 주파수 2Hz 안팎: 3Hz 미만)
             if not self.flash_ok:
                 beat_up = min(beat_up, 1)
