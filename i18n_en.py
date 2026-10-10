@@ -159,7 +159,7 @@ EXACT = {
     "항상 표시": "Always",
     "랜덤": "Random",
     "DAS 지연": "DAS Delay", "ARR 반복": "ARR Rate", "소프트드롭": "Soft Drop", "DCD 지연": "DCD Delay",
-    "새 블록 뒤 DAS 재충전을 막는 시간 (오버슈트 방지)": "Time after a new piece before DAS recharges (prevents overshoot)",
+    "새 블록 뒤 DAS 재충전을 막는 시간 (오버슈트 방지)": "Delay before DAS recharges after a new piece",
     "방향 전환 시 DAS 취소": "Cancel DAS on Direction Change",
     "방향을 바꿀 때 DAS를 새로 충전": "Recharge DAS when you change direction",
     "반응 프리셋": "Feel Preset",
