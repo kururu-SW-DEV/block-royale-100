@@ -184,7 +184,7 @@ EXACT.update({
     "채팅": "Chat", "Tab / 클릭: 입력  ·  Enter: 전송": "Tab / click: type  ·  Enter: send", "내 이름": "My name",
     "아직 메시지가 없습니다. 인사를 건네 보세요!": "No messages yet. Say hello!", "메시지를 입력하세요": "Type a message", "여기를 클릭하거나 Tab": "Click here or press Tab",
     "대기실  ·  호스트": "Lobby  ·  Host", "대기실  ·  참가자": "Lobby  ·  Guest", "방 참가": "Join Room",
-    "화면의 글이 모두 바뀝니다 (저장된 데이터 속 이름 등 일부는 그대로)": "The whole UI switches language; a few names (e.g. in saved data) stay as they were",
+    "화면의 글이 모두 바뀝니다 (저장된 데이터 속 이름 등 일부는 그대로)": "The whole UI switches language (saved names stay as is)",
     "  잠긴 스킨: ": "  Locked skins: ",
     "업적 3개 달성": "Earn 3 achievements",
     "픽셀": "Pixel", "유리": "Glass", "별빛": "Starlight", "불씨": "Ember", "프리즘": "Prism",
@@ -316,8 +316,8 @@ EXACT.update({"전적에 남지 않음": "Not recorded"})
 
 # v1.4.27 규칙 카드: B2B 보너스 단계와 배지 흡수
 EXACT.update({"B2B (연쇄 1~3/4~7/8~)": "B2B (chain 1-3 / 4-7 / 8+)", "+1 / +2 / +3줄": "+1 / +2 / +3 lines",
-              "처치 시 상대 배지 흡수": "Absorb victim's badges", })
-TEMPLATES.update({"K.O.의 절반 (최대 {#})": "Half their K.O.s (max {})"})
+              "처치 시 상대 배지 흡수": "Take victim's badges", })
+TEMPLATES.update({"K.O.의 절반 (최대 {#})": "Half their KOs (max {})"})
 
 # v1.4.31 골든 타깃 순환
 EXACT.update({"★ 골든 타깃이 바뀌었어요! 금빛 $ 카드를 노리세요 ★": "★ The golden target changed! Go for the gold $ card ★"})
@@ -394,3 +394,6 @@ EXACT.update({"빛 연출": "Light effects", "최소": "Minimal", "화려하게"
 # v1.4.38 빛 연출 설명 갱신
 EXACT.update({"빛 번짐·불씨·우승 연출, 화려하게는 음악에 맞춘 배경 맥동까지": "Glow, embers and victory scenes; Fancy adds background pulsing to the music",
               "빛 연출의 정도입니다. 최소 = 빛 번짐·불씨·박자 연출 없이 정지된 배경 장식만, 보통 = 빛 번짐과 불씨(배경은 번쩍이지 않음), 화려하게 = 음악에 맞춘 배경 맥동까지. 화면이 느려지면 '최소'로 두세요. 화면 흔들림/번쩍임 설정도 따릅니다.": "How strong the light effects are. Minimal = no glow, embers or beat effects, only still background decoration; Normal = glow and embers (the background does not flash); Fancy = also pulses the background to the music. Choose Minimal if the game runs slowly. Screen shake and flash settings are respected."})
+
+# v1.4.38 빛 연출 설명이 영어에서 오른쪽 버튼과 겹치지 않게 짧게
+EXACT.update({"빛 번짐·불씨·우승 연출 (화려하게: 음악 맥동)": "Glow, embers, victory scenes (Fancy: beat pulse)"})

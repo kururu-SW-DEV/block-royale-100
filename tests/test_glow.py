@@ -475,6 +475,27 @@ def test_visual_fx_setting_row_cycles_and_is_translated():
     assert last <= 760, last
 
 
+def test_light_effects_row_text_fits_next_to_the_cycler_in_both_languages():
+    """'빛 연출' 행의 설명이 오른쪽 선택 버튼(‹ ›)과 겹치지 않음 (영어에서 길어서 잘리던 문제)"""
+    import i18n
+    from screens import settings as S
+    app = _app()
+    app.state = "SETTINGS"
+    app.settings_tab = "general"
+    for lang in ("ko", "en"):
+        i18n.set_language(lang)
+        try:
+            app._render_settings()
+            row = app._row_rects["visual_fx"]
+            left_btn = app.settings_buttons["fx_prev"] if hasattr(app, "settings_buttons") and "fx_prev" in app.settings_buttons else None
+            sub = i18n.tr("빛 번짐·불씨·우승 연출 (화려하게: 음악 맥동)")
+            width = app.font_help.size(sub)[0]
+            limit = (left_btn.left if left_btn is not None else row.right - 340) - (row.x + 22) - 12
+            assert width <= limit, (lang, width, limit, sub)
+        finally:
+            i18n.set_language("ko")
+
+
 def test_full_frame_in_every_fx_mode_and_phase_without_errors():
     app = _app()
     for mode in ("min", "normal", "fancy"):

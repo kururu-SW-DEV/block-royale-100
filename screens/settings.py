@@ -737,7 +737,7 @@ class SettingsMixin:
     def _render_tab_match(self):
         y = TOP
         lang = self.settings.get("language", "ko")
-        self._s_row("language", y, 46, "언어 / Language", "The whole UI switches language (some saved names stay as they were)" if lang == "en" else "화면의 글이 모두 바뀝니다 (저장된 데이터 속 이름 등 일부는 그대로)")
+        self._s_row("language", y, 46, "언어 / Language", "The whole UI switches language (saved names stay as is)" if lang == "en" else "화면의 글이 모두 바뀝니다 (저장된 데이터 속 이름 등 일부는 그대로)")
         self._s_seg([("lang=ko", "한국어"), ("lang=en", "English")], "lang=" + lang, RIGHT, y + 22)
         y += 46
         # 참가 인원
@@ -866,7 +866,7 @@ class SettingsMixin:
                     "mini_detail=" + (self.settings.get("mini_detail") if self.settings.get("mini_detail") in ("detailed", "focus", "simple") else "focus"), RIGHT, y + 22)
         y += 46
         fxm = self.settings.get("visual_fx", "normal")
-        self._s_row("visual_fx", y, 46, "빛 연출", "빛 번짐·불씨·우승 연출, 화려하게는 음악에 맞춘 배경 맥동까지")
+        self._s_row("visual_fx", y, 46, "빛 연출", "빛 번짐·불씨·우승 연출 (화려하게: 음악 맥동)")
         self._s_cycler("fx_prev", "fx_next", {"min": "최소", "normal": "보통", "fancy": "화려하게"}.get(fxm, "보통"), RIGHT, y + 22, color=C_ACCENT)
         y += 46
         skin = self.settings.get("block_skin", "classic")

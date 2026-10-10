@@ -281,10 +281,16 @@ class RecordsMixin:
             hov = r.collidepoint(mx, my)
             pygame.draw.rect(self.screen, _mix((16, 20, 34), col, 0.30 if on else (0.14 if hov else 0.05)), r, border_radius=8)
             pygame.draw.rect(self.screen, col if on else (60, 72, 104), r, 2 if on else 1, border_radius=8)
-            self._t(label, self.font_small, col if on else C_DIM, r.centerx, r.centery, "center")
+            from i18n import tr as _trt
+            lab_font = self.font_small if self.font_small.size(_trt(label))[0] <= r.w - 6 else self.font_tiny      # 영어/글자 크기 '크게'에서 탭보다 넓으면 한 단계 작은 글꼴
+            self._t(label, lab_font, col if on else C_DIM, r.centerx, r.centery, "center")
         hints_ = {"achv": "← → 위 탭 이동  ·  1~5 · PgUp/PgDn 업적 페이지", "score": "← → 위 탭 이동  ·  1~4 규모", "replay": "← → 위 탭 이동  ·  ↑↓ 선택 · Enter 재생"}
         if self.records_mode in hints_:                                   # 필터 칩이 있는 탭은 칩이 오른쪽 끝까지 차서 안내 글자가 칩 위에 겹치므로 생략
-            self._t(hints_[self.records_mode], self.font_tiny, C_DIM, box_x + box_w, tab_y + 15, "midright")
+            from i18n import tr as _trh
+            hw_ = self.font_tiny.size(_trh(hints_[self.records_mode]))[0]
+            chips_right = (box_x + 560 + 46 + 6 + len(SIZE_BUCKETS) * (76 + 6)) if self.records_mode == "score" else 0      # 점수표의 규모 칩(전체 + 규모별)이 차지하는 오른쪽 끝
+            if box_x + box_w - hw_ > chips_right + 8:                      # 글자가 길어(영어/글자 크기 '크게') 칩과 겹치면 그리지 않음
+                self._t(hints_[self.records_mode], self.font_tiny, C_DIM, box_x + box_w, tab_y + 15, "midright")
         if self.records_mode == "replay":
             self._render_replays(box_x, box_y, box_w, mx, my)
             if self.replay_view is None:
@@ -499,8 +505,14 @@ class RecordsMixin:
             parts.append(f"이전 {min(10, n - 10)}판보다 {'+' if d >= 0 else ''}{d:.0f}%p " + ("상승" if d > 1 else ("하락" if d < -1 else "비슷")))
         wins = sum(1 for p in pts if p[1])
         parts.append(f"우승 {wins}회 / {n}판")
-        self._t("   ·   ".join(parts), self.font_info, C_GREEN if (prev is None or last >= prev) else C_ORANGE, ix, gy + gh + 30)
-        self._t("● 우승   파란 선: 5판 이동 평균", self.font_tiny, C_DIM, ix + iw, gy + gh + 34, "topright")
+        from i18n import tr as _trl
+        sum_txt = "   ·   ".join(parts)
+        self._t(sum_txt, self.font_info, C_GREEN if (prev is None or last >= prev) else C_ORANGE, ix, gy + gh + 30)
+        legend = "● 우승   파란 선: 5판 이동 평균"
+        if self.font_info.size(_trl(sum_txt))[0] + self.font_tiny.size(_trl(legend))[0] + 24 > iw:       # 영어/글자 크기 '크게'에서 요약이 길면 범례를 다음 줄로
+            self._t(legend, self.font_tiny, C_DIM, ix + iw, gy + gh + 56, "topright")
+        else:
+            self._t(legend, self.font_tiny, C_DIM, ix + iw, gy + gh + 34, "topright")
 
     def _poly(self, color, pts):
         """채운 다각형 (논리 좌표 -> 화면 좌표로 변환해 그림: pygame.draw.polygon은 캔버스 보정이 안 되어 있음)"""

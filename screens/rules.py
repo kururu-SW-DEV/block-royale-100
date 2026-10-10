@@ -98,8 +98,12 @@ class RulesMixin:
             row_h = 27
             for i, (a, b) in enumerate(rows):
                 ry = rect.y + 54 + i * row_h
-                r._draw_text(a, r.font_small, (205, 214, 232), rect.x + 20, ry)
-                r._draw_text(b, r.font_small, C_GOLD, rect.right - 20, ry, "topright")
+                from i18n import tr as _trr
+                fnt = r.font_small
+                if fnt.size(_trr(a))[0] + fnt.size(_trr(b))[0] + 14 > rect.w - 40:      # 글자 크기 '크게'/영어에서 두 글자가 겹치면 한 단계 작은 글꼴로
+                    fnt = r.font_tiny
+                r._draw_text(a, fnt, (205, 214, 232), rect.x + 20, ry + (2 if fnt is r.font_tiny else 0))
+                r._draw_text(b, fnt, C_GOLD, rect.right - 20, ry + (2 if fnt is r.font_tiny else 0), "topright")
                 if i < len(rows) - 1:
                     pygame.draw.line(self.screen, (36, 46, 74), (rect.x + 18, ry + row_h - 4), (rect.right - 18, ry + row_h - 4), 1)
             if ci == 2:

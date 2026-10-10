@@ -91,7 +91,7 @@ def test_language_setting_switches_screens_without_errors():
     finally:
         HiFont.render = orig
     assert "Quick Start" in seen and "Settings" in seen and any(t.startswith("Alive") for t in seen), seen[:30]
-    assert "Easy (beginner)" in seen and any(t.startswith("The AI reacts slowly") for t in seen), "설명 줄도 번역된 글자로 줄임"
+    assert "Easy (beginner)" in seen and any(t.startswith("Slow reactions, many mistakes") for t in seen), "설명 줄도 번역된 글자로 줄임"
     app.state, app.settings_tab = "SETTINGS", "match"
     app._settings_activate("lang=ko")
     assert app.settings.get("language") == "ko" and i18n.tr("빠른 시작") == "빠른 시작"

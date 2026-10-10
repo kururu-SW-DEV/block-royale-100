@@ -26,11 +26,11 @@ BOT_DIFFICULTY_LABELS = {
 }
 
 BOT_DIFFICULTY_DESCS = {
-    "mixed": "초보부터 고수까지 다양한 실력의 100인 AI가 고루 섞여 등장합니다.",
-    "easy": "AI의 반응 속도가 여유롭고 실수가 잦아 블록 퍼즐 입문자에게 적합합니다.",
-    "normal": "자연스러운 속도와 적절한 판단력을 갖춘 균형 잡힌 표준 AI입니다.",
-    "hard": "빠른 라인 빌드와 낮은 실수율을 자랑하는 강력한 토너먼트급 AI입니다.",
-    "master": "인간의 한계를 넘나드는 초고속 연타와 2% 미만 오차율의 극강 AI입니다."
+    "mixed": "초보부터 고수까지 다양한 AI가 섞여 나옵니다.",
+    "easy": "반응이 느리고 실수가 잦은 입문자용 AI입니다.",
+    "normal": "속도와 판단력이 균형 잡힌 표준 AI입니다.",
+    "hard": "빠르게 쌓고 실수가 적은 토너먼트급 AI입니다.",
+    "master": "초고속 연타와 2% 미만 오차율의 극강 AI입니다."
 }
 
 # 스테이지(인게임 전투) 배경음 세트: "random"이면 매 판 시작할 때마다 5세트 중 하나를 무작위로 고름
@@ -45,7 +45,7 @@ BGM_STAGE_SET_LABELS = {
 }
 BGM_STAGE_SET_DESCS = {
     "random": "경기를 시작할 때마다 5가지 세트 중 하나가 무작위로 선택됩니다.",
-    "0": "오리지널 3부작: Cyber Rush → Hyperdrive Override → Apex Protocol",
+    "0": "Cyber Rush → Hyperdrive Override → Apex Protocol",
     "1": "Neon Circuit → Circuit Breaker → Overclock",
     "2": "Pulse Overdrive → Redline → Terminal Velocity",
     "3": "Chrome Requiem → Ghost Protocol → Blackout Surge",
