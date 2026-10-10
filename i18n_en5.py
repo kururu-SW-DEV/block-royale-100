@@ -217,7 +217,7 @@ TEMPLATES = {
     "{}   ·   최종 {#}위 / {#}명   ·   K.O. {#}": "{}   ·   Final #{} / {} players   ·   K.O. {}",
     "받은 공격은 {}초 차징 뒤에 올라옵니다. 그 사이에 줄을 지우면 먼저 깎입니다. (한 번에 최대 {}줄)": "Received attacks rise after a {}s charge. Clearing lines in between cancels them first. (max {} lines at once)",
     "경기 시작 {}분부터 매분 공격력 +{}% (최대 ×{}). 생존자가 절반이 되면 PHASE 2, 더 줄면 FINAL.": "From minute {} of the match, attack +{}% every minute (max ×{}). PHASE 2 at half the field, FINAL below that.",
-    "처음이라면  {} ① 연습 기초 과제 3개 ({#}/3)   {} ② 첫 경기 끝까지 해 보기": "New here?  {} 1) 3 basic practice tasks ({}/3)   {} 2) play your first match to the end",
+    "처음이라면  {} 1) 연습 기초 과제 3개 ({#}/3)   {} 2) 첫 경기 끝까지 해 보기": "New here?  {} 1) 3 basic practice tasks ({}/3)   {} 2) play your first match to the end",
     " 칭호 '{}'": " title '{}'",
     "내 최고 판({}점)이 경기 옆에 함께 달립니다 (혼자 하는 경기)": "Your best run ({} pts) races alongside the match (solo matches)",
     "{#}인": "{} players",
@@ -351,7 +351,7 @@ TEMPLATES.update({"우승 예측 적중!  {}  +{#} XP": "Winner pick hit!  {}  +
 
 # v1.4.31 짧아진 전투 토스트
 TEMPLATES.update({"◀ +{#}  {}": "◀ +{}  {}", "◀ +{#}  ({#}명)": "◀ +{}  ({} players)",
-                  "▶ +{#}  {}": "▶ +{}  {}", "↩ +{#}  {}": "↩ +{}  {}",
+                  "▶ +{#}  {}": "▶ +{}  {}", "▶▶ +{#}  {}": "▶▶ +{}  {}",
                   "배지{#}": "Badge {}", "역습+{#}": "Counter +{}"})
 
 TEMPLATES.update({"★ 새 효과 해금!  {}": "★ New effect unlocked!  {}"})

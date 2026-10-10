@@ -52,7 +52,7 @@ TEMPLATES = {
     "복수 성공!  라이벌 {} 처치": "Revenge!  Rival {} defeated",
     "{} 탈락": "{} eliminated",
     "드릴 종료: {}초 버팀  ·  막은 줄 {}": "Drill over: survived {}s  ·  blocked {} lines",
-    "방어 −{}줄": "Blocked −{} lines",
+    "방어 -{}줄": "Blocked -{} lines",
     "{}  {}T-스핀!": "{}  {}T-Spin!",
     "{}  {}연속 콤보!": "{}  {}-chain combo!",
     "[{}연속 콤보!]": "[{}-chain combo!]",

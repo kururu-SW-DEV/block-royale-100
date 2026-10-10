@@ -910,7 +910,8 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
 
     def _led_font_get(self):
         if getattr(self, "_led_font", None) is None:
-            self._led_font = pygame.font.SysFont("gulim,dotum,malgungothic,arial", 12)     # 비트맵 느낌이 나는 작은 글꼴
+            from font_utils import make_font
+            self._led_font = make_font("gulim,dotum,malgungothic,arial", 12)     # 비트맵 느낌이 나는 작은 글꼴
         return self._led_font
 
     def _led_build(self, items, rows):
@@ -1234,8 +1235,8 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
             return
         rects = self._hud_rects
         pad = self.pad_ui                                                          # 패드로 하는 중이면 키보드 글자 대신 패드 기준 안내
-        specs = [("survivors", "① 남은 생존자 수. 마지막 1명이 우승!  (잠시 뒤 저절로 사라져요)" if pad else "① 남은 생존자 수. 마지막 1명이 우승!  (Enter/클릭으로 닫기)", "below-left"),
-                 ("aim", "② 조준 모드: 공격 대상을 정해요. 처음엔 자동(AUTO) 그대로 OK  (Back 버튼)" if pad else "② 조준 모드: 공격 대상을 정해요. 처음엔 자동(AUTO) 그대로 OK  (TAB / 1~5)", "below-left"),
+        specs = [("survivors", "1) 남은 생존자 수. 마지막 1명이 우승!  (잠시 뒤 저절로 사라져요)" if pad else "1) 남은 생존자 수. 마지막 1명이 우승!  (Enter/클릭으로 닫기)", "below-left"),
+                 ("aim", "2) 조준 모드: 공격 대상을 정해요. 처음엔 자동(AUTO) 그대로 OK  (Back 버튼)" if pad else "2) 조준 모드: 공격 대상을 정해요. 처음엔 자동(AUTO) 그대로 OK  (TAB / 1~5)", "below-left"),
                  ]                                                                       # ③받을 공격 ④K.O.는 처음 일어날 때 '첫 경험 팁'으로 알려 줌 (처음부터 한꺼번에 가리지 않게)
         y_top = None
         alpha = 255 if left > 2.0 else int(255 * left / 2.0)

@@ -4,6 +4,14 @@
 
 ![메인 메뉴 스크린샷](assets/screenshot_menu.png)
 
+| 100인 경기 | 우승 장면 |
+|---|---|
+| ![100인 경기 화면](assets/screenshot_game.png) | ![우승 장면](assets/screenshot_victory.png) |
+
+![설정 화면](assets/screenshot_settings.png)
+
+*(스크린샷은 `tools/make_readme_screens.py`로 만든 v1.4.40 화면입니다.)*
+
 ---
 
 ## 🎮 게임 특징 및 화면 구성

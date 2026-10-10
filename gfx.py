@@ -289,6 +289,10 @@ pygame.mouse.get_pos = lambda: CANVAS.to_logical(_orig_get_pos())
 
 
 # ---------------------------------------------------------------- 글꼴
+
+from font_utils import make_font  # noqa: E402  (OS 글꼴에 한글이 없을 때 동봉 글꼴로 대체)
+
+
 class HiFont:
     """논리 크기(pt)로 지정하되 실제로는 배율만큼 큰 글꼴로 렌더링하는 글꼴 래퍼"""
     _fonts = {}
@@ -308,7 +312,7 @@ class HiFont:
         key = (self.names, px, self.bold)
         font = HiFont._fonts.get(key)
         if font is None:
-            font = pygame.font.SysFont(self.names, px, bold=self.bold)
+            font = make_font(self.names, px, self.bold)
             HiFont._fonts[key] = font
         return font
 

@@ -56,7 +56,7 @@ def test_i18n_templates_are_valid_and_translations_work():
         assert i18n.tr("번역 없는 문장입니다") == "번역 없는 문장입니다", "번역이 없으면 한국어 그대로"
         assert i18n.tr("Quick") == "Quick" and i18n.tr("") == "" and i18n.tr(5) == 5
         assert i18n.tr("★ 위기 탈출! ★") == "★ Clutch escape! ★"
-        assert i18n.tr("방어 −3줄") == "Blocked −3 lines"
+        assert i18n.tr("방어 -3줄") == "Blocked -3 lines"
         assert i18n.tr("로열 빅토리!") == "Royale Victory!"
     finally:
         i18n.set_language("ko")

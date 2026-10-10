@@ -111,13 +111,13 @@ def test_cancel_feedback_combo_break_and_ko_events():
     eng.combo = 6
     eng.last_clear_info = {"cleared": 2, "canceled": 3, "combo": 6}
     m.on_lines_cleared(2)
-    assert "방어 −3줄" in _texts(m) and m.cancel_seq == 1 and m.cancel_last[1] == 3
+    assert "방어 -3줄" in _texts(m) and m.cancel_seq == 1 and m.cancel_last[1] == 3
     assert ("shield", None) in played
     m.floating_texts = []
     played.clear()
     eng.last_clear_info = {"cleared": 1, "canceled": 1, "combo": 6}
     m.on_lines_cleared(1)
-    assert "방어 −1줄" in _texts(m) and ("shield", None) not in played, "1줄 방어는 소리 생략"
+    assert "방어 -1줄" in _texts(m) and ("shield", None) not in played, "1줄 방어는 소리 생략"
     # 콤보 끊김: 3 이상 쌓은 콤보가 끝나면 토스트와 소리
     m.floating_texts = []
     eng.combo = 5

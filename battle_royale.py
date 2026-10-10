@@ -1485,7 +1485,7 @@ class BattleRoyaleMatch:
         if canceled > 0:                                         # 줄을 지워 막은 공격: 토스트 + 받을 공격 칸 반응(렌더러) + 방패음
             self.cancel_seq += 1
             self.cancel_last = (time.time(), canceled)
-            self.add_floating_text(f"방어 −{canceled}줄", (110, 235, 255), duration=1.6, size=22, category="attack")
+            self.add_floating_text(f"방어 -{canceled}줄", (110, 235, 255), duration=1.6, size=22, category="attack")
             if self.sound_mgr and canceled >= 2:
                 self.sound_mgr.play('shield')
                 
@@ -1916,7 +1916,7 @@ class BattleRoyaleMatch:
                     self.add_commentary(f"{self._short_name(self.local_player_id)}  {len(targets)}명에게 동시 포격! {shown_attack}줄", (255, 170, 90), mine=True)
                     self.trigger_screen_shake(10.0)
                 
-                lbl = "↩" if (self.local_target_mode == "ATTACKERS" and target_p.get("target_id") == self.local_player_id) else "▶"      # ↩ 자동 반격 / ▶ 공격 발송 (글자 대신 기호로 짧게)
+                lbl = "▶▶" if (self.local_target_mode == "ATTACKERS" and target_p.get("target_id") == self.local_player_id) else "▶"      # ▶▶ 자동 반격 / ▶ 공격 발송 (글자 대신 기호로 짧게)
                 tags = []                                                  # 괄호 하나에 짧게: "(배지2 · 역습+3 · ×1.4)"
                 if badge_lvl > 0:
                     tags.append(f"배지{badge_lvl}")

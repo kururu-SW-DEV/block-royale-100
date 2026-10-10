@@ -2,9 +2,11 @@
 REM BLOCK ROYALE 100 - single-file exe build
 REM Requires: pip install -r requirements.txt pyinstaller
 cd /d "%~dp0"
+if not exist assets\fonts mkdir assets\fonts
 python -m PyInstaller --noconfirm --clean --onefile --windowed ^
   --name BlockRoyale100 --icon ..\icon.ico ^
   --add-data "..\icon.png;." ^
+  --add-data "..\assets\fonts;assets\fonts" ^
   --exclude-module tkinter --exclude-module matplotlib --exclude-module PIL --exclude-module scipy ^
   --distpath release --workpath build_tmp --specpath build_tmp ^
   main.py
