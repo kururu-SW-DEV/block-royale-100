@@ -165,7 +165,7 @@ DEFAULT_SETTINGS = {
     "rule_garbage": "normal",    # 커스텀 규칙: 쓰레기 줄 배율 "half"(x0.5) / "normal"(x1) / "heavy"(x1.5)
     "rule_gravity": "normal",    # 커스텀 규칙: 내 낙하 속도 "slow"(x0.7) / "normal" / "fast"(x1.4)
     "rule_team": False,          # 커스텀 규칙: 팀전(2팀). 나와 같은 편 봇은 서로 공격하지 않고, 상대 팀이 모두 탈락하면 이김 (혼자 하는 배틀로얄만, 기록 안 함)
-    "rule_badges": True,         # 커스텀 규칙: K.O. 배지 공격력 보너스 (끄면 K.O.를 해도 공격력이 오르지 않음)
+    "rule_badges": True,         # 커스텀 규칙: K.O. 열기 공격력 보너스 (끄면 K.O.를 해도 공격력이 오르지 않음)
     "ghost_race": False,         # 고스트 레이스: 내 최고 점수 판(저장된 리플레이)의 보드를 경기 옆에 같은 시간 흐름으로 보여 줌 (혼자 하는 경기만)
     "gamepad": True,             # 게임패드 입력 사용 (십자키/스틱/버튼을 키 입력처럼 처리)
     "announcer": False,          # 로봇 아나운서 외침 (쿼드/T-스핀/콤보/퍼펙트/TOP 10/현상금 등 큰 순간에만, 기본 끔)

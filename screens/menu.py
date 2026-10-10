@@ -517,7 +517,7 @@ class MenuMixin:
         return rect.x
 
     def _menu_profile(self):
-        """하단 왼쪽 프로필 (한 곳에만): 레벨 배지 + 이름. 누르면 경기 설정"""
+        """하단 왼쪽 프로필 (한 곳에만): 레벨 열기 + 이름. 누르면 경기 설정"""
         lv_txt = f"Lv.{self.stats_mgr.level()[0]}"
         name = self.player_name
         while len(name) > 1 and self.font_mid.size(name)[0] > 200:          # 아주 긴 이름은 글자를 줄임 (말줄임표 없이)

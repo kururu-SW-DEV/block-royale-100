@@ -131,7 +131,7 @@ def test_cancel_feedback_combo_break_and_ko_events():
     eng.combo = -1
     m.update(0.01)
     assert ("combo_break", None) not in played, "짧은 콤보는 알리지 않음"
-    # K.O.: 처치 순간(토스트) + 구슬 도착(0.7초 뒤) 소리, 배지 승급은 도착 시점
+    # K.O.: 처치 순간(토스트) + 구슬 도착(0.7초 뒤) 소리, 열기 승급은 도착 시점
     me = m.local_player_id
     bots = [p for p in m.players if p != me and p != m.bounty_id]
     played.clear()
@@ -142,12 +142,16 @@ def test_cancel_feedback_combo_break_and_ko_events():
     m._ko_events[0]["due"] = time.time() - 0.01
     m.update(0.01)
     assert ("ko_orb", 1) in played and not m._ko_events
-    # 배지 승급(2킬)은 구슬 도착 때 소리/배너
-    m._eliminate_player(bots[1], killer_id=me)
-    assert not any(t.startswith("★ 배지 승급") for t in _texts(m)), "승급 배너는 구슬이 도착한 뒤"
+    # 열기 승급(3킬)은 구슬 도착 때 소리/배너
+    m._eliminate_player(bots[2], killer_id=me)
     m._ko_events[0]["due"] = time.time() - 0.01
     m.update(0.01)
-    assert any(t.startswith("★ 배지 승급") for t in _texts(m)) and ("badge_up", None) in played
+    m.floating_texts = []
+    m._eliminate_player(bots[1], killer_id=me)
+    assert not any(t.startswith("★ 열기 승급") for t in _texts(m)), "승급 배너는 구슬이 도착한 뒤"
+    m._ko_events[0]["due"] = time.time() - 0.01
+    m.update(0.01)
+    assert any(t.startswith("★ 열기 승급") for t in _texts(m)) and ("badge_up", None) in played
     # 마지막 K.O.로 경기가 끝나도 예약된 연출이 처리됨
     print("  OK cancel/combo/ko")
 
@@ -281,7 +285,7 @@ def test_xp_level_unlocks_and_stats_storage():
 
 def test_next_goal_near_miss_and_quick_rematch():
     from stats_manager import next_goal_text
-    assert next_goal_text(40, 8, 100, 30, max_ko=9) == "K.O. 최고 기록(9명)까지 1명"
+    assert next_goal_text(40, 7, 100, 30, max_ko=8) == "K.O. 최고 기록(8명)까지 1명"
     assert next_goal_text(40, 3, 100, 30, max_ko=9) != "K.O. 최고 기록(9명)까지 6명", "3명 이상 차이는 근접 실패가 아님"
     app = _app()
     app.use_bot_pool = True                                          # 혼자 하는 경기 시작 카운트다운을 켜서 길이를 확인
@@ -382,7 +386,7 @@ def test_reward_rows_on_results_and_menu_badge():
     assert any("경험치" in t for t, _c in lines) and len(lines) <= 4, lines
     app.renderer._standings_t0 = time.time() - 3.0
     app.renderer.render(m2)
-    # 메인 메뉴 프로필 칩의 레벨 배지
+    # 메인 메뉴 프로필 칩의 레벨 열기
     app.state = "MENU"
     app._render_menu()
     app.stats_mgr.data["xp"] = 5000
@@ -636,7 +640,7 @@ def test_survivor_tick_tier_up_and_phase_band():
     r._phase_fx["t0"] -= 5
     r.render(m)
     assert r._phase_fx is None, "띠는 1초 남짓 뒤 사라짐"
-    print("  OK 생존자 틱/배지/단계 띠")
+    print("  OK 생존자 틱/열기/단계 띠")
 
 
 def test_next_hold_ghost_pattern_and_motion_off():

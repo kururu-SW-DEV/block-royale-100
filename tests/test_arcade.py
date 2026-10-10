@@ -268,7 +268,7 @@ def test_result_window_layout_has_no_overlap_and_fits():
                 "grade": "A", "score": {"score": 48210, "place": 1, "best": True}}
     m.new_achievements = ["first_ko", "ko5", "top10", "combo8"]
     m.new_records = ["rank", "ko", "combo"]
-    m.next_goal = "배지 Lv.2까지 2 K.O."
+    m.next_goal = "열기 Lv.2까지 2 K.O."
     for boost in (0, 2):
         r.set_text_boost(boost)
         L = r._result_layout(m, 760)

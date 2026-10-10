@@ -130,7 +130,7 @@ EXACT = {
     "싱글(1줄)": "Single (1 line)", "더블(2줄)": "Double (2 lines)", "트리플(3줄)": "Triple (3 lines)", "쿼드(4줄)": "Quad (4 lines)",
     "T-스핀 싱글/더블/트리플": "T-Spin Single/Double/Triple", "T-스핀 미니 싱글/더블": "T-Spin Mini Single/Double",
     "연속 콤보": "Chain combo", "6명 이상": "6 or more",
-    "공격 줄 수": "Attack lines", "K.O. 배지 (공격력 증폭)": "K.O. Badges (attack boost)", "역습 보너스": "Counter bonus",
+    "공격 줄 수": "Attack lines", "K.O. 열기 (공격력 증폭)": "K.O. Heat (attack boost)", "역습 보너스": "Counter bonus",
     "규칙 요약": "Rules Summary", "아무 키나 클릭으로 닫기  ·  F1": "Press any key or click to close  ·  F1",
     "여럿이 나를 노릴 때 내 공격에 더해집니다": "Added to my attacks when several players target me",
     "조준 모드  (TAB 순환 · 1~5 선택 · 상단 칩 클릭)": "Targeting modes  (TAB cycles · 1-5 select · click the top chips)",
@@ -152,7 +152,7 @@ EXACT.update({
     "방 유지": "Keep Room", "방 닫기": "Close Room", "확인": "OK", "게임 진행 중": "Game in progress", "키보드": "Keyboard",
     # 커스텀 규칙 알림 조각
     "커스텀 규칙": "Custom rules", "(기록되지 않음)": "(not recorded)", "낙하 느리게": "Fall: slow", "낙하 기본": "Fall: normal", "낙하 빠르게": "Fall: fast",
-    "배지 켬": "Badges on", "배지 끔": "Badges off",
+    "열기 켬": "Heat on", "열기 끔": "Heat off",
     # 종료/나가기 확인 창
     "게임을 종료할까요?": "Quit the game?", "프로그램을 완전히 종료합니다.": "The program will close completely.",
     "게임에서 나갈까요?": "Leave the game?", "계속 플레이": "Keep Playing",
@@ -287,14 +287,14 @@ EXACT.update({
 
 EXACT.update({"입력한 주소를 찾을 수 없습니다. 주소를 다시 확인해 주세요.": "Could not find that address. Please check it and try again."})
 
-# v1.4.27: 메인 메뉴 작은 카드, 다음 난이도 도전, K.O. 배지 흡수
+# v1.4.27: 메인 메뉴 작은 카드, 다음 난이도 도전, K.O. 열기 흡수
 EXACT.update({"다음 난이도 도전": "Next difficulty", "오늘 아직 안 함": "Not played today", "이번 주 아직 안 함": "Not played this week"})
 TEMPLATES.update({
     "완료한 과제 {#}개": "{} tasks done",
     "★{#}/3 · 최고 {#}위": "★{}/3 · best #{}",
     "이번 주 최고 {#}위": "Best this week: #{}",
-    "[K.O. 처치!] +{#} 배지 획득 >> {}": "[K.O.!] +{} badges >> {}",
-    "[K.O. 처치!] +{#} 배지 획득 >> {}  (상대 배지 {#} 흡수)": "[K.O.!] +{} badges >> {}  (absorbed {} from the victim)",
+    "[K.O. 처치!] +{#} 열기 획득 >> {}": "[K.O.!] +{} heat >> {}",
+    "[K.O. 처치!] +{#} 열기 획득 >> {}  (상대 열기 {#} 흡수)": "[K.O.!] +{} heat >> {}  (absorbed {} from the victim)",
 })
 
 # v1.4.27 메인 화면 단순화 (목록 + 설명 패널)
@@ -314,9 +314,9 @@ EXACT.update({
 })
 EXACT.update({"전적에 남지 않음": "Not recorded"})
 
-# v1.4.27 규칙 카드: B2B 보너스 단계와 배지 흡수
+# v1.4.27 규칙 카드: B2B 보너스 단계와 열기 흡수
 EXACT.update({"B2B (연쇄 1~3/4~7/8~)": "B2B (chain 1-3 / 4-7 / 8+)", "+1 / +2 / +3줄": "+1 / +2 / +3 lines",
-              "처치 시 상대 배지 흡수": "Take victim's badges", })
+              "처치 시 상대 열기 흡수": "Take victim's heat", })
 TEMPLATES.update({"K.O.의 절반 (최대 {#})": "Half their KOs (max {})"})
 
 # v1.4.31 골든 타깃 순환
@@ -352,7 +352,7 @@ TEMPLATES.update({"우승 예측 적중!  {}  +{#} XP": "Winner pick hit!  {}  +
 # v1.4.31 짧아진 전투 토스트
 TEMPLATES.update({"◀ +{#}  {}": "◀ +{}  {}", "◀ +{#}  ({#}명)": "◀ +{}  ({} players)",
                   "▶ +{#}  {}": "▶ +{}  {}", "▶▶ +{#}  {}": "▶▶ +{}  {}",
-                  "배지{#}": "Badge {}", "역습+{#}": "Counter +{}"})
+                  "열기{#}": "Heat {}", "역습+{#}": "Counter +{}"})
 
 TEMPLATES.update({"★ 새 효과 해금!  {}": "★ New effect unlocked!  {}"})
 EXACT.update({"K.O. 구슬이 하늘색으로 바뀝니다": "K.O. orbs turn sky blue", "K.O. 구슬이 분홍색으로 바뀝니다": "K.O. orbs turn pink", "K.O. 구슬이 무지개색으로 바뀝니다": "K.O. orbs turn rainbow"})
@@ -401,3 +401,9 @@ EXACT.update({"빛 번짐·불씨·우승 연출 (화려하게: 음악 맥동)":
 # v1.4.40 진단 정보 복사 / 빛 연출 상태 안내
 EXACT.update({"진단 정보 복사": "Copy diagnostics", "복사했습니다": "Copied", "error.log 폴더": "error.log folder",
               "움직임 멈춤: 화면 흔들림이 꺼져 있음": "Motion paused: screen shake is off", "밝기 낮춤: 화면 번쩍임이 꺼져 있음": "Dimmed: screen flash is off"})
+
+# v1.4.42 레벨 보상: 보드 테두리 장식 / 조준 모드 이름
+EXACT.update({"내 보드에 은빛 테두리 장식이 붙습니다": "Your board gets a silver border trim",
+              "내 보드 테두리 장식이 청록빛으로 바뀝니다": "Your board border trim turns teal",
+              "내 보드 테두리 장식이 자수정빛 이중 테두리로 바뀝니다": "Your board border trim becomes a double amethyst frame",
+              "내 보드 테두리 장식이 황금 이중 테두리로 바뀝니다": "Your board border trim becomes a double gold frame"})

@@ -44,6 +44,22 @@ ORB_THEMES = {"gold": ((255, 240, 170), (255, 200, 60), (255, 210, 80), (255, 12
               "rainbow": ((255, 255, 255), (255, 255, 255), (255, 255, 255), (255, 255, 255))}
 
 
+# 레벨 보상(보드 테두리 장식): 내 보드 바깥에 레벨에 맞는 장식 테두리가 붙음 (자동 적용). (필요 레벨, 문구, 색, 이중 테두리 여부)
+BORDER_PERKS = ((8, "내 보드에 은빛 테두리 장식이 붙습니다", (206, 214, 232), False),
+                (20, "내 보드 테두리 장식이 청록빛으로 바뀝니다", (80, 226, 214), False),
+                (35, "내 보드 테두리 장식이 자수정빛 이중 테두리로 바뀝니다", (196, 132, 255), True),
+                (45, "내 보드 테두리 장식이 황금 이중 테두리로 바뀝니다", (255, 214, 96), True))
+
+
+def border_perk_for_level(level):
+    """레벨에 맞는 보드 테두리 장식 (색, 이중 여부). 없으면 None"""
+    perk = None
+    for lv, _text, col, dbl in BORDER_PERKS:
+        if int(level) >= lv:
+            perk = (col, dbl)
+    return perk
+
+
 def orb_theme_for_level(level):
     """레벨에 맞는 K.O. 구슬 색 테마 이름"""
     theme = "gold"
@@ -55,7 +71,9 @@ def orb_theme_for_level(level):
 
 def perks_unlocked_between(lv_before, lv_after):
     """lv_before < 레벨 <= lv_after 사이에 새로 얻은 레벨 보상 문구 목록"""
-    return [text for lv, text, _n in LEVEL_PERKS if int(lv_before) < lv <= int(lv_after)]
+    got = [(lv, text) for lv, text, _n in LEVEL_PERKS if int(lv_before) < lv <= int(lv_after)]
+    got += [(lv, text) for lv, text, _c, _d in BORDER_PERKS if int(lv_before) < lv <= int(lv_after)]
+    return [text for _lv, text in sorted(got)]
 
 
 def level_title(level):
@@ -276,17 +294,17 @@ def vs_usual_text(recent, rank, total_players, survival_sec, mode_total_min=8):
 
 
 def next_goal_text(rank, kos, total_players, best_in_size, difficulty=None, cleared=(), ladder_clear=None, max_ko=0, badge_pts=None):
-    """결과 화면의 '다음 목표: ...' 뒤에 붙는 문구. 우선순위: 방금 난이도 클리어 -> 배지 다음 단계가 2 K.O. 이내 -> 난이도 클리어까지 -> 순위 목표.
+    """결과 화면의 '다음 목표: ...' 뒤에 붙는 문구. 우선순위: 방금 난이도 클리어 -> 열기 다음 단계가 2 K.O. 이내 -> 난이도 클리어까지 -> 순위 목표.
     best_in_size: 방금 경기를 포함한 같은 규모의 최고 순위 (없으면 0)"""
     if ladder_clear:
         above = LADDER[LADDER.index(ladder_clear) + 1:] if ladder_clear in LADDER else LADDER           # 방금 클리어한 난이도보다 위인 것 중에서 (버튼과 같은 기준)
         nxt = next((x for x in above if x not in cleared), None)
         return f"{LADDER_NAMES[ladder_clear]} 클리어! " + (f"다음은 {LADDER_NAMES[nxt]}에 도전" if nxt else "모든 난이도 클리어")
-    bp = kos if badge_pts is None else badge_pts                      # 배지 단계는 K.O. + 흡수한 배지 점수 기준 (K.O. 최고 기록은 실제 K.O. 수)
+    bp = kos if badge_pts is None else badge_pts                      # 열기 단계는 K.O. + 흡수한 열기 점수 기준 (K.O. 최고 기록은 실제 K.O. 수)
     need_ko = next((need - bp for need, _b in BADGE_TIERS if need > bp), None)
     lv_next = next((lv for lv, (need, _b) in enumerate(BADGE_TIERS) if need > bp), None)
     if need_ko is not None and 0 < need_ko <= 2 and total_players > 2:
-        return f"배지 Lv.{lv_next}까지 {need_ko} K.O."
+        return f"열기 Lv.{lv_next}까지 {need_ko} K.O."
     if difficulty in LADDER and difficulty not in cleared and total_players >= LADDER_MIN_PLAYERS and rank > LADDER_RANK:
         return f"{LADDER_NAMES[difficulty]} 클리어까지 {rank - LADDER_RANK}계단 ({LADDER_RANK}위 안)"
     if max_ko > kos and max_ko - kos <= 2 and total_players > 2:          # 근접 실패: K.O. 개인 최고 기록이 코앞

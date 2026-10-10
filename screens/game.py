@@ -276,7 +276,7 @@ class GameMixin:
                 self.sound_mgr.play('rotate')
                 self._announce_target_mode(mode)
             elif event.key in self.TARGET_NUM_KEYS and not self.settings.is_bound_key(event.key, ACTION_NAMES):
-                self.settings.set("target_mode", self.match.set_target_mode(TARGET_MODES[self.TARGET_NUM_KEYS[event.key]]), autosave=False)      # 1~5: 자동/K.O./반격/배지/랜덤 바로 선택 (다음 경기에도 유지)
+                self.settings.set("target_mode", self.match.set_target_mode(TARGET_MODES[self.TARGET_NUM_KEYS[event.key]]), autosave=False)      # 1~5: 자동/추격/응수/거물/운명 바로 선택 (다음 경기에도 유지)
                 self.sound_mgr.play('rotate')
                 self._announce_target_mode(self.match.local_target_mode)
             elif event.key == pygame.K_ESCAPE:
@@ -460,7 +460,7 @@ class GameMixin:
     TIPS = [
         ("garbage", "받은 공격은 잠시 '차징' 중이에요. 그 사이에 줄을 지우면 먼저 깎입니다! (초록→빨강으로 차오르면 위험)"),
         ("multi", "여러 명이 나를 노리면 내 공격에 '역습 보너스'가 붙어요."),
-        ("ko", "K.O.를 낼 때마다 배지가 쌓여 공격력이 올라가요. (2·4·8·16 K.O.)"),
+        ("ko", "K.O.를 낼 때마다 열기가 쌓여 공격력이 올라가요. (3·6·10·15 K.O.)"),
         ("late", "후반전: 시간이 지날수록 모두의 공격력 배율이 올라갑니다."),
     ]
 
@@ -975,7 +975,7 @@ class GameMixin:
                 "compact_grid": p["compact_grid"],
                 "highest_y": p["highest_y"],
                 "ko_count": p["ko_count"],
-                "bx": p.get("badge_extra", 0),          # K.O.로 흡수한 배지 점수 (구버전은 이 필드를 무시)
+                "bx": p.get("badge_extra", 0),          # K.O.로 흡수한 열기 점수 (구버전은 이 필드를 무시)
                 "rank": p["rank"],
                 "score": ps["score"],
                 "lines": ps["lines"],

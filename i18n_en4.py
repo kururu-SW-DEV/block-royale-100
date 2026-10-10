@@ -149,7 +149,7 @@ TEMPLATES = {
     "'{}' 주소를 찾을 수 없거나 연결을 시작하지 못했습니다.": "Couldn't find '{}' or couldn't start connecting.",
     # ---- 결과의 '다음 목표'
     "{} 클리어! 다음은 {}에 도전": "{} cleared! Next up: {}",
-    "배지 Lv.{}까지 {} K.O.": "{} K.O. to Badge Lv.{}",
+    "열기 Lv.{}까지 {} K.O.": "{} K.O. to Heat Lv.{}",
     "{} 클리어까지 {}계단 ({}위 안)": "{0}: {1} places from clearing (top {2})",
     "K.O. 최고 기록({}명)까지 {}명": "{1} more K.O. to your best ({0})",
     "최고 순위 #{}까지 {}계단": "{1} places to your best rank #{0}",

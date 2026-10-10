@@ -182,7 +182,7 @@ def test_ko_absorbs_victim_badge_points():
         assert m.local_ko_count == kills, "실제 K.O. 수는 처치한 만큼만 오름 (전적/업적에 흡수분은 들어가지 않음)"
         extra = m.players[m.local_player_id].get("badge_extra", 0)
         assert 0 <= extra <= kills, f"흡수 누적은 내 실제 K.O. 수 이하여야 함: {extra} > {kills}"
-        assert m.badge_points() <= 2 * kills, "눈덩이 방지: 배지 점수는 실제 K.O.의 2배를 넘지 않음"
+        assert m.badge_points() <= 2 * kills, "눈덩이 방지: 열기 점수는 실제 K.O.의 2배를 넘지 않음"
     assert m.badge_points() > m.local_ko_count, "강한 상대를 잡으면 흡수가 일어남"
     assert m.BADGE_ABSORB_MAX == 2
 
@@ -303,8 +303,8 @@ def test_spin_sound_needs_ground_and_next_ladder_above_current():
 
 def test_next_goal_uses_badge_points():
     from stats_manager import next_goal_text
-    assert "배지 Lv.2까지 1 K.O." in next_goal_text(20, 1, 100, 10, badge_pts=3)
-    assert "배지 Lv.1까지 1 K.O." in next_goal_text(20, 1, 100, 10), "흡수 점수가 없으면 실제 K.O. 수로 계산"
+    assert "열기 Lv.2까지 2 K.O." in next_goal_text(20, 1, 100, 10, badge_pts=4)
+    assert "열기 Lv.1까지 2 K.O." in next_goal_text(20, 1, 100, 10), "흡수 점수가 없으면 실제 K.O. 수로 계산"
 
 
 def test_rules_card_lists_b2b_and_absorption():

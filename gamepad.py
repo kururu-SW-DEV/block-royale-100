@@ -49,7 +49,7 @@ _CBTN = (getattr(pygame, "CONTROLLERBUTTONDOWN", -1), getattr(pygame, "CONTROLLE
 _CAXIS = getattr(pygame, "CONTROLLERAXISMOTION", -1)
 _CAX_X, _CAX_Y = getattr(pygame, "CONTROLLER_AXIS_LEFTX", 0), getattr(pygame, "CONTROLLER_AXIS_LEFTY", 1)
 _CAX_RX, _CAX_RY = getattr(pygame, "CONTROLLER_AXIS_RIGHTX", 2), getattr(pygame, "CONTROLLER_AXIS_RIGHTY", 3)
-# 게임 중 오른쪽 스틱으로 조준 모드를 바로 고름 (숫자키 2~5와 같음): 위 = K.O., 오른쪽 = 반격, 아래 = 배지, 왼쪽 = 랜덤 (자동은 Back으로 순환)
+# 게임 중 오른쪽 스틱으로 조준 모드를 바로 고름 (숫자키 2~5와 같음): 위 = 추격, 오른쪽 = 응수, 아래 = 거물, 왼쪽 = 운명 (자동은 Back으로 순환)
 RIGHT_STICK_KEYS = {"up": pygame.K_2, "right": pygame.K_3, "down": pygame.K_4, "left": pygame.K_5}
 PAD_EVENT_TYPES = (pygame.JOYBUTTONDOWN, pygame.JOYBUTTONUP, pygame.JOYHATMOTION, pygame.JOYAXISMOTION) + _CBTN + (_CAXIS,)
 

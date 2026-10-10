@@ -71,6 +71,8 @@ class CoreMixin:
         if self.match is not None:
             from stats_manager import orb_theme_for_level
             self.renderer.orb_theme = orb_theme_for_level(self.stats_mgr.level()[0])            # 레벨 보상: K.O. 구슬 색
+            from stats_manager import border_perk_for_level
+            self.renderer.border_perk = border_perk_for_level(self.stats_mgr.level()[0])        # 레벨 보상: 내 보드 테두리 장식
             self.match.rumble_cb = lambda power, kind="hit": self.gamepad.rumble(power, kind) if self._pad_hints_active() else None      # 마지막으로 패드를 쓴 경우에만 진동 (키보드로 하는 중에는 연결된 패드가 울리지 않게)
             self.match.shake_scale = SHAKE_SCALE.get(self.settings.get("screen_shake"), 1.0)
             self.match.pan_fn = self._card_pan
@@ -415,7 +417,7 @@ class CoreMixin:
             rg, rv, rb = self.settings.get("rule_garbage", "normal"), self.settings.get("rule_gravity", "normal"), bool(self.settings.get("rule_badges", True))
             if (rg, rv, rb) != ("normal", "normal", True) or self.match.team_mode:
                 self.match.custom_rules = {"garbage": rg, "gravity": rv, "badges": rb, "team": self.match.team_mode}
-                bits = [f"쓰레기 {({'half': '×0.5', 'normal': '×1', 'heavy': '×1.5'})[rg]}", f"낙하 {({'slow': '느리게', 'normal': '기본', 'fast': '빠르게'})[rv]}", "배지 " + ("켬" if rb else "끔")]
+                bits = [f"쓰레기 {({'half': '×0.5', 'normal': '×1', 'heavy': '×1.5'})[rg]}", f"낙하 {({'slow': '느리게', 'normal': '기본', 'fast': '빠르게'})[rv]}", "열기 " + ("켬" if rb else "끔")]
                 from i18n import tr as _tr                                       # 조각마다 번역한 뒤 이어 붙임 (바뀌는 값이 낀 한 줄을 통째로 번역할 수 없으므로)
                 self.match.add_commentary(_tr("커스텀 규칙") + " · " + " · ".join(_tr(b) for b in bits) + " " + _tr("(기록되지 않음)"), (255, 190, 90), prio=1)
         if practice:

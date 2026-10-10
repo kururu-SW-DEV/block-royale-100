@@ -147,15 +147,15 @@ def test_stats_size_buckets_filter_and_goal():
         assert StatsManager(f2).ladder_cleared() == ["easy", "master"], "알려진 난이도만, 쉬움->마스터 순"
     assert next_goal_text(8, 3, 100, 8, difficulty="easy", cleared=["easy"], ladder_clear="easy") == "쉬움 클리어! 다음은 보통에 도전"
     assert next_goal_text(8, 3, 100, 8, difficulty="master", cleared=list(LADDER), ladder_clear="master") == "마스터 클리어! 모든 난이도 클리어"
-    assert next_goal_text(37, 5, 100, 12, difficulty="hard", cleared=[]) == "어려움 클리어까지 27계단 (10위 안)"
-    assert next_goal_text(37, 5, 100, 12, difficulty="hard", cleared=["hard"]) == "최고 순위 #12까지 25계단"
-    assert next_goal_text(37, 5, 20, 12, difficulty="hard", cleared=[]) == "최고 순위 #12까지 25계단", "50인 미만은 난이도 목표 없음"
-    # 다음 목표 문구 (배지 다음 단계가 2 K.O. 이내면 그것을, 아니면 순위 목표)
-    assert next_goal_text(51, 1, 100, 28) == "배지 Lv.1까지 1 K.O."
-    assert next_goal_text(51, 5, 100, 28) == "최고 순위 #28까지 23계단"
-    assert next_goal_text(8, 5, 100, 8) == "5위 안 진입"
-    assert next_goal_text(20, 5, 100, 20) == "10위 안 진입"
-    assert next_goal_text(3, 5, 100, 3) == "우승"
+    assert next_goal_text(37, 3, 100, 12, difficulty="hard", cleared=[]) == "어려움 클리어까지 27계단 (10위 안)"
+    assert next_goal_text(37, 3, 100, 12, difficulty="hard", cleared=["hard"]) == "최고 순위 #12까지 25계단"
+    assert next_goal_text(37, 3, 20, 12, difficulty="hard", cleared=[]) == "최고 순위 #12까지 25계단", "50인 미만은 난이도 목표 없음"
+    # 다음 목표 문구 (열기 다음 단계가 2 K.O. 이내면 그것을, 아니면 순위 목표)
+    assert next_goal_text(51, 1, 100, 28) == "열기 Lv.1까지 2 K.O."
+    assert next_goal_text(51, 3, 100, 28) == "최고 순위 #28까지 23계단"
+    assert next_goal_text(8, 3, 100, 8) == "5위 안 진입"
+    assert next_goal_text(20, 3, 100, 20) == "10위 안 진입"
+    assert next_goal_text(3, 3, 100, 3) == "우승"
     assert next_goal_text(1, 20, 100, 1) == "우승 연속 도전"
     print("  OK stats size buckets / filter / next goal")
 

@@ -245,7 +245,7 @@ class ResultsMixin:
         return lines or [""]
 
     def _result_summary_items(self, match):
-        """탈락 결과 창의 요약 영역 재료: 점수 / 배지 / 경험치 / 내역 / 칩(기록·도전·업적·해금·명장면). 높이는 이 내용만으로 정해짐 (시간과 무관)"""
+        """탈락 결과 창의 요약 영역 재료: 점수 / 열기 / 경험치 / 내역 / 칩(기록·도전·업적·해금·명장면). 높이는 이 내용만으로 정해짐 (시간과 무관)"""
         rw = self._reward_of(match) or {}
         titles = {a[0]: a[1] for a in ACHIEVEMENTS}
         chips = []
@@ -306,14 +306,14 @@ class ResultsMixin:
         L["rw"], L["chips"] = rw, chips
         xp = rw.get("xp") or {}
         tier, _, pct = match.get_badge_info()
-        badge_txt = f"배지 Lv.{tier} · 공격력 +{pct}" if tier > 0 else "배지 Lv.0"
+        badge_txt = f"열기 Lv.{tier} · 공격력 +{pct}" if tier > 0 else "열기 Lv.0"
         if getattr(match, "local_assists", 0) > 0:
             badge_txt += f" · K.O. 기여 {match.local_assists}"
         L["badge_txt"] = badge_txt
         inner = 12
         sy = inner
         rows = {}
-        rows["c1"] = sy                                              # 점수(왼쪽) + 배지 요약(오른쪽)
+        rows["c1"] = sy                                              # 점수(왼쪽) + 열기 요약(오른쪽)
         sy += max(28, lm + 6)
         if xp.get("gain", 0) > 0:
             rows["c2"] = sy                                          # 경험치 바
@@ -377,7 +377,7 @@ class ResultsMixin:
         return lines
 
     def _draw_result_summary(self, match, L, bx, by, box_w, t, rec_t):
-        """요약 상자: 점수/배지 한 줄, 경험치 바, 경험치 내역 한 줄, 칩 줄(기록·도전·업적·해금·명장면). 상자 하나에 왼쪽 정렬로 모아 가로줄 수를 줄임"""
+        """요약 상자: 점수/열기 한 줄, 경험치 바, 경험치 내역 한 줄, 칩 줄(기록·도전·업적·해금·명장면). 상자 하나에 왼쪽 정렬로 모아 가로줄 수를 줄임"""
         rw, xp = L["rw"], (L["rw"].get("xp") or {})
         pad = L["pad"]
         box = pygame.Rect(bx + pad, by + L["sum_y"], L["cont"], L["sum_h"])
@@ -387,7 +387,7 @@ class ResultsMixin:
         self._panel(box, border=(44, 56, 92), bg=(20, 25, 44), radius=12, alpha=int(240 * fade))
         x0, x1 = box.x + 16, box.right - 16
         rows = L["rows"]
-        # 점수(왼쪽) + 개인 최고/점수표 알약, 배지 요약(오른쪽)
+        # 점수(왼쪽) + 개인 최고/점수표 알약, 열기 요약(오른쪽)
         cy = box.y + rows["c1"] + 14
         sc = rw.get("score")
         if sc:

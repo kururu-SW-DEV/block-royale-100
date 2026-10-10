@@ -5,11 +5,11 @@
 EXACT = {
     # ---------------------------------------------------------------- 조준 모드
     "자동: 사람 상대가 있으면 사람 우선, 아니면 탈락 직전(쌓인 블록+받을 공격이 가장 큰) 상대를 노립니다.": "Auto: targets a human if there is one, otherwise whoever is closest to elimination (biggest stack + incoming garbage).",
-    "K.O.: 쌓인 블록과 받을 공격이 가장 큰, 탈락 직전인 상대를 노립니다.": "K.O.: targets whoever is closest to elimination (biggest stack + incoming garbage).",
-    "반격: 나를 노리는 상대에게 되돌려줍니다. 둘 이상이면 전원에게 동시 포격합니다.": "Counter: hits back at whoever targets you. With two or more, fires at all of them at once.",
-    "배지: K.O.를 가장 많이 쌓은(공격력이 오른) 상대를 노립니다.": "Badges: targets the player with the most K.O.s (strongest attacks).",
-    "랜덤: 생존자 중 무작위 1명을 노리고, 그 상대가 살아 있는 동안 유지합니다.": "Random: targets one random survivor and keeps that target while they live.",
-    "자동": "Auto", "반격": "Counter", "배지": "Badges", "랜덤": "Random",
+    "추격: 쌓인 블록과 받을 공격이 가장 큰, 탈락 직전인 상대를 노립니다.": "Chase: targets whoever is closest to elimination (biggest stack + incoming garbage).",
+    "응수: 나를 노리는 상대에게 되돌려줍니다. 둘 이상이면 전원에게 동시 포격합니다.": "Answer: hits back at whoever targets you. With two or more, fires at all of them at once.",
+    "거물: K.O.를 가장 많이 쌓은(공격력이 오른) 상대를 노립니다.": "Titan: targets the player with the most K.O.s (strongest attacks).",
+    "운명: 생존자 중 무작위 1명을 노리고, 그 상대가 살아 있는 동안 유지합니다.": "Fate: targets one random survivor and keeps that target while they live.",
+    "자동": "Auto", "추격": "Chase", "응수": "Answer", "거물": "Titan", "운명": "Fate", "반격": "Counter", "열기": "Heat", "랜덤": "Random",
     # ---------------------------------------------------------------- 상단 HUD
     "생존자": "Alive", "연습": "Practice", "연습 중": "Practicing",
     "수동 지정 · 우클릭 해제": "Manual target · right-click to clear",
@@ -26,7 +26,7 @@ EXACT = {
     "보낸 줄": "Sent", "막은 줄": "Blocked",
     "생존자 · 첫 시도": "Alive · first try",
     "생존자 · ★기록 경신 중": "Alive · ★ beating your record",
-    "배지 Lv.0": "Badge Lv.0",
+    "열기 Lv.0": "Heat Lv.0",
     "B2B 유지": "B2B alive",
     "차징 중": "Charging",
     "연결 불안정": "Unstable connection",
@@ -72,17 +72,17 @@ EXACT = {
     "배속": "Speed", "일시정지": "Pause", "메뉴": "Menu",
     "★ 개인 최고!": "★ Personal best!",
     "위험!": "Danger!", "주의": "Caution",
-    "배지": "Badges",
+    "열기": "Heat",
 }
 
 TEMPLATES = {
     "방장이 대기실로 돌아갔습니다 · R 키로 바로 이동 ({}초 뒤 자동 이동)": "The host returned to the lobby · press R to go now (auto in {}s)",
     "생존자 · {}": "Alive · {}",
-    "배지 Lv.{}  +{}": "Badge Lv.{}  +{}",
+    "열기 Lv.{}  +{}": "Heat Lv.{}  +{}",
     "도전 ★{}/{}": "Challenge ★{}/{}",
     "연습 과제  {}/{}": "Practice Tasks  {}/{}",
     "외 {}개": "+{} more",
-    "배지 Lv.{} · 공격력 +{}": "Badge Lv.{} · attack +{}",
+    "열기 Lv.{} · 공격력 +{}": "Heat Lv.{} · attack +{}",
     " · K.O. 기여 {}": " · K.O. assists {}",
     "최종 순위 {}위 / {}명": "Final rank {} / {} players",
     "생존자 · 기록까지 {}:{}": "Alive · {}:{} to your record",

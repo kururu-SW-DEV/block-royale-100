@@ -191,8 +191,8 @@ def test_rules_card_uses_config_values():
     attacks = dict(data["공격 줄 수"])
     assert attacks["쿼드(4줄)"] == f"{config.GARBAGE_ATTACK_TABLE[4]}줄"
     assert attacks["퍼펙트 클리어"] == f"+{config.PERFECT_CLEAR_ATTACK}줄"
-    badges = dict(data["K.O. 배지 (공격력 증폭)"])
-    assert badges["K.O. 16개"] == "공격력 +100%"
+    badges = dict(data["K.O. 열기 (공격력 증폭)"])
+    assert badges["K.O. 15개"] == "공격력 +80%"
     assert any("차징" in n for n in rules_card_notes())
     app = _app()
     app.state = "MENU"

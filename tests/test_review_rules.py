@@ -268,7 +268,7 @@ def test_survival_mode_has_no_attacks():
 
 
 def test_gameplay_rule_fixes():
-    """조준 모드 기본값/기억, K.O. 조준 위험도, K.O. 인정 최근성, 봇 배지, 화면 흔들림 배율, 새 설정 키 검증"""
+    """조준 모드 기본값/기억, K.O. 조준 위험도, K.O. 인정 최근성, 봇 열기, 화면 흔들림 배율, 새 설정 키 검증"""
     import json as _json
     import config as _cfg
     from settings_manager import TARGET_MODE_OPTIONS, SHAKE_OPTIONS, SHAKE_SCALE
@@ -298,8 +298,8 @@ def test_gameplay_rule_fixes():
     m.players[c]["last_attacker"], m.players[c]["last_attack_t"] = a, m.elapsed - 2.0
     m._eliminate_player(c)
     assert m.players[a]["ko_count"] == 1, "최근 공격자에게는 K.O. 인정"
-    # 봇 배지: K.O.를 쌓은 봇은 공격력이 오르되 상한(+50%)을 넘지 않음
-    m.players[a]["ko_count"] = 8
+    # 봇 열기: K.O.를 쌓은 봇은 공격력이 오르되 상한(+50%)을 넘지 않음
+    m.players[a]["ko_count"] = 10
     m.update(1 / 60)
     assert m.players[a]["is_alive"] and m.players[a]["bot"].engine.badge_rate == BattleRoyaleMatch.BOT_BADGE_CAP
     # 화면 흔들림 배율

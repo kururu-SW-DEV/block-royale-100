@@ -3,7 +3,7 @@ Block Royale 100 - 타이틀 로고
   - "BLOCK" 글자를 실제 테트로미노(4칸 블록) 조각들로 조립해서 표현합니다.
     글자 도안을 테트로미노로 빈틈없이 채우는 정확한 타일링을 프로그램이 찾아 조각마다 고유 색을 입힙니다.
   - 메뉴 진입 시 조각들이 위에서 떨어져 글자를 완성하는 연출 후, 완성된 로고는 캐시된 이미지로 그립니다.
-  - 왕관(블록 제작) 부유 / 보석 반짝임 / 주기적인 빛 스윕 / ROYALE 100 배지
+  - 왕관(블록 제작) 부유 / 보석 반짝임 / 주기적인 빛 스윕 / ROYALE 100 열기
 """
 
 import math
@@ -220,7 +220,7 @@ class Logo:
                 pygame.draw.rect(title, seam_col, r_)
                 pygame.draw.rect(face, seam_col, r_)
 
-        # 2) ROYALE + 100 배지
+        # 2) ROYALE + 100 열기
         gold = (255, 214, 90)
         sub, sw, sh = self._render_royale(gold)
         b_txt = self.f_badge.render("100", True, (30, 20, 6))
@@ -330,7 +330,7 @@ class Logo:
 
         if elapsed < self.anim_total + 0.5:
             self._draw_assembly(screen, lx + self._title_x, ly, elapsed)
-            # ROYALE 배지는 조립이 거의 끝날 무렵 페이드인
+            # ROYALE 열기는 조립이 거의 끝날 무렵 페이드인
             fade = max(0.0, min(1.0, (elapsed - (self.anim_total - 0.5)) / 0.5))
             if fade > 0:
                 self._sub_layer.set_alpha(int(255 * fade))

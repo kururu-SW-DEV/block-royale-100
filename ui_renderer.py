@@ -48,10 +48,10 @@ def _tr_stamp():
 # 경기 단계별 테마 (1: 100~51인 · 2: 50인 이하 · 3: 최후의 결전). 배경 그라데이션 + 메인 보드 테두리 색
 TARGET_MODE_HELP = {
     "AUTO": "자동: 사람 상대가 있으면 사람 우선, 아니면 탈락 직전(쌓인 블록+받을 공격이 가장 큰) 상대를 노립니다.",
-    "KO": "K.O.: 쌓인 블록과 받을 공격이 가장 큰, 탈락 직전인 상대를 노립니다.",
-    "ATTACKERS": "반격: 나를 노리는 상대에게 되돌려줍니다. 둘 이상이면 전원에게 동시 포격합니다.",
-    "BADGES": "배지: K.O.를 가장 많이 쌓은(공격력이 오른) 상대를 노립니다.",
-    "RANDOM": "랜덤: 생존자 중 무작위 1명을 노리고, 그 상대가 살아 있는 동안 유지합니다.",
+    "KO": "추격: 쌓인 블록과 받을 공격이 가장 큰, 탈락 직전인 상대를 노립니다.",
+    "ATTACKERS": "응수: 나를 노리는 상대에게 되돌려줍니다. 둘 이상이면 전원에게 동시 포격합니다.",
+    "BADGES": "거물: K.O.를 가장 많이 쌓은(공격력이 오른) 상대를 노립니다.",
+    "RANDOM": "운명: 생존자 중 무작위 1명을 노리고, 그 상대가 살아 있는 동안 유지합니다.",
 }
 
 STAGE_THEMES = {
@@ -68,7 +68,7 @@ BUTTON_STYLES = {
 }
 
 TARGET_MODE_LABELS = {
-    "AUTO": "자동", "KO": "K.O.", "ATTACKERS": "반격", "BADGES": "배지", "RANDOM": "랜덤"
+    "AUTO": "자동", "KO": "추격", "ATTACKERS": "응수", "BADGES": "거물", "RANDOM": "운명"
 }
 
 
@@ -310,7 +310,7 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
         self._alive_prev = 0
         self._alive_t0 = -9.0
         self._alive_gate = -9.0
-        self._tier_seen = None           # 배지 단계 상승
+        self._tier_seen = None           # 열기 단계 상승
         self._tier_t0 = -9.0
         self._phase_fx = None            # 단계 전환 띠 {t0, phase}
         self._next_seen = None           # 다음 블록 슬라이드
@@ -1150,7 +1150,7 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
     KO_ORB_FLIGHT = 0.7      # 처치한 상대 카드에서 K.O. 칸까지 날아가는 시간(초)
 
     def _render_ko_orbs(self, match):
-        """내가 K.O.를 낼 때 처치한 상대 카드에서 K.O. 칸으로 빛 구슬이 날아가 도착하면 칸이 번쩍임 (배지 진행이 몸으로 느껴지게)"""
+        """내가 K.O.를 낼 때 처치한 상대 카드에서 K.O. 칸으로 빛 구슬이 날아가 도착하면 칸이 번쩍임 (열기 진행이 몸으로 느껴지게)"""
         orbs = getattr(match, "ko_orbs", None)
         dest_rect = self._hud_rects.get("ko")
         if not orbs or dest_rect is None:
@@ -1302,7 +1302,7 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
         return "생존자"
 
     def _render_top_banner(self, match, ox=0, oy=0):
-        """상단 3분할 HUD: 생존자 / 조준(모드 칩 + 대상) / 배지·K.O."""
+        """상단 3분할 HUD: 생존자 / 조준(모드 칩 + 대상) / 열기·K.O."""
         w1, w2, w3, gap, h = 170, 400, 170, 10, 58
         total_w = w1 + w2 + w3 + gap * 2
         sx = (self.width - total_w) // 2 + ox
@@ -1414,17 +1414,17 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
             self._draw_text(tag, self.font_tiny, C_DIM, r2.right - 12, r2.y + 37, "midright")
 
         if not getattr(match, "attacks_enabled", True):
-            return                                                  # 서바이벌: 배지/K.O. 칸 없음
-        # 3. 배지 / K.O.
+            return                                                  # 서바이벌: 열기/K.O. 칸 없음
+        # 3. 열기 / K.O.
         r3 = pygame.Rect(int(sx + w1 + w2 + gap * 2), int(by), w3, h)
         self._hud_rects["ko"] = r3
         tier, _, pct = match.get_badge_info()
-        # 0킬일 때는 위험 신호처럼 보이지 않도록 차분한 색, 처치가 생기면 붉은색, 배지가 있으면 금색
+        # 0킬일 때는 위험 신호처럼 보이지 않도록 차분한 색, 처치가 생기면 붉은색, 열기가 있으면 금색
         border3 = C_GOLD if tier > 0 else ((255, 120, 120) if match.local_ko_count > 0 else (74, 88, 128))
         self._panel(r3, border=border3)
         if self._tier_seen is None:
             self._tier_seen = tier
-        elif tier != self._tier_seen:                                   # 배지 단계가 오른 순간: 금빛 광채와 테두리 팝
+        elif tier != self._tier_seen:                                   # 열기 단계가 오른 순간: 금빛 광채와 테두리 팝
             if tier > self._tier_seen:
                 self._tier_t0 = time.time()
             self._tier_seen = tier
@@ -1432,7 +1432,7 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
         if 0.0 <= t_age < 0.7:
             draw_glow(self.screen, r3.centerx, r3.centery, 90, C_GOLD, 1.0 - t_age / 0.7)
             CANVAS.alpha_rect(r3.inflate(int(10 * (1.0 - t_age / 0.7)) + 2, int(10 * (1.0 - t_age / 0.7)) + 2), (*C_GOLD, int(230 * (1.0 - t_age / 0.7))), width=3, radius=12)
-        title = f"배지 Lv.{tier}  +{pct}" if tier > 0 else "K.O. 처치"
+        title = f"열기 Lv.{tier}  +{pct}" if tier > 0 else "K.O. 처치"
         self._draw_text(title, self.font_tiny, border3 if tier > 0 or match.local_ko_count > 0 else C_DIM, r3.centerx, r3.y + 5, "midtop")
         extra = match.players.get(match.local_player_id, {}).get("badge_extra", 0)
         self._draw_text(f"{match.local_ko_count}" + (f"+{extra}" if extra else "") + " K.O.", self.font_num, C_TEXT, r3.centerx, r3.y + 16, "midtop")
@@ -1759,7 +1759,7 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
         # 1. 보드 배경 + 미세 그리드
         border_col = C_GOLD if spectating else self._theme_border
         def _build_glow(surf):
-            pygame.draw.rect(surf, (*border_col, 26), (0, 0, bw + 24, bh + 24), border_radius=18)
+            self._soft_glow_rect(surf, border_col, 12, (bw + 24, bh + 24))
         self._blit_overlay(("board_glow", bw, bh, border_col), (bw + 24, bh + 24), _build_glow, (bx - 12, by - 12))
         if not spectating and engine is not None:
             self._render_board_aura(match, engine, bx, by, bw, bh)
@@ -1958,6 +1958,11 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
                 self._draw_text("!", self.font_hud, (255, 90, 90), bx + bw // 2, by + 2, "midtop")
 
         pygame.draw.rect(self.screen, border_col, board_rect, 2, border_radius=6)
+        perk = getattr(self, "border_perk", None)
+        if perk and not spectating:                                   # 레벨 보상 테두리 장식: 보드 바깥에 한 겹(이중이면 두 겹) 더
+            pygame.draw.rect(self.screen, perk[0], board_rect.inflate(6, 6), 1, border_radius=8)
+            if perk[1]:
+                pygame.draw.rect(self.screen, _mix(perk[0], (10, 12, 22), 0.35), board_rect.inflate(12, 12), 1, border_radius=10)
 
         # 6. 락 딜레이 진행 바 (바닥에 닿아 고정되기까지)
         lock_p = engine.get_lock_progress()
@@ -2116,6 +2121,20 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
         sec = int(g.t)
         self._draw_text("끝" if g.finished else f"{sec // 60}:{sec % 60:02d}", self.font_tiny, C_DIM, rect.right - 8, rect.y + 72, "topright")
 
+    @staticmethod
+    def _soft_glow_rect(surf, color, pad, size):
+        """보드 둘레의 부드러운 후광: 작게 그려 부드럽게 키워 가장자리가 계단 없이 서서히 사라짐 (한 번 굽고 캐시되는 용도)"""
+        w, h = size
+        k = 4
+        small = pygame.Surface((max(2, w // k), max(2, h // k)), pygame.SRCALPHA)
+        sw, sh = small.get_size()
+        n = pad // k + 1
+        for i in range(n):                                 # 바깥(0)이 가장 옅고 보드 쪽으로 갈수록 진해짐 (안쪽 사각형이 바깥쪽을 덮어씀)
+            a = int(44 * ((i + 1) / n) ** 1.6)
+            pygame.draw.rect(small, (*color, a), (i, i, sw - 2 * i, sh - 2 * i), border_radius=max(1, 5 - i // 2))
+        big = pygame.transform.smoothscale(small, (w, h))
+        surf.blit(big, (0, 0))
+
     def _render_next_box(self, engine, ox=0, oy=0):
         rect = pygame.Rect(self._right_x(ox), self.main_board_y + oy, 108, 266)
         self._panel(rect)
@@ -2128,7 +2147,7 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
         for i in range(min(getattr(self, "next_visible", 5), len(engine.next_queue))):
             scale = 22 if i == 0 else 15
             cy = rect.y + 56 if i == 0 else rect.y + 108 + (i - 1) * 40
-            self._render_preview_piece(engine.next_queue[i], rect.centerx, cy + slide, scale=scale, dim=(i > 0))
+            self._render_preview_piece(engine.next_queue[i], rect.centerx, cy + slide, scale=scale, alpha=(210 if i > 0 else None))
 
     @staticmethod
     def _fmt_goal_value(metric, v):
@@ -2312,7 +2331,7 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
             txt, tcol = (f"곧 {ready}줄 도착", col) if ready > 0 else ("차징 중", C_DIM)
             self._draw_text(txt, self.font_tiny, tcol, rect.centerx, rect.bottom - 10, "midbottom")
 
-    def _render_preview_piece(self, piece_type, center_x, center_y, scale=16, dim=False):
+    def _render_preview_piece(self, piece_type, center_x, center_y, scale=16, dim=False, alpha=None):
         shape = TETROMINOES[piece_type][0]
         min_x = min(x for x, y in shape)
         max_x = max(x for x, y in shape)
@@ -2320,7 +2339,7 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
         max_y = max(y for x, y in shape)
         start_x = center_x - (max_x - min_x + 1) * scale // 2
         start_y = center_y - (max_y - min_y + 1) * scale // 2
-        surf = self._cell_surface(piece_type, scale, dim=dim)
+        surf = self._cell_surface(piece_type, scale, dim=dim, alpha=alpha)
         for bx, by in shape:
             self.screen.blit(surf, (int(start_x + (bx - min_x) * scale), int(start_y + (by - min_y) * scale)))
 
@@ -2517,7 +2536,7 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
         leader_id, leader_ko = None, 1                             # 킬 리더: 살아 있는 상대 중 K.O.가 가장 많은 한 명 (2개 이상일 때만, 동률이면 먼저 나온 카드)
         for q, pp in match.players.items():
             if pp["is_alive"] and q != match.local_player_id and match.badge_points(q) > leader_ko:
-                leader_id, leader_ko = q, match.badge_points(q)                  # 왕관은 배지 점수(K.O. + 흡수분)가 가장 높은 상대: BADGES 조준 모드가 노리는 상대와 같게
+                leader_id, leader_ko = q, match.badge_points(q)                  # 왕관은 열기 점수(K.O. + 흡수분)가 가장 높은 상대: BADGES 조준 모드가 노리는 상대와 같게
 
         for idx, (pid, p) in enumerate(player_list):
             r, c = divmod(idx, cols)
@@ -3597,7 +3616,7 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
         self._hud_rects["spectate_bar"] = rect                                    # 테스트가 바가 가운데 빈 공간을 벗어나 미니 보드를 덮는지 확인
         self._panel(rect, border=C_GOLD, bg=(16, 20, 36), radius=12, alpha=245, border_w=2)
 
-        badge = pygame.Rect(rect.x + 12, rect.y + 8, max(64, self.font_small.size(_tr("관전 중"))[0] + 20), 22)         # 영어 "Spectating"이 배지 밖으로 나가지 않게 글자 폭에 맞춤
+        badge = pygame.Rect(rect.x + 12, rect.y + 8, max(64, self.font_small.size(_tr("관전 중"))[0] + 20), 22)         # 영어 "Spectating"이 열기 밖으로 나가지 않게 글자 폭에 맞춤
         pygame.draw.rect(self.screen, C_GOLD, badge, border_radius=11)
         self._draw_text("관전 중", self.font_small, (16, 20, 30), badge.centerx, badge.centery, "center")
         name_col = C_TEXT

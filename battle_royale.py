@@ -21,7 +21,7 @@ BOT_STYLE_WEIGHTS = (40, 20, 20, 20)
 
 
 def get_badge_info(ko_count):
-    """K.O. 수 -> (배지 단계, 공격력 보너스 배율, 표시 문자열). 단계별 기준은 config.BADGE_TIERS"""
+    """K.O. 수 -> (열기 단계, 공격력 보너스 배율, 표시 문자열). 단계별 기준은 config.BADGE_TIERS"""
     level = 0
     for lv, (need, _bonus) in enumerate(BADGE_TIERS):
         if ko_count >= need:
@@ -78,7 +78,7 @@ class BattleRoyaleMatch:
         self.send_agg = {"t": -9.0, "lines": 0, "tier": 0}      # 1.5초 안에 보낸 공격 줄 수 누적 (렌더러가 보드 위에 커지는 숫자로 표시)
         self.b2b_break_seq = 0                         # B2B가 끊길 때마다 +1 (렌더러가 오라가 깨지는 연출을 시작)
         self._prev_combo = -1                          # 콤보 끊김 알림용 (이전 프레임의 콤보)
-        self._ko_events = []                           # 예약된 K.O. 후속 연출 (구슬이 K.O. 칸에 도착하는 시점에 소리/배지 승급)
+        self._ko_events = []                           # 예약된 K.O. 후속 연출 (구슬이 K.O. 칸에 도착하는 시점에 소리/열기 승급)
         self._top_announced = set()                    # 이미 알린 TOP N
         self._final_announced = False
         self.final_opp_id = None                       # 결승 1:1 상대 (카드에 금빛 맥박)
@@ -101,7 +101,7 @@ class BattleRoyaleMatch:
         self.bounty_until = 0.0                        # 현재 골든 타깃의 만료 시각(경기 시간 elapsed 기준). 처치/만료/다른 봇이 먼저 잡으면 곧바로 다음 봇으로 넘어감
         self.net_unstable = set()                      # (호스트) 신호가 끊긴 참가자 ID: 미니 카드에 '연결 불안정' 표시
         self.net_unstable_self = False                 # (참가자) 호스트에게서 몇 초째 신호가 없음: 화면 아래에 안내
-        self.custom_rules = None                       # 커스텀 규칙(쓰레기 배율/낙하 속도/배지). 기본값이 아닐 때만 dict, 이 경기는 전적/점수표/경험치에 기록하지 않음
+        self.custom_rules = None                       # 커스텀 규칙(쓰레기 배율/낙하 속도/열기). 기본값이 아닐 때만 dict, 이 경기는 전적/점수표/경험치에 기록하지 않음
         self.bounty_kills = 0                          # 이번 판에 처치한 골든 타깃 수 (경험치 +30씩, 공격력 보너스는 없음)
         self._bounty_rng = random.Random()
         self.bests = {}                                # 시작 때의 개인 기록 {"max_ko", "best_rank", "best_score"} (경기 중 근접 실패/돌파 알림용)
@@ -170,7 +170,7 @@ class BattleRoyaleMatch:
         self.screen_shake = 0.0
         self.ko_orbs = []         # K.O. 연출: 처치한 상대 카드에서 K.O. 칸으로 날아가는 빛 구슬 [{"victim": id, "t0": 시각}]
         self.floating_texts = []  # dict: text, color, birth, duration, size
-        self.local_assists = 0            # K.O. 기여 횟수: 내가 4줄 이상 보내 둔 상대를 다른 플레이어가 마무리한 경우 (배지 보상은 없음)
+        self.local_assists = 0            # K.O. 기여 횟수: 내가 4줄 이상 보내 둔 상대를 다른 플레이어가 마무리한 경우 (열기 보상은 없음)
         self._auto_lock = None            # 자동 조준 락온: (대상 id, 고정한 시각)
         self.practice_done = set()        # 연습 과제 중 완료한 번호
         self.drill_on = False             # 연습 압박 드릴: 시간이 지날수록 더 큰 쓰레기 줄이 주기적으로 들어옴 (V 키)
@@ -410,7 +410,7 @@ class BattleRoyaleMatch:
             "bot": bot,
             "is_alive": True,
             "ko_count": 0,
-            "badge_extra": 0,                # K.O.로 흡수한 상대 배지 점수
+            "badge_extra": 0,                # K.O.로 흡수한 상대 열기 점수
             "rank": 0,
             "target_id": None,
             "trait": "",                    # 봇 성향 (반격형/저격형/균형형, 사람은 빈 문자열)
@@ -605,21 +605,21 @@ class BattleRoyaleMatch:
         """특정 플레이어를 조준 중인 살아있는 상대방 수 계산 (카운터 보너스 산정용)"""
         return sum(1 for p in self.players.values() if p["is_alive"] and p.get("target_id") == pid)
 
-    BADGE_ABSORB_MAX = 2         # K.O.로 상대에게서 흡수하는 배지 점수 상한 (상대 실제 K.O. 수의 절반, 최대 2. 눈덩이를 막으려고 흡수분은 다시 흡수되지 않고, 흡수 누적은 내 실제 K.O. 수 이하)
+    BADGE_ABSORB_MAX = 2         # K.O.로 상대에게서 흡수하는 열기 점수 상한 (상대 실제 K.O. 수의 절반, 최대 2. 눈덩이를 막으려고 흡수분은 다시 흡수되지 않고, 흡수 누적은 내 실제 K.O. 수 이하)
 
     def badge_points(self, pid=None):
-        """배지 단계 계산에 쓰는 점수 = 실제 K.O. 수 + 처치한 상대에게서 흡수한 점수 (전적/업적의 K.O. 수에는 흡수분이 들어가지 않음)"""
+        """열기 단계 계산에 쓰는 점수 = 실제 K.O. 수 + 처치한 상대에게서 흡수한 점수 (전적/업적의 K.O. 수에는 흡수분이 들어가지 않음)"""
         pid = self.local_player_id if pid is None else pid
         p = self.players.get(pid, {})
         ko = self.local_ko_count if pid == self.local_player_id else p.get("ko_count", 0)
         return ko + p.get("badge_extra", 0)
 
     def get_badge_info(self, ko_count=None):
-        """로컬 플레이어 또는 지정된 플레이어의 배지 등급 및 버프율 반환"""
+        """로컬 플레이어 또는 지정된 플레이어의 열기 등급 및 버프율 반환"""
         if ko_count is None:
             ko_count = self.badge_points()
         if self._custom("badges", True) is False:
-            return get_badge_info(0)                                        # 커스텀 규칙: 배지 보너스 없음
+            return get_badge_info(0)                                        # 커스텀 규칙: 열기 보너스 없음
         return get_badge_info(ko_count)
 
     def get_attacker_bonus(self, count):
@@ -807,7 +807,7 @@ class BattleRoyaleMatch:
     RETALIATE_DEFAULT = 0.25
     SMART_TARGET_CHANCE = {"저격형": 0.85}                 # 보통 난이도 봇이 위험도 기반 조준을 쓰는 확률 (성향별)
     SMART_TARGET_DEFAULT = 0.5
-    BOT_BADGE_CAP = 0.5              # 봇에게 적용하는 배지 공격력 증폭 상한 (+50%)
+    BOT_BADGE_CAP = 0.5              # 봇에게 적용하는 열기 공격력 증폭 상한 (+50%)
     KO_CREDIT_WINDOW = 15.0          # 마지막 공격 후 이 시간(초) 안에 탈락해야 그 공격자에게 K.O.를 인정
     HUMAN_FOCUS_CAP = 2              # 사람 플레이어에게는 더 낮은 상한 (봇보다 상쇄 능력이 낮아 같은 압박이 훨씬 무겁기 때문)
     KILL_EXTRA = 2                   # 탈락시킬 수 있는 마무리 공격은 상한을 이만큼까지만 초과 허용
@@ -1051,7 +1051,7 @@ class BattleRoyaleMatch:
             self._duck_bgm(1.0)
             self.trigger_screen_shake(18.0)
             
-        # K.O. 기여: 내가 막 보내 둔 상대를 다른 플레이어가 마무리했을 때 알려 줌 (배지/K.O. 수에는 반영 안 함)
+        # K.O. 기여: 내가 막 보내 둔 상대를 다른 플레이어가 마무리했을 때 알려 줌 (열기/K.O. 수에는 반영 안 함)
         if (killer_id != self.local_player_id and victim_id != self.local_player_id and self.local_is_alive and self.attacks_enabled):
             sent = sum(n for t, n in self.players[victim_id].get("from_local", ()) if self.elapsed - t <= self.KO_CREDIT_WINDOW)
             if sent >= 4:
@@ -1059,12 +1059,12 @@ class BattleRoyaleMatch:
                 self.log_event("assist", victim=victim_id, lines=sent)
                 self.add_floating_text(f"[처치 기여] {self._short_name(victim_id)}에게 {sent}줄 보냄", (255, 200, 120), duration=2.2, size=22, category="ko")
 
-        # 킬러에게 K.O. 부여 및 배지 등급 승급 판정
+        # 킬러에게 K.O. 부여 및 열기 등급 승급 판정
         if killer_id and killer_id in self.players:
             old_lvl, _, _ = get_badge_info(self.badge_points(killer_id))
             gain = 0
             if self.attacks_enabled and not self.practice and killer_id != victim_id and self._custom("badges", True) is not False:
-                gain = min(self.BADGE_ABSORB_MAX, int(self.players.get(victim_id, {}).get("ko_count", 0)) // 2)      # 처치한 상대 K.O. 수의 절반(최대 2)만큼 배지 점수 흡수
+                gain = min(self.BADGE_ABSORB_MAX, int(self.players.get(victim_id, {}).get("ko_count", 0)) // 2)      # 처치한 상대 K.O. 수의 절반(최대 2)만큼 열기 점수 흡수
             self.players[killer_id]["ko_count"] += 1
             room = max(0, self.players[killer_id]["ko_count"] - self.players[killer_id].get("badge_extra", 0))      # 흡수 누적은 내 실제 K.O. 수 이하
             gain = min(gain, room)
@@ -1082,8 +1082,8 @@ class BattleRoyaleMatch:
                 self.trigger_screen_shake(10.0, (0, 1), rumble_kind="ko")
                 self.trigger_impact(0.4)                                   # K.O. 결정타: 약한 번쩍임 (첫 K.O.는 아래에서 더 강하게)
                 victim_name = self.players.get(victim_id, {}).get("name", "상대")
-                self.add_floating_text(f"[K.O. 처치!] +{1 + gain} 배지 획득 >> {victim_name}" + (f"  (상대 배지 {gain} 흡수)" if gain else ""), (255, 220, 50), duration=2.5, size=24, category="ko")
-                # 보상을 두 번에 나눠 줌: 처치 순간(위) + 구슬이 K.O. 칸에 도착하는 순간(소리와 배지 승급, 0.7초 뒤)
+                self.add_floating_text(f"[K.O. 처치!] +{1 + gain} 열기 획득 >> {victim_name}" + (f"  (상대 열기 {gain} 흡수)" if gain else ""), (255, 220, 50), duration=2.5, size=24, category="ko")
+                # 보상을 두 번에 나눠 줌: 처치 순간(위) + 구슬이 K.O. 칸에 도착하는 순간(소리와 열기 승급, 0.7초 뒤)
                 self._ko_events.append({"due": time.time() + 0.7 + 0.1 * gain, "n": self.local_ko_count, "lvl_up": new_lvl > old_lvl, "lvl": new_lvl, "pct": new_pct})
                 if gold:
                     self.bounty_claimed = True
@@ -1539,7 +1539,7 @@ class BattleRoyaleMatch:
         self._check_live_achievements()
 
     def _process_ko_events(self):
-        """K.O. 구슬이 K.O. 칸에 도착하는 시점: 처치 수에 맞는 높이의 '띵' 소리, 배지 승급이면 승급음/배너"""
+        """K.O. 구슬이 K.O. 칸에 도착하는 시점: 처치 수에 맞는 높이의 '띵' 소리, 열기 승급이면 승급음/배너"""
         if not self._ko_events:
             return
         now = time.time()
@@ -1553,7 +1553,7 @@ class BattleRoyaleMatch:
             if e["lvl_up"]:
                 if self.sound_mgr:
                     self.sound_mgr.play('badge_up')
-                self.add_floating_text(f"★ 배지 승급 Lv.{e['lvl']}! 공격력 +{e['pct']} 강화! ★", (255, 235, 100), duration=3.0, size=26, category="action", tier=2)
+                self.add_floating_text(f"★ 열기 승급 Lv.{e['lvl']}! 공격력 +{e['pct']} 강화! ★", (255, 235, 100), duration=3.0, size=26, category="action", tier=2)
 
     def _announce_milestones(self, victim_id):
         """누군가 탈락한 뒤: 내가 살아 있을 때 TOP N 진입과 결승 1:1을 알림 (조용히 숫자만 줄어들던 순위가 보상이 되게)"""
@@ -1876,14 +1876,14 @@ class BattleRoyaleMatch:
             else:
                 self._eliminate_player(self.local_player_id)
             
-        # 4. 로컬 플레이어 공격 발생 처리 (오토매틱 공격 + 배지 증폭 + 카운터 보너스)
+        # 4. 로컬 플레이어 공격 발생 처리 (오토매틱 공격 + 열기 증폭 + 카운터 보너스)
         if self.local_engine.garbage_to_send > 0:
             target = self.players[self.local_player_id]["target_id"] if self.attacks_enabled else None
             if target:
                 target_p = self.players.get(target, {})
                 target_name = target_p.get("name", target)
                 
-                # 배지 증폭은 엔진에서 상쇄 이전에 이미 적용됨
+                # 열기 증폭은 엔진에서 상쇄 이전에 이미 적용됨
                 base_garbage = self.local_engine.garbage_to_send
                 badge_lvl, badge_rate, badge_pct = self.get_badge_info()
                 
@@ -1917,9 +1917,9 @@ class BattleRoyaleMatch:
                     self.trigger_screen_shake(10.0)
                 
                 lbl = "▶▶" if (self.local_target_mode == "ATTACKERS" and target_p.get("target_id") == self.local_player_id) else "▶"      # ▶▶ 자동 반격 / ▶ 공격 발송 (글자 대신 기호로 짧게)
-                tags = []                                                  # 괄호 하나에 짧게: "(배지2 · 역습+3 · ×1.4)"
+                tags = []                                                  # 괄호 하나에 짧게: "(열기2 · 역습+3 · ×1.4)"
                 if badge_lvl > 0:
-                    tags.append(f"배지{badge_lvl}")
+                    tags.append(f"열기{badge_lvl}")
                 if attacker_bonus > 0:
                     tags.append(f"역습+{attacker_bonus}")
                 if mult > 1.0:
@@ -2014,8 +2014,8 @@ class BattleRoyaleMatch:
                 else:
                     p["target_id"] = self._spread_random_target(pid)
                 
-            # 봇도 K.O.를 쌓으면 배지로 공격력이 오름 (BADGES 조준 모드가 봇 상대로도 의미가 있도록). 봇 상한은 BOT_BADGE_CAP
-            if p.get("_badge_ko") != p.get("ko_count", 0) + p.get("badge_extra", 0):      # 배지 점수가 바뀔 때만 다시 계산 (프레임마다 100번 부르지 않게)
+            # 봇도 K.O.를 쌓으면 열기로 공격력이 오름 (BADGES 조준 모드가 봇 상대로도 의미가 있도록). 봇 상한은 BOT_BADGE_CAP
+            if p.get("_badge_ko") != p.get("ko_count", 0) + p.get("badge_extra", 0):      # 열기 점수가 바뀔 때만 다시 계산 (프레임마다 100번 부르지 않게)
                 p["_badge_ko"] = p.get("ko_count", 0) + p.get("badge_extra", 0)
                 p["_badge_rate"] = min(self.BOT_BADGE_CAP, get_badge_info(p["_badge_ko"])[1]) if (self.attacks_enabled and self._custom("badges", True) is not False) else 0.0
             p["bot"].engine.badge_rate = p.get("_badge_rate", 0.0)

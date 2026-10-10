@@ -501,7 +501,7 @@ class SoundManager:
         w12 = (np.sin(p12) + 0.35 * np.sin(2 * p12)) * np.exp(-t12 * 10.0) * 0.55
         self.sounds['tspin'] = self._pack_sound(w12)
 
-        # 13. Badge Up: 배지 승급 환희의 4음 팡파레 차임 (C5 -> E5 -> G5 -> C6)
+        # 13. Badge Up: 열기 승급 환희의 4음 팡파레 차임 (C5 -> E5 -> G5 -> C6)
         t13 = np.arange(int(sr * 0.45)) / sr
         b_wave = np.zeros(len(t13), dtype=np.float32)
         b_notes = [523.25, 659.25, 783.99, 1046.50]

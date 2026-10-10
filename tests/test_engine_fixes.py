@@ -120,7 +120,7 @@ def test_badge_applies_before_cancel():
     e.current_y = 0
     e.queue_garbage(4)
     e.hard_drop()
-    # 쿼드(4) x2(배지 100%) = 8, 대기 4줄 상쇄 후 4줄 발송
+    # 쿼드(4) x2(열기 100%) = 8, 대기 4줄 상쇄 후 4줄 발송
     assert e.incoming_garbage == 0
     assert e.garbage_to_send == 4, e.garbage_to_send
 

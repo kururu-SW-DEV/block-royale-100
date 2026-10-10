@@ -74,7 +74,7 @@ class BlockEngine:
         self.b2b_chain = 0              # B2B 보너스를 연속으로 받은 횟수 (표시용: B2B x2, x3 ...)
         self.last_move_was_rotation = False  # T-스핀 판정용 회전 플래그
         self.last_kick_index = 0        # 마지막 회전에서 사용된 킥 인덱스 (T-스핀 Mini 판정용)
-        self.badge_rate = 0.0           # 배지 공격력 증폭률 (상쇄 이전에 적용)
+        self.badge_rate = 0.0           # 열기 공격력 증폭률 (상쇄 이전에 적용)
         self.last_clear_info = None     # 직전 클리어 상세 (T-Spin, B2B, 행 인덱스 등)
         self.cleared_row_indices = []   # 라인 클리어 시각 이펙트용 행 목록
         self.perfect_clear_attack = PERFECT_CLEAR_ATTACK   # 주간 변형 규칙으로 바뀔 수 있음
@@ -394,7 +394,7 @@ class BlockEngine:
             combo_att = COMBO_BONUS[min(self.combo, len(COMBO_BONUS) - 1)]
             attack_lines = base_attack + combo_att
 
-            # 배지 증폭은 상쇄 이전에 적용 (증폭된 공격력으로 들어오는 쓰레기를 상쇄)
+            # 열기 증폭은 상쇄 이전에 적용 (증폭된 공격력으로 들어오는 쓰레기를 상쇄)
             if self.badge_rate > 0:
                 attack_lines += int(math.ceil(attack_lines * self.badge_rate))
 

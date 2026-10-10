@@ -1,6 +1,6 @@
 """
 Block Royale 100 - 규칙 요약 카드 (F1)
-게임 안(일시정지 포함)과 메뉴 어디서든 F1로 열어 공격표 / 배지 / 역습 보너스 / 조준 모드 / 경기 흐름을 한 화면에서 확인.
+게임 안(일시정지 포함)과 메뉴 어디서든 F1로 열어 공격표 / 열기 / 역습 보너스 / 조준 모드 / 경기 흐름을 한 화면에서 확인.
 표의 숫자는 config 상수에서 직접 읽어 와서 규칙을 바꿔도 이 화면이 어긋나지 않는다.
 BlockRoyaleApp(main.py)이 상속하는 믹스인.
 """
@@ -23,10 +23,10 @@ def rules_card_data(match=None):
                ("연속 콤보", f"+{config.COMBO_BONUS[2]}~{config.COMBO_BONUS[-1]}줄"),
                ("B2B (연쇄 1~3/4~7/8~)", "+1 / +2 / +3줄")]
     badges = [(f"K.O. {need}개", f"공격력 +{int(pct * 100)}%") for need, pct in config.BADGE_TIERS if need > 0]
-    badges.append(("처치 시 상대 배지 흡수", f"K.O.의 절반 (최대 {BattleRoyaleMatch.BADGE_ABSORB_MAX})"))
+    badges.append(("처치 시 상대 열기 흡수", f"K.O.의 절반 (최대 {BattleRoyaleMatch.BADGE_ABSORB_MAX})"))
     bonus = [(f"{n}명이 나를 노림", f"+{config.ATTACKER_BONUS[n]}줄") for n in (2, 3, 4, 5)]
     bonus.append(("6명 이상", f"+{config.ATTACKER_BONUS[6]}줄"))
-    return [("공격 줄 수", attacks), ("K.O. 배지 (공격력 증폭)", badges), ("역습 보너스", bonus)]
+    return [("공격 줄 수", attacks), ("K.O. 열기 (공격력 증폭)", badges), ("역습 보너스", bonus)]
 
 
 def rules_card_notes(match=None):
@@ -64,9 +64,9 @@ class RulesMixin:
             self._close_rules()
 
     # 조준 모드 한 줄 요약 (긴 설명은 게임 중 조준 칸 툴팁에 있음)
-    TARGET_SHORT = {"AUTO": ("자동", "사람 우선, 없으면 탈락 직전인 상대"), "KO": ("K.O.", "쌓인 블록 + 받을 공격이 가장 큰 상대"),
-                    "ATTACKERS": ("반격", "나를 노리는 상대에게 (여럿이면 동시에)"), "BADGES": ("배지", "K.O.를 가장 많이 쌓은 상대"),
-                    "RANDOM": ("랜덤", "무작위 1명을 노리고 계속 유지")}
+    TARGET_SHORT = {"AUTO": ("자동", "사람 우선, 없으면 탈락 직전인 상대"), "KO": ("추격", "쌓인 블록 + 받을 공격이 가장 큰 상대"),
+                    "ATTACKERS": ("응수", "나를 노리는 상대에게 (여럿이면 동시에)"), "BADGES": ("거물", "K.O.를 가장 많이 쌓은 상대"),
+                    "RANDOM": ("운명", "무작위 1명을 노리고 계속 유지")}
 
     def _rules_card(self, rect, title, accent):
         """규칙 카드 안의 구역 하나: 연한 면 + 제목 앞 색 막대"""
@@ -76,7 +76,7 @@ class RulesMixin:
         r._draw_text(title, r.font_mid, C_TEXT, rect.x + 28, rect.y + 14)
 
     def _render_rules(self):
-        """규칙 요약 (F1): 위쪽에 숫자 표 3개(공격 줄 수 / K.O. 배지 / 역습 보너스), 아래쪽에 조준 모드와 경기 흐름. 구역마다 카드로 나누고 색은 제목 막대에만 씀"""
+        """규칙 요약 (F1): 위쪽에 숫자 표 3개(공격 줄 수 / K.O. 열기 / 역습 보너스), 아래쪽에 조준 모드와 경기 흐름. 구역마다 카드로 나누고 색은 제목 막대에만 씀"""
         from gfx import CANVAS
         r = self.renderer
         self.screen = CANVAS
