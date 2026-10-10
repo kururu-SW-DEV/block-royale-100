@@ -32,7 +32,7 @@ PARAMS = {
     # 기본 평가(El-Tetris 계열)  [tools/tune_bot.py 자체 대전으로 튜닝한 값]
     "w_row": 2.635, "w_col": 23.66, "w_hole": 7.356, "w_well": 2.747, "w_danger": 0.91, "danger_h": 11, "land": 1.325,
     # 공격 성향
-    "safe_h": 6, "ready": 22.34, "hold_i": 6.346, "land_atk": 0.661, "atk": 9.968, "single_pen": 5.678, "edge_well": 0.071, "combo": 5.694, "b2b": 6.36, "defend": 7.462, "tslot": 134.312, "no_i": 0.42, "low": 7,
+    "b2b_chain": 0, "safe_h": 6, "ready": 22.34, "hold_i": 6.346, "land_atk": 0.661, "atk": 9.968, "single_pen": 5.678, "edge_well": 0.071, "combo": 5.694, "b2b": 6.36, "defend": 7.462, "tslot": 134.312, "no_i": 0.42, "low": 7,
     "tslot_partial": 0.0, "hold_t": 0.0,
 }
 
@@ -279,7 +279,8 @@ def _attack(cleared, kind, combo_after, b2b_before, is_pc):
         base = GARBAGE_ATTACK_TABLE.get(cleared, 0)
     difficult = (cleared == 4) or kind is not None
     if difficult and b2b_before:
-        base += 1
+        v = int(b2b_before)                                  # B2B 상태: 0 = 없음, 그 뒤 값 = 지금까지 이어진 연쇄 + 1 (b2b_chain 가중치가 꺼져 있으면 True = 1)
+        base += 1 + (v >= 4) + (v >= 8)                      # 엔진과 같은 단계 보너스: 연쇄 1~3 = +1, 4~7 = +2, 8 이상 = +3
     if is_pc:
         base += PERFECT_CLEAR_ATTACK
     return base + COMBO_BONUS[min(combo_after, len(COMBO_BONUS) - 1)], difficult
@@ -475,7 +476,7 @@ def _step_reward(landing, eroded, cleared, kind, combo_before, b2b_before, incom
             if not difficult and cleared <= 2 and max_h_after + incoming <= PARAMS["low"]:
                 reward -= PARAMS["single_pen"]     # 낮게 쌓였을 땐 1~2줄 잔클리어보다 모아서 큰 공격을 노림
             if b2b_before and not difficult:
-                reward -= 4.0                # 연속 보너스를 끊는 수는 손해
+                reward -= 4.0 + (min(int(b2b_before) - 1, 7) if PARAMS["b2b_chain"] else 0)      # 연속 보너스를 끊는 수는 손해 (연쇄가 길수록 더)
             if difficult and b2b_before:
                 reward += PARAMS["b2b"]
         else:
@@ -484,7 +485,11 @@ def _step_reward(landing, eroded, cleared, kind, combo_before, b2b_before, incom
             reward += 60.0
         if incoming > 0:
             reward += min(attack, incoming) * PARAMS["defend"]      # 들어올 쓰레기를 공격으로 상쇄하면 그만큼 보너스(방어)
-        return reward, combo_after, difficult
+        if PARAMS["b2b_chain"]:
+            nb2b = (int(b2b_before) + 1 if b2b_before else 1) if difficult else 0           # 연쇄 길이를 이어 감 (어려운 클리어 = +1, 아닌 클리어 = 끊김)
+        else:
+            nb2b = difficult
+        return reward, combo_after, nb2b
     return reward, -1, b2b_before
 
 

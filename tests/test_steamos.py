@@ -14,6 +14,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pygame
 
 
+_ORIG_DATA_DIR = os.environ.get("BR_DATA_DIR")           # 테스트가 바꾼 데이터 폴더를 원래대로 돌리기 위해 (실행기가 준 임시 폴더나 비어 있음)
+
+
+def _restore_data_dir():
+    if _ORIG_DATA_DIR is None:
+        os.environ.pop("BR_DATA_DIR", None)
+    else:
+        os.environ["BR_DATA_DIR"] = _ORIG_DATA_DIR
+
+
 def _fresh_trace(tmp):
     os.environ["BR_DATA_DIR"] = tmp
     import startup_trace
@@ -40,6 +50,7 @@ def test_unfinished_launch_is_reported_next_time():
     st.begin()                                                 # 성공으로 끝난 기록은 다시 알리지 않음
     assert len(open(os.path.join(tmp, "error.log"), encoding="utf-8").read()) == n
     shutil.rmtree(tmp, ignore_errors=True)                     # 임시 폴더를 남기지 않음
+    _restore_data_dir()
 
 
 def test_trace_is_noop_before_begin_and_never_raises():
@@ -54,11 +65,13 @@ def test_trace_is_noop_before_begin_and_never_raises():
     st.mark("y")
     st.finish()
     shutil.rmtree(tmp, ignore_errors=True)
-    os.environ.pop("BR_DATA_DIR", None)
+    _restore_data_dir()
 
 
 def test_set_mode_retries_then_falls_back():
     from screens.core import CoreMixin
+    scratch = tempfile.mkdtemp()
+    os.environ["BR_DATA_DIR"] = scratch                        # 가짜 오류가 프로젝트의 진짜 error.log에 쌓이지 않게
     calls = []
     real = pygame.display.set_mode
 
@@ -89,6 +102,8 @@ def test_set_mode_retries_then_falls_back():
             pass
     finally:
         pygame.display.set_mode = real
+        shutil.rmtree(scratch, ignore_errors=True)
+        _restore_data_dir()
 
 
 def test_mixer_init_retries():

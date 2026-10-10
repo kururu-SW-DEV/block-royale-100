@@ -105,6 +105,13 @@ class AIBot:
                 err = min(0.6, err * PANIC_ERROR_MULT)
         return err
 
+    def _b2b_state(self):
+        """봇 탐색에 넘길 B2B 상태: 0 = 없음. 'b2b_chain' 가중치가 켜져 있으면 이어진 연쇄 + 1 (엔진의 단계 보너스를 계산에 반영), 아니면 참/거짓"""
+        e = self.engine
+        if e.b2b and (self.params or bot_brain.PARAMS).get("b2b_chain"):
+            return int(e.b2b_chain) + 1
+        return e.b2b
+
     def _at_spawn(self):
         """T-스핀 이동 경로는 항상 스폰 위치에서 출발하는 상대 경로라, 블록이 이미 내려와 있으면(봇 인계 직후 등) 쓰지 않음"""
         e = self.engine
@@ -124,7 +131,7 @@ class AIBot:
         e = self.engine
         t0 = time.perf_counter()
         results = bot_brain.plan(e.grid, e.current_piece, e.hold_piece, list(e.next_queue[:5]), e.can_hold,
-                                 e.combo, e.b2b, e.incoming_garbage, depth=depth, beam=self.brain["beam"],
+                                 e.combo, self._b2b_state(), e.incoming_garbage, depth=depth, beam=self.brain["beam"],
                                  attack_style=self.brain["attack"], use_tspin=self.brain["tspin"] and self._at_spawn(), params=self.params)
         cost = time.perf_counter() - t0
         bot_brain.spend(cost)
@@ -150,7 +157,7 @@ class AIBot:
             return False
         e = self.engine
         rid = bot_pool.submit(bot_brain.rows_from_grid(e.grid), e.current_piece, e.hold_piece, list(e.next_queue[:5]),
-                              e.can_hold, e.combo, e.b2b, e.incoming_garbage, self.depth, self.brain["beam"],
+                              e.can_hold, e.combo, self._b2b_state(), e.incoming_garbage, self.depth, self.brain["beam"],
                               self.brain["attack"], self.brain["tspin"] and self._at_spawn(), dict(self.params or bot_brain.PARAMS))
         if rid is None:
             return False

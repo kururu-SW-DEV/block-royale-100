@@ -181,6 +181,9 @@ def test_bot_params_override_and_pool():
     BB.plan_rows(*args, params={"w_hole": 0.0, "w_col": 0.1})                 # 이 계산에만 다른 가중치를 씀
     assert BB.PARAMS == before, "가중치 덮어쓰기가 전역 값을 남김"
     # 작업 프로세스: 직접 계산과 같은 결과, 죽으면 자동으로 꺼짐
+    import tempfile
+    saved_dir = os.environ.get("BR_DATA_DIR")
+    os.environ["BR_DATA_DIR"] = tempfile.mkdtemp()                           # 일부러 작업자를 죽이는 테스트라 'bot_pool disabled' 기록이 진짜 error.log에 남지 않게
     bot_pool.stop()
     bot_pool._state.update(started=False, broken=False)
     bot_pool.start(2)
@@ -200,9 +203,16 @@ def test_bot_params_override_and_pool():
         time.sleep(0.5)
         bot_pool.pump()
         assert not bot_pool.enabled() and bot_pool._state["broken"]
+        from app_paths import data_path
+        logged = open(data_path("error.log"), encoding="utf-8").read()
+        assert "worker process died (exit codes:" in logged, logged[-300:]       # 원인을 알 수 있게 종료 코드가 기록됨
     finally:
         bot_pool.stop()
         bot_pool._state.update(started=False, broken=False)
+        if saved_dir is None:
+            os.environ.pop("BR_DATA_DIR", None)
+        else:
+            os.environ["BR_DATA_DIR"] = saved_dir
     print("  OK bot params override + worker pool")
 
 

@@ -18,8 +18,10 @@ from gfx import CANVAS
 FX_MIN, FX_NORMAL, FX_FANCY = 0, 1, 2
 FX_NAMES = {"min": FX_MIN, "normal": FX_NORMAL, "fancy": FX_FANCY}
 
-_SPRITES = {}
-_MAX_SPRITES = 120
+from collections import OrderedDict
+
+_SPRITES = OrderedDict()                                # LRU: 오래 안 쓴 것부터 버림 (전에는 120개를 넘으면 전부 비워 메인 화면 로고 후광 같은 큰 스프라이트까지 다시 만들었음)
+_MAX_SPRITES = 220
 
 
 def _profile(n, power):
@@ -39,6 +41,7 @@ def glow_sprite(kind, w, h, color, level):
     key = (kind, w, h, tuple(color[:3]), level)
     spr = _SPRITES.get(key)
     if spr is not None:
+        _SPRITES.move_to_end(key)
         return spr
     k = (level + 1) / 5.0
     if kind == "band":
@@ -54,9 +57,9 @@ def glow_sprite(kind, w, h, color, level):
     rgb = (a[:, :, None] * (np.array(color[:3], dtype=np.float32)[None, None, :] * k)).astype(np.uint8)
     spr = pygame.Surface((w, h))
     pygame.surfarray.blit_array(spr, rgb)
-    if len(_SPRITES) >= _MAX_SPRITES:
-        _SPRITES.clear()
     _SPRITES[key] = spr
+    while len(_SPRITES) > _MAX_SPRITES:
+        _SPRITES.popitem(last=False)
     return spr
 
 
@@ -141,7 +144,8 @@ class GlowMixin:
         level = self._fx_level(match, a, cap=3)
         if level <= 0 or h <= 0:
             return
-        add_glow("column", x - cs * 0.3, y0, cs * 1.6, h, tr["col"], level)
+        hq = max(1, int(math.ceil(h / (cs * 4.0)))) * cs * 4          # 4칸 단위로 올림: 높이 1~20칸이 만드는 스프라이트 조합을 5개로 (착지 끝은 그대로, 위쪽이 조금 더 길게 옅어짐)
+        add_glow("column", x - cs * 0.3, y0 + h - hq, cs * 1.6, hq, tr["col"], level)
         if a > 0.55:                                                         # 착지 순간(앞 40%)만: 착지 줄 좌우로 퍼지는 가는 빛 선
             add_glow("band", x - cs * 2.2, y0 + h - cs * 0.9, cs * 5.4, cs * 1.8, tr["col"], max(0, level - 1))
 

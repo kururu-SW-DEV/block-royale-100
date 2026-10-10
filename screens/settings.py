@@ -62,7 +62,7 @@ TAB_NAV = {
              ("ghost", "ghost_toggle", "ghost=off", "ghost=on"),
              ("skyline", "skyline_toggle", "skyline=off", "skyline=on"),
              ("flash", "flash_toggle", "flash=off", "flash=on"),
-             ("errlog", "open_errlog", None, None)],
+             ("errlog", "open_errlog", "copy_diag", "open_errlog")],
     "general": [("fs", "toggle_fs", "fs=window", "fs=full"), ("res", "res_next", "res_prev", "res_next"),
                 ("mini", "mini_detail", "mini_detail=detailed", "mini_detail=simple"),
                 ("visual_fx", None, "fx_prev", "fx_next"),
@@ -521,6 +521,9 @@ class SettingsMixin:
         elif btn_id == "open_errlog":
             self.sound_mgr.play('move')
             self._open_error_log_folder()
+        elif btn_id == "copy_diag":
+            self.sound_mgr.play('move')
+            self._copy_diagnostics()
         elif btn_id in ("matchlog=on", "matchlog=off", "matchlog_toggle"):
             cur = bool(self.settings.get("match_log", False))
             new = (btn_id.endswith("=on")) if "=" in btn_id else (not cur)
@@ -810,6 +813,25 @@ class SettingsMixin:
         self._s_row("rumble", y, 46, "패드 진동", "쿼드/피격/K.O./하드 드롭 진동 (화면 흔들림과 따로 조절)")
         self._s_cycler("rumble_prev", "rumble_next", SHAKE_LABELS.get(rum, "보통"), RIGHT, y + 22)
         y += 46
+    def _copy_diagnostics(self):
+        """버전/환경/오류 기록을 클립보드에 복사 (Proton에서는 폴더 열기가 잘 안 될 수 있어 붙여 넣기로 알릴 수 있게)"""
+        import crash_log
+        try:
+            size = pygame.display.get_surface().get_size()
+        except Exception:
+            size = ("?", "?")
+        extra = {"display": f"{size[0]}x{size[1]}  scale {CANVAS.S:.2f}", "resolution setting": self.settings.get("resolution", "auto"),
+                 "visual_fx": self.settings.get("visual_fx", "normal"), "text_size": self.settings.get("text_size", "normal"),
+                 "language": self.settings.get("language", "ko"), "gamepad connected": bool(self.gamepad.connected())}
+        text = crash_log.diagnostics_text(extra)
+        self._diag_text = text
+        try:
+            pygame.scrap.init()
+            pygame.scrap.put_text(text)
+            self._diag_copied_until = time.time() + 2.5
+        except Exception:
+            self._diag_copied_until = 0.0
+
     def _render_tab_help(self):
         y = TOP
         done_ids = self.stats_mgr.achievements_done()
@@ -844,7 +866,9 @@ class SettingsMixin:
         self._s_seg([("flash=off", "끔"), ("flash=on", "켜기")], "flash=on" if fl_on else "flash=off", RIGHT, y + 22)
         y += 46
         self._s_row("errlog", y, 46, "오류 기록", "문제를 알릴 때 error.log를 함께 보내 주세요")
-        self._s_btn("open_errlog", pygame.Rect(RIGHT - 200, y + 5, 200, 36), "error.log 폴더 열기", True)
+        copied = time.time() < getattr(self, "_diag_copied_until", 0.0)
+        self._s_btn("copy_diag", pygame.Rect(RIGHT - 340, y + 5, 150, 36), "복사했습니다" if copied else "진단 정보 복사", True, color=C_GREEN if copied else None)
+        self._s_btn("open_errlog", pygame.Rect(RIGHT - 180, y + 5, 180, 36), "error.log 폴더", True)
 
     def _render_tab_general(self):
         y = TOP
@@ -866,7 +890,12 @@ class SettingsMixin:
                     "mini_detail=" + (self.settings.get("mini_detail") if self.settings.get("mini_detail") in ("detailed", "focus", "simple") else "focus"), RIGHT, y + 22)
         y += 46
         fxm = self.settings.get("visual_fx", "normal")
-        self._s_row("visual_fx", y, 46, "빛 연출", "빛 번짐·불씨·우승 연출 (화려하게: 음악 맥동)")
+        _base = "빛 번짐·불씨·우승 연출 (화려하게: 음악 맥동)"
+        if self.settings.get("screen_shake", "normal") == "off":
+            _base = "움직임 멈춤: 화면 흔들림이 꺼져 있음"                          # 빛 연출의 움직임은 '화면 흔들림', 밝기는 '화면 번쩍임' 설정을 따름 (다른 탭에 있어 이유를 알려 줌)
+        elif not self.settings.get("screen_flash", True):
+            _base = "밝기 낮춤: 화면 번쩍임이 꺼져 있음"
+        self._s_row("visual_fx", y, 46, "빛 연출", _base)
         self._s_cycler("fx_prev", "fx_next", {"min": "최소", "normal": "보통", "fancy": "화려하게"}.get(fxm, "보통"), RIGHT, y + 22, color=C_ACCENT)
         y += 46
         skin = self.settings.get("block_skin", "classic")

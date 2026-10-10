@@ -62,6 +62,28 @@ def note_swallowed(where):
         write_error(f"Swallowed exception ({where}, first occurrence)", traceback.format_exc())
 
 
+def diagnostics_text(extra=None, tail_lines=50):
+    """문제를 알릴 때 붙여 넣을 진단 정보 한 덩어리: 버전, OS/Proton, 해상도, 빛 연출 설정, startup.log, error.log 끝 부분.
+    (이름/주소/설정 파일 전체는 넣지 않음)"""
+    import platform
+    from app_paths import running_under_wine
+    lines = [f"BLOCK ROYALE 100 v{APP_VERSION}", f"OS: {platform.platform()}  python {platform.python_version()}  proton/wine: {bool(running_under_wine())}"]
+    for k, v in (extra or {}).items():
+        lines.append(f"{k}: {v}")
+    try:
+        with open(data_path("startup.log"), "r", encoding="utf-8", errors="replace") as f:
+            lines += ["", "--- startup.log ---", f.read().strip()[-1500:]]
+    except OSError:
+        pass
+    try:
+        with open(log_path(), "r", encoding="utf-8", errors="replace") as f:
+            tail = f.read().splitlines()[-tail_lines:]
+        lines += ["", f"--- error.log (last {len(tail)} lines) ---"] + tail
+    except OSError:
+        lines += ["", "--- error.log: (none) ---"]
+    return "\n".join(lines)
+
+
 def emergency_save(app):
     """치명적 오류로 종료하기 전에 설정/전적과 진행 중이던 판의 리플레이를 저장해 보려 함 (실패해도 무시)"""
     for fn in (lambda: app.settings.save(), lambda: app.stats_mgr.save()):

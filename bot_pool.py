@@ -157,7 +157,7 @@ def pump():
             st["pending"].discard(rid)
             st["ready"].pop(rid, None)
     if any(not p.is_alive() for p in st["procs"]):
-        _mark_broken("worker process died")
+        _mark_broken("worker process died (exit codes: %s)" % [p.exitcode for p in st["procs"]])      # 종료 코드: 0 = 정상 종료, 음수 = 신호로 죽음, 양수 = 오류 종료
     elif st["pending"] and st["hello"] > 0 and time.time() - st["last_res"] > STALL_AFTER:
         _mark_broken("worker stalled (no result for %.0fs)" % STALL_AFTER)   # 멈춘 작업자: 봇은 메인 프로세스에서 직접 계산하는 방식으로 이어감
 

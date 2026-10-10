@@ -93,6 +93,19 @@ def test_message_types_are_constants():
 
 
 def test_bot_pool_params_and_stale_cleanup():
+    import tempfile
+    _saved_dir = os.environ.get("BR_DATA_DIR")
+    os.environ["BR_DATA_DIR"] = tempfile.mkdtemp()               # 일부러 작업자를 비정상으로 만드는 검사라 'bot_pool disabled' 기록이 진짜 error.log에 남지 않게
+    try:
+        _body_botpool()
+    finally:
+        if _saved_dir is None:
+            os.environ.pop("BR_DATA_DIR", None)
+        else:
+            os.environ["BR_DATA_DIR"] = _saved_dir
+
+
+def _body_botpool():
     import pickle
     import bot_pool
     st = bot_pool._state

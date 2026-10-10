@@ -397,3 +397,7 @@ EXACT.update({"빛 번짐·불씨·우승 연출, 화려하게는 음악에 맞�
 
 # v1.4.38 빛 연출 설명이 영어에서 오른쪽 버튼과 겹치지 않게 짧게
 EXACT.update({"빛 번짐·불씨·우승 연출 (화려하게: 음악 맥동)": "Glow, embers, victory scenes (Fancy: beat pulse)"})
+
+# v1.4.40 진단 정보 복사 / 빛 연출 상태 안내
+EXACT.update({"진단 정보 복사": "Copy diagnostics", "복사했습니다": "Copied", "error.log 폴더": "error.log folder",
+              "움직임 멈춤: 화면 흔들림이 꺼져 있음": "Motion paused: screen shake is off", "밝기 낮춤: 화면 번쩍임이 꺼져 있음": "Dimmed: screen flash is off"})

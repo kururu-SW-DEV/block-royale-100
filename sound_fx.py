@@ -1600,6 +1600,8 @@ class SoundManager:
 
     def pause_bgm(self):
         """배경음악 일시정지 (콤보 하이햇 층도 함께: 안 그러면 멜로디만 멈추고 드럼만 혼자 울림)"""
+        if not self._bgm_paused:
+            self._beat_pause_t = time.time()                   # 박자 시계도 같이 멈춤 (재개할 때 이 시간만큼 뒤로 미룸)
         self._bgm_paused = True
         if self.bgm_ch_a:
             self.bgm_ch_a.pause()
@@ -1612,6 +1614,11 @@ class SoundManager:
 
     def unpause_bgm(self):
         """배경음악 재개"""
+        pt = getattr(self, "_beat_pause_t", None)
+        b = getattr(self, "_beat", None)
+        if self._bgm_paused and pt is not None and b:
+            self._beat = (b[0], b[1] + (time.time() - pt))     # 음악은 멈춘 자리에서 이어지므로 박자 시작 시각도 그만큼 뒤로
+        self._beat_pause_t = None
         self._bgm_paused = False
         try:
             pygame.mixer.Channel(3).unpause()

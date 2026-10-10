@@ -322,19 +322,30 @@ class SettingsManager:
         self.data = copy.deepcopy(DEFAULT_SETTINGS)
         self.load()
 
+    SCHEMA = 1                      # 설정 파일 형식 버전: 키 이름을 바꾸거나 값의 뜻을 바꿀 때 올리고 _migrate에 옮기는 규칙을 추가
+
+    @staticmethod
+    def _migrate(saved):
+        """이전 형식의 저장값을 현재 형식으로 옮김 (아직 옮길 것은 없음: 형식 버전이 없던 파일 = 0 -> 1은 그대로)"""
+        return saved
+
     @_bumps_keys
     def load(self):
         """settings.json 파일에서 설정 불러오기"""
+        self.unknown = {}
         if os.path.exists(self.filepath):
             try:
                 with open(self.filepath, "r", encoding="utf-8") as f:
                     saved = json.load(f)
                     if isinstance(saved, dict):
+                        saved = self._migrate(saved)
                         for k, v in saved.items():
                             if k in DEFAULT_SETTINGS:
                                 ok, val = _valid_setting(k, v)
                                 if ok:
                                     self.data[k] = val               # 타입/범위가 맞지 않는 값은 기본값 유지
+                            elif k != "schema":
+                                self.unknown[k] = v                  # 이 버전이 모르는 키(더 새 버전이 저장한 설정)는 버리지 않고 저장할 때 그대로 돌려 씀
                     else:
                         _backup_corrupt(self.filepath)
             except Exception as e:
@@ -348,7 +359,10 @@ class SettingsManager:
         try:
             tmp = self.filepath + ".tmp"                      # 임시 파일에 쓴 뒤 교체: 저장 도중 종료돼도 원본이 깨지지 않음
             with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(self.data, f, indent=4, ensure_ascii=False)
+                out = dict(getattr(self, "unknown", {}) or {})
+                out.update(self.data)
+                out["schema"] = self.SCHEMA
+                json.dump(out, f, indent=4, ensure_ascii=False)
             os.replace(tmp, self.filepath)
         except Exception as e:
             print(f"[SettingsManager] Failed to save settings: {e}")

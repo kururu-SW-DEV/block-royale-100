@@ -153,6 +153,7 @@ class MenuMixin:
 
     def _update_menu(self, dt):
         self.menu_bg.update(dt)
+        self.renderer.release_scene_caches()               # 메뉴로 돌아오면 우승 광선/박자 변형 같은 전체 화면 캐시를 비움
         if not self._menu_active:                          # 메뉴에 들어올 때마다 카드 등장 연출을 처음부터
             self._menu_active = True
             self._menu_intro_t = 0.0
