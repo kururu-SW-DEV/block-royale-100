@@ -2423,20 +2423,20 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
         if not getattr(match, "attacks_enabled", True) or len(match.players) - 1 < self.SPOTLIGHT_MIN_OTHERS:
             return
         y0 = self.main_board_y + 114 + getattr(self, "_stats_h", 200) + 118 + oy
-        h = 758 + oy - y0
-        if h < 150:
+        h = self.main_board_y + self.main_board_h + oy - y0          # 보드 아래의 조작 키 안내 줄과 겹치지 않게 보드 아래쪽 끝까지만
+        if h < 126:
             return
         picks = self._spotlight_picks(match)
         if not picks:
             return
-        rect = pygame.Rect(self._left_x(ox), y0, 108, min(h, 168))
+        rect = pygame.Rect(self._left_x(ox), y0, 108, min(h, 140))
         self._panel(rect)
-        self._draw_text("주시 대상", self.font_tiny, C_ACCENT, rect.centerx, rect.y + 6, "midtop")
-        cw, chh = 46, 92
+        self._draw_text("주시 대상", self.font_tiny, C_ACCENT, rect.centerx, rect.y + 4, "midtop")
+        cw, chh = 40, 80
         gap = 4
         total = len(picks) * cw + (len(picks) - 1) * gap
         x = rect.x + (rect.w - total) // 2
-        cy0 = rect.y + 40
+        cy0 = rect.y + 32
         for pid, label, col in picks:
             p = match.players[pid]
             card = pygame.Rect(x, cy0, cw, chh)
@@ -2451,8 +2451,8 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
             name = p["name"]
             if name.startswith("CPU_"):
                 name = name[4:]
-            self._draw_text(name[:3], self.font_tiny, C_TEXT, x + cw // 2, card.bottom + 3, "midtop")
-            self._draw_text(label, self.font_tiny, col, x + cw // 2, card.y - 14, "midtop")
+            self._draw_text(name[:3], self.font_tiny, C_TEXT, x + cw // 2, card.bottom + 2, "midtop")
+            self._draw_text(label, self.font_tiny, col, x + cw // 2, card.y - 13, "midtop")
             x += cw + gap
 
     def _render_opponent_card(self, match, pid, x, y, w, h, colors):
