@@ -950,7 +950,7 @@ SKIN_UNLOCKS = {
 
 def unlocked_skin_ids(stats_data):
     """지금 쓸 수 있는 스킨 id 목록 (기본 4종 + 조건을 채운 해금 스킨)"""
-    out = ["classic", "neon", "flat", "jelly"]
+    out = ["crown", "classic", "neon", "flat", "jelly"]
     out += [sid for sid, (_d, ok) in SKIN_UNLOCKS.items() if ok(stats_data)]
     return out
 

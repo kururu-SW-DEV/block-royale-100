@@ -1314,7 +1314,7 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
         self._hud_rects["survivors"] = r1
         self._panel(r1, border=C_GOLD)
         practice = getattr(match, "practice", False)
-        self._draw_text(self._survivor_title(match), self.font_tiny, C_GOLD, r1.centerx, r1.y + 5, "midtop")
+        self._draw_text(self._survivor_title(match), self.font_tiny, C_GOLD, r1.centerx, r1.y + 4, "midtop")
         now_b = time.time()
         alive_now = match.alive_count
         if self._alive_seen is None or practice:
@@ -1325,16 +1325,16 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
             self._alive_seen = alive_now
         a_age = now_b - self._alive_t0
         if practice:
-            self._draw_text("연습 중", self.font_num, C_TEXT, r1.centerx, r1.y + 16, "midtop")
+            self._draw_text("연습 중", self.font_num, C_TEXT, r1.centerx, r1.y + 22, "midtop")
         elif 0.0 <= a_age < 0.3:
             txt_old, txt_new = f"{self._alive_prev} / {match.total_players}", f"{alive_now} / {match.total_players}"
             k = _ease_out(a_age / 0.3)
-            self._fade_text(txt_old, self.font_num, C_DIM, r1.centerx, r1.y + 16 + 18 * k, 255 * (1.0 - k), "midtop")
+            self._fade_text(txt_old, self.font_num, C_DIM, r1.centerx, r1.y + 22 + 18 * k, 255 * (1.0 - k), "midtop")
             ns = self._scaled_hi(self.font_num.render(txt_new, True, _mix(C_GOLD, C_TEXT, k)), 1.0 + 0.3 * (1.0 - k))
             ns.set_alpha(int(255 * min(1.0, 0.3 + k)))
-            self.screen.blit(ns, ns.get_rect(midtop=(int(r1.centerx), int(r1.y + 16 - 3 * (1.0 - k)))))
+            self.screen.blit(ns, ns.get_rect(midtop=(int(r1.centerx), int(r1.y + 22 - 3 * (1.0 - k)))))
         else:
-            self._draw_text(f"{alive_now} / {match.total_players}", self.font_num, C_TEXT, r1.centerx, r1.y + 16, "midtop")
+            self._draw_text(f"{alive_now} / {match.total_players}", self.font_num, C_TEXT, r1.centerx, r1.y + 22, "midtop")
         if not practice and alive_now % 10 == 0 and alive_now >= 10 and 0.0 <= a_age < 0.6 and alive_now < self._alive_prev:
             CANVAS.alpha_rect(r1.inflate(8, 8), (*C_GOLD, int(220 * (1.0 - a_age / 0.6))), width=3, radius=12)        # 90·80·70… 구간 통과: 칸 테두리가 한 번 번짐
         ratio = match.alive_count / max(1, match.total_players)
@@ -1434,9 +1434,9 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
             draw_glow(self.screen, r3.centerx, r3.centery, 90, C_GOLD, 1.0 - t_age / 0.7)
             CANVAS.alpha_rect(r3.inflate(int(10 * (1.0 - t_age / 0.7)) + 2, int(10 * (1.0 - t_age / 0.7)) + 2), (*C_GOLD, int(230 * (1.0 - t_age / 0.7))), width=3, radius=12)
         title = f"열기 Lv.{tier}  +{pct}" if tier > 0 else "K.O. 처치"
-        self._draw_text(title, self.font_tiny, border3 if tier > 0 or match.local_ko_count > 0 else C_DIM, r3.centerx, r3.y + 5, "midtop")
+        self._draw_text(title, self.font_tiny, border3 if tier > 0 or match.local_ko_count > 0 else C_DIM, r3.centerx, r3.y + 4, "midtop")
         extra = match.players.get(match.local_player_id, {}).get("badge_extra", 0)
-        self._draw_text(f"{match.local_ko_count}" + (f"+{extra}" if extra else "") + " K.O.", self.font_num, C_TEXT, r3.centerx, r3.y + 16, "midtop")
+        self._draw_text(f"{match.local_ko_count}" + (f"+{extra}" if extra else "") + " K.O.", self.font_num, C_TEXT, r3.centerx, r3.y + 22, "midtop")
         ko = match.badge_points()
         cur_thr, next_thr = 0, None
         for thr, _rate in BADGE_TIERS:
@@ -1525,6 +1525,24 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
                 col = _mix(color, (255, 255, 255), k) if k > 0 else _mix(color, (0, 0, 0), -k)
                 pygame.draw.polygon(surf, col, pts)
             pygame.draw.rect(surf, _mix(color, (255, 255, 255), 0.7), outer, max(1, sc(1)))
+        elif skin == "crown":                                                   # 왕관석: 모서리를 깎은 돌 + 윗면 빛 + 가운데 새긴 왕관 (이 게임만의 기본 블록)
+            ch = max(sc(2), n // 5)
+            x0, y0, x1, y1 = outer.left, outer.top, outer.right - 1, outer.bottom - 1
+            octa = [(x0 + ch, y0), (x1 - ch, y0), (x1, y0 + ch), (x1, y1 - ch), (x1 - ch, y1), (x0 + ch, y1), (x0, y1 - ch), (x0, y0 + ch)]
+            pygame.draw.polygon(surf, _mix(color, (0, 0, 0), 0.50), octa)
+            inset = max(1, sc(2))
+            io = [(x0 + ch + inset // 2, y0 + inset), (x1 - ch - inset // 2, y0 + inset), (x1 - inset, y0 + ch + inset // 2), (x1 - inset, y1 - ch - inset // 2),
+                  (x1 - ch - inset // 2, y1 - inset), (x0 + ch + inset // 2, y1 - inset), (x0 + inset, y1 - ch - inset // 2), (x0 + inset, y0 + ch + inset // 2)]
+            pygame.draw.polygon(surf, color, io)
+            if size >= 10:
+                pygame.draw.polygon(surf, _mix(color, (255, 255, 255), 0.45), [io[7], io[0], io[1], io[2], (x1 - inset - ch, y0 + inset + max(1, n // 4)), (x0 + inset + ch, y0 + inset + max(1, n // 4))])
+                pygame.draw.polygon(surf, _mix(color, (0, 0, 0), 0.25), [io[4], io[5], io[6], (x0 + inset + ch // 2, y1 - inset - max(1, n // 6)), (x1 - inset - ch // 2, y1 - inset - max(1, n // 6))])
+            if size >= 15:                                                      # 새긴 왕관: 점 세 개짜리 작은 왕관
+                cx, cy = outer.center
+                w, h = max(sc(3), n // 4), max(sc(3), n // 5)
+                crown_pts = [(cx - w, cy + h // 2), (cx - w, cy - h // 2), (cx - w // 2, cy), (cx, cy - h), (cx + w // 2, cy), (cx + w, cy - h // 2), (cx + w, cy + h // 2)]
+                pygame.draw.polygon(surf, _mix(color, (255, 255, 255), 0.80), crown_pts)
+                pygame.draw.polygon(surf, _mix(color, (0, 0, 0), 0.35), crown_pts, 1)
         elif skin == "flat":
             radius = int(round(max(1, size // 10) * S))
             pygame.draw.rect(surf, color, outer, border_radius=radius)
@@ -1554,11 +1572,17 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
                 sh_h = max(sc(2), inner.h // 5)
                 sh = pygame.Rect(inner.x + sc(1), inner.bottom - sh_h - sc(1), inner.w - 2 * sc(1), sh_h)
                 pygame.draw.rect(surf, _mix(color, (0, 0, 0), 0.22), sh, border_radius=sc(1))
-        if piece_type == "G" and size >= 10:                                      # 쓰레기 칸: 어두운 사선 해칭으로 일반 블록과 한눈에 구분
+        if piece_type == "G" and size >= 10:                                      # 쓰레기 칸: 부서진 성벽 벽돌 무늬(가로 줄눈 + 엇갈린 세로 줄눈)로 일반 블록과 한눈에 구분
             hatch = pygame.Surface((n, n), pygame.SRCALPHA)
-            step = max(sc(4), n // 3)
-            for i in range(-n, n, step):
-                pygame.draw.line(hatch, (0, 0, 0, 78), (i, n), (i + n, 0), max(1, sc(1)))
+            rows = 3
+            rh = max(2, n // rows)
+            lw = max(1, sc(1))
+            for r in range(rows + 1):
+                pygame.draw.line(hatch, (0, 0, 0, 96), (0, r * rh), (n, r * rh), lw)
+            for r in range(rows):
+                off = 0 if r % 2 == 0 else n // 2
+                for vx in ((off + n // 2) % n, off % n if off else 0):
+                    pygame.draw.line(hatch, (0, 0, 0, 96), (vx, r * rh), (vx, (r + 1) * rh), lw)
             hatch.blit(surf, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)          # 블록 모양(둥근 모서리) 밖에는 그리지 않음
             surf.blit(hatch, (0, 0))
         if alpha is not None:
@@ -2452,7 +2476,7 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
             if name.startswith("CPU_"):
                 name = name[4:]
             shown = name[:4]
-            while len(shown) > 2 and self.font_tiny.size(shown)[0] > 46:          # 이웃 카드의 이름과 겹치지 않는 폭 안에서 최대한 길게
+            while len(shown) > 2 and self.font_tiny.size(shown)[0] > 40:          # 이웃 카드의 이름과 겹치지 않는 폭 안에서 최대한 길게
                 shown = shown[:-1]
             self._draw_text(shown, self.font_tiny, C_TEXT, x + cw // 2, card.bottom + 2, "midtop")
             self._draw_text(label, self.font_tiny, col, x + cw // 2, card.y - 13, "midtop")
@@ -2774,6 +2798,9 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
             if is_alive and cg and len(cg) == BOARD_HEIGHT:
                 cp = ccp
                 self._blit_mini_cells(pid, cgt, cbx, cby, ccp * BOARD_WIDTH, ccp * BOARD_HEIGHT, cp)
+                if silhouette:                                   # 선택적 흐림: 지금 신경 쓸 상대가 아닌 카드는 어둡게 눌러 눈에 덜 띄게 (집중 보기)
+                    sw_, sh_ = board_rect.w, board_rect.h
+                    self._blit_overlay(("mini_blur", sw_, sh_), (sw_, sh_), lambda surf: surf.fill((8, 10, 20, 120)), (board_rect.x, board_rect.y))
             cpiece = p.get("cpiece")
             if detailed and is_alive and cpiece and cg and len(cg) == BOARD_HEIGHT:
                 # 조작 중인 블록도 표시 (고정된 블록보다 밝게)

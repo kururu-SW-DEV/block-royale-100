@@ -415,6 +415,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                 and self.stats_mgr.data.get("survival", {}).get("total_games", 0) == 0):
             self.settings.set("target_player_count", 50, autosave=False)
             self.settings.set("bot_difficulty", "easy", autosave=False)
+            self.settings.set("block_skin", "crown", autosave=False)           # 처음 설치한 사람은 이 게임만의 왕관석 블록으로 시작 (기존 사용자의 선택은 그대로)
             from app_paths import running_under_wine
             if running_under_wine():
                 self.settings.set("text_size", "large", autosave=False)       # 스팀덱(Proton) 7인치 화면: 작은 글씨가 읽기 어려워 처음부터 '크게'

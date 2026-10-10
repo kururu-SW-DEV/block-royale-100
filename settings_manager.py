@@ -59,8 +59,9 @@ SHAKE_LABELS = {"off": "끔", "low": "약하게", "normal": "보통"}
 RUMBLE_SCALE = {"off": 0.0, "low": 0.5, "normal": 1.0}      # 패드 진동 세기 (화면 흔들림 설정과 따로)
 
 # 블록 스킨: 게임 화면의 블록 모양 (색은 색상 모드 설정을 따름)
-BLOCK_SKIN_OPTIONS = ["classic", "neon", "flat", "jelly", "pixel", "glass", "starlight", "ember", "prism"]      # pixel/glass/starlight/ember/prism은 해금 스킨 (stats_manager.SKIN_UNLOCKS)
+BLOCK_SKIN_OPTIONS = ["crown", "classic", "neon", "flat", "jelly", "pixel", "glass", "starlight", "ember", "prism"]      # pixel/glass/starlight/ember/prism은 해금 스킨 (stats_manager.SKIN_UNLOCKS)
 BLOCK_SKIN_LABELS = {
+    "crown": "왕관석",
     "classic": "클래식",
     "neon": "네온",
     "flat": "플랫",
@@ -72,6 +73,7 @@ BLOCK_SKIN_LABELS = {
     "prism": "프리즘 (해금)",
 }
 BLOCK_SKIN_DESCS = {
+    "crown": "모서리를 깎은 돌에 왕관 문양을 새긴 고유 블록",
     "classic": "입체감 있는 기본 블록",
     "neon": "테두리가 빛나는 블록",
     "flat": "깔끔한 단색 블록",

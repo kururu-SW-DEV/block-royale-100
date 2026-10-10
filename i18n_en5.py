@@ -413,3 +413,6 @@ EXACT.update({"주시 대상": "Watch list", "위협": "Threat", "표적": "Targ
 
 # 경기 중 팁 문구("TIP  " + 안내문)가 영어에서 한글로 남던 것
 TEMPLATES.update({"TIP  {}": "TIP  {}"})
+
+# v1.4.49 왕관석 스킨
+EXACT.update({"왕관석": "Crownstone", "모서리를 깎은 돌에 왕관 문양을 새긴 고유 블록": "Chamfered stone blocks engraved with a crown"})
