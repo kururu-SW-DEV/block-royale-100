@@ -141,6 +141,7 @@ class BriefMixin:
         m = self.match
         m.brief_open = False
         now = _t.time()
+        self._long_frame_grace_until = now + self.LONG_FRAME_GRACE      # 브리핑을 읽은 뒤 시작하는 모드(오늘의 도전/주간 변형 등)도 첫 장면 준비 유예
         m.countdown_until = now + m.COUNTDOWN_SECS
         if getattr(m, "coach_pending", False):
             m.coach_until = max(getattr(m, "coach_until", 0.0), now + m.COUNTDOWN_SECS + 12.0)     # 첫 판 코치는 카드를 닫은 뒤부터 보이게

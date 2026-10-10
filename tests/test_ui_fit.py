@@ -227,7 +227,7 @@ def collect(lang):
 
 
 def main():
-    if not pygame.font.match_font("malgungothic"):
+    if not __import__("font_utils").bundled_font_path(False) and not pygame.font.match_font("malgungothic"):
         # 글자 폭은 글꼴에 따라 달라지므로, 실제 게임이 쓰는 맑은 고딕이 없는 PC(예: GitHub Actions 러너)에서는 비교가 의미 없어 건너뜀
         print("[SKIP] 맑은 고딕이 없어 칸별 너비 검사를 건너뜁니다")
         print("[ALL UI FIT TESTS PASSED] (skipped)")

@@ -117,8 +117,8 @@ def test_bundled_paths_prefer_bold_file_and_packaging_includes_the_folder():
     bat = open(os.path.join(root, "build_exe.bat"), encoding="utf-8").read()
     assert r'--add-data "..\assets\fonts;assets\fonts"' in bat and r"if not exist assets\fonts mkdir assets\fonts" in bat
     notices = open(os.path.join(root, "THIRD_PARTY_NOTICES.md"), encoding="utf-8").read()
-    assert "Nanum Gothic" in notices and "SIL Open Font License" in notices
-    assert font_utils.BOLD_CANDIDATES[0].endswith("Bold.ttf") and font_utils.REGULAR_CANDIDATES[0].endswith("Regular.ttf")
+    assert "Nanum Barun Gothic" in notices and "Black Han Sans" in notices and "SIL Open Font License" in notices
+    assert "Bold" in font_utils.BOLD_CANDIDATES[0] and "Nanum" in font_utils.REGULAR_CANDIDATES[0]
 
 
 def test_hifont_still_renders_korean_with_the_real_system_font():

@@ -16,15 +16,9 @@ BLOCK ROYALE 100은 아래 오픈소스 소프트웨어를 사용합니다. 각 
   (예: PyInstaller의 폴더(one-dir) 방식 사용, 라이브러리 원본 소스 제공 위치 안내).
 
 ## 포함되지 않은 자산
-- **글꼴**: 게임은 OS에 설치된 글꼴(Windows의 "맑은 고딕" 등)을 불러 쓰며 글꼴 파일을 포함하지 않습니다. 글꼴 파일을 함께 배포하려면 해당 글꼴의 라이선스를 확인하세요.
+- **글꼴**: 게임이 쓰는 글꼴은 아래 항목(나눔바른고딕, Black Han Sans)처럼 `assets/fonts/`에 함께 배포하며, 모두 SIL Open Font License입니다. 동봉 글꼴을 열 수 없으면 OS에 설치된 글꼴로 대신합니다.
 - **사운드/음악**: 외부 음원 파일 없이 `sound_fx.py`가 코드로 합성합니다.
 - **아이콘**(`icon.png`, `icon.ico`): `make_icon.py`가 코드로 직접 그린 자체 제작물입니다(외부 이미지 미사용). 다시 만들려면 `python make_icon.py`를 실행하세요.
-
-## Nanum Gothic (나눔고딕) — 선택 동봉 글꼴
-- SteamOS/Proton처럼 OS에 한글 글꼴이 없을 때만 대체 글꼴로 쓰입니다 (`assets/fonts/`, 파일이 있을 때). OS 글꼴이 있으면 쓰이지 않습니다.
-- 저작권: NHN Corporation / NAVER (정확한 저작권 표시와 예약 글꼴 이름은 글꼴과 함께 받은 `OFL.txt`의 내용을 그대로 따릅니다)
-- 라이선스: SIL Open Font License, Version 1.1 — https://scripts.sil.org/OFL (전문은 `assets/fonts/OFL.txt`)
-- 수정 없이 그대로 동봉하며, 글꼴 파일만 따로 판매하지 않습니다.
 
 ## Black Han Sans (블랙한산스) — 제목/배너용 동봉 글꼴
 - 화면 제목과 큰 액션 배너에 쓰입니다 (`assets/fonts/BlackHanSans-Regular.ttf`). 파일이 없으면 기본 글꼴로 대체됩니다.

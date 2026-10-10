@@ -164,6 +164,36 @@ def test_leaving_a_match_switches_to_menu_music_quickly():
     assert "play_menu_bgm(quick=True)" in inspect.getsource(M.BlockRoyaleApp.return_to_menu)
 
 
+def test_grace_keeps_held_keys_and_auto_pause_reason_is_logged():
+    import tempfile
+    import time
+    import pygame
+    import main as M
+    import crash_log
+    from gfx import CANVAS
+    d = tempfile.mkdtemp()
+    os.environ["BR_DATA_DIR"] = d
+    pygame.display.set_mode((1366, 768))
+    CANVAS.attach(pygame.display.get_surface())
+    app = M.BlockRoyaleApp()
+    app.screen = CANVAS
+    app.settings.set("coach_done", True)
+    app.state = "GAME"
+    app.start_game(mode="SOLO", total_players=30, quick=True)
+    app.key_left_down = True
+    app._on_long_frame(1.2)                                          # 유예 중: 눌러 둔 키도 일시정지도 건드리지 않음
+    assert app.key_left_down and not app.is_paused
+    app._long_frame_grace_until = time.time() - 1.0
+    app._on_long_frame(1.2)
+    assert app.is_paused and not app.key_left_down
+    log = open(os.path.join(d, "pause.log"), encoding="utf-8").read()
+    assert "긴 프레임" in log, log
+    assert "pause.log" in crash_log.diagnostics_text()
+    app.match.brief_open = True
+    app._close_brief()
+    assert app._long_frame_grace_until > time.time() + 3, "브리핑을 닫을 때도 유예"
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

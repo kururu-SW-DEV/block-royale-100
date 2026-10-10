@@ -2451,7 +2451,10 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
             name = p["name"]
             if name.startswith("CPU_"):
                 name = name[4:]
-            self._draw_text(name[:3], self.font_tiny, C_TEXT, x + cw // 2, card.bottom + 2, "midtop")
+            shown = name[:4]
+            while len(shown) > 2 and self.font_tiny.size(shown)[0] > 46:          # 이웃 카드의 이름과 겹치지 않는 폭 안에서 최대한 길게
+                shown = shown[:-1]
+            self._draw_text(shown, self.font_tiny, C_TEXT, x + cw // 2, card.bottom + 2, "midtop")
             self._draw_text(label, self.font_tiny, col, x + cw // 2, card.y - 13, "midtop")
             x += cw + gap
 

@@ -230,11 +230,17 @@ class CoreMixin:
         self.key_left_down = self.key_right_down = self.key_down_down = False
         self.h_dir = 0
 
-    def _auto_pause_solo(self):
-        """혼자 하는 경기가 진행 중이면 일시정지로 만들고 True (네트워크 경기/끝난 경기/탈락 뒤에는 아무것도 하지 않음)"""
+    def _auto_pause_solo(self, reason=""):
+        """혼자 하는 경기가 진행 중이면 일시정지로 만들고 True (네트워크 경기/끝난 경기/탈락 뒤에는 아무것도 하지 않음).
+        reason: 자동 일시정지 원인 (pause.log와 진단 정보에 남겨 스팀덱 등에서 원인을 알 수 있게)"""
         m = self.match
         if (self.state == "GAME" and m is not None and self.net_mgr.mode == "NONE" and not self.is_paused
                 and not m.match_finished and m.local_is_alive):
+            try:
+                import crash_log
+                crash_log.note_auto_pause(reason or "(사유 없음)", getattr(m, "elapsed", 0.0))
+            except Exception:
+                pass
             self.is_paused = True
             m.is_paused = True
             self.renderer.pause_focus = 0
@@ -245,7 +251,7 @@ class CoreMixin:
     def _on_pad_lost(self):
         """마지막 패드가 빠짐 (블루투스 끊김/배터리 방전/케이블): 패드로 하던 솔로 경기는 바로 죽지 않게 일시정지 (키보드로 하던 중이면 그대로)"""
         pad_was_active = self.gamepad.last_pad_t > getattr(self, "_last_kb_t", 0.0)
-        if pad_was_active and self._auto_pause_solo():
+        if pad_was_active and self._auto_pause_solo("패드 연결 끊김"):
             self.match.add_floating_text("패드 연결이 끊겨 일시정지했습니다", (255, 190, 90), duration=3.0, size=22, category="alert")
 
     def toggle_mute(self):
@@ -507,7 +513,7 @@ class CoreMixin:
         self._lobby_return_t0 = None
         self.renderer.lobby_return_left = None
         self._clear_input_state()
-        self.sound_mgr.play_menu_bgm(quick=True)       # 경기에서 나올 때는 이전 곡이 길게 겹치지 않게 짧게 전환
+        self.sound_mgr.play_bgm('lobby', crossfade_ms=300)       # 경기에서 나올 때는 이전 곡이 길게 겹치지 않게 짧게 전환
         self.logo.restart(fast=True)
         if nm.mode == "HOST":
             nm.host_reopen_room()

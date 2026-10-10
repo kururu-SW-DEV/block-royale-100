@@ -25,7 +25,7 @@ class GameMixin:
         # 창 포커스를 잃으면 눌린 키 상태를 비우고, 싱글 플레이는 자동 일시정지
         if event.type == pygame.WINDOWFOCUSLOST:
             self._clear_input_state()
-            self._auto_pause_solo()
+            self._auto_pause_solo("창 포커스 잃음")
             return
         if event.type == pygame.WINDOWFOCUSGAINED:
             self._resync_held_keys()
@@ -557,7 +557,7 @@ class GameMixin:
     def _open_settings_from_game(self):
         self.sound_mgr.play('move')
         self._clear_input_state()
-        self._auto_pause_solo()
+        self._auto_pause_solo("설정 열기")
         self._end_text(commit=False)
         self.previous_state = "GAME"
         self.state = "SETTINGS"

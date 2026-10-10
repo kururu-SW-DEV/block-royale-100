@@ -235,11 +235,12 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
     LONG_FRAME_GRACE = 6.0               # 경기를 막 시작한 뒤 이 시간(초) 동안은 긴 프레임을 '창이 멈춘 것'으로 보지 않음 (첫 장면 준비로 느린 PC/Steam Deck에서 시작하자마자 일시정지되던 것)
 
     def _on_long_frame(self, raw_dt):
+        in_grace = time.time() < getattr(self, "_long_frame_grace_until", 0.0)
+        if in_grace and raw_dt >= self.LONG_FRAME_PAUSE:
+            return                                       # 게임이 스스로 배경/스프라이트를 준비하느라 느린 프레임: 눌러 둔 키도, 일시정지도 건드리지 않음
         self._clear_input_state()
         if raw_dt >= self.LONG_FRAME_PAUSE:
-            if time.time() < getattr(self, "_long_frame_grace_until", 0.0):
-                return                                   # 게임이 스스로 배경/스프라이트를 준비하느라 느린 프레임: 일시정지하지 않음
-            self._auto_pause_solo()
+            self._auto_pause_solo(f"긴 프레임 {raw_dt:.2f}초")
 
     def _transition_check(self):
         """state가 바뀌면 화면 전환 와이프를 시작. 게임과 그 위에 겹쳐 여는 설정 사이, 시작 직후의 첫 화면은 제외. 흔들림 '끔'이면 짧은 페이드"""
@@ -414,6 +415,9 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
                 and self.stats_mgr.data.get("survival", {}).get("total_games", 0) == 0):
             self.settings.set("target_player_count", 50, autosave=False)
             self.settings.set("bot_difficulty", "easy", autosave=False)
+            from app_paths import running_under_wine
+            if running_under_wine():
+                self.settings.set("text_size", "large", autosave=False)       # 스팀덱(Proton) 7인치 화면: 작은 글씨가 읽기 어려워 처음부터 '크게'
         self.settings.set("onboard_done", True, autosave=False)
 
     def _handle_event(self, event):

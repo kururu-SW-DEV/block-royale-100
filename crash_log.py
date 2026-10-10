@@ -62,6 +62,23 @@ def note_swallowed(where):
         write_error(f"Swallowed exception ({where}, first occurrence)", traceback.format_exc())
 
 
+def note_auto_pause(reason, match_elapsed=0.0):
+    """솔로 경기가 저절로 일시정지된 원인을 data 폴더의 pause.log에 한 줄 남김 (최근 40줄만 유지). 진단 정보 복사에 포함됨"""
+    import time
+    path = data_path("pause.log")
+    try:
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                old = f.read().splitlines()[-39:]
+        except OSError:
+            old = []
+        old.append(f"{time.strftime('%Y-%m-%d %H:%M:%S')}  경기 {match_elapsed:.1f}초  {reason}")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(chr(10).join(old) + chr(10))
+    except OSError:
+        pass
+
+
 def diagnostics_text(extra=None, tail_lines=50):
     """문제를 알릴 때 붙여 넣을 진단 정보 한 덩어리: 버전, OS/Proton, 해상도, 빛 연출 설정, startup.log, error.log 끝 부분.
     (이름/주소/설정 파일 전체는 넣지 않음)"""
@@ -73,6 +90,11 @@ def diagnostics_text(extra=None, tail_lines=50):
     try:
         with open(data_path("startup.log"), "r", encoding="utf-8", errors="replace") as f:
             lines += ["", "--- startup.log ---", f.read().strip()[-1500:]]
+    except OSError:
+        pass
+    try:
+        with open(data_path("pause.log"), "r", encoding="utf-8", errors="replace") as f:
+            lines += ["", "--- pause.log (자동 일시정지 원인) ---"] + f.read().strip().splitlines()[-10:]
     except OSError:
         pass
     try:
