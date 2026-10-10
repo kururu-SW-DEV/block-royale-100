@@ -201,6 +201,7 @@ def test_long_frame_and_overlay_click():
         app._tick_game(1 / 60)
     assert app.MAX_FRAME_DT <= 0.25
     app.key_left_down = True
+    app._long_frame_grace_until = 0.0                         # 시작 직후 유예(느린 첫 장면 준비용)가 지난 뒤
     app._on_long_frame(2.0)                                   # 창 드래그로 멈췄다 돌아옴
     assert app.is_paused and not app.key_left_down
     # 일시정지 중에는 미니 보드 클릭이 조준을 바꾸지 않음

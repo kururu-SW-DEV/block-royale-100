@@ -266,7 +266,7 @@ class CoreMixin:
         self.das_timer = 0.0
         self.arr_timer = 0.0
         self.soft_drop_timer = 0.0
-        self.sound_mgr.play_menu_bgm()
+        self.sound_mgr.play_menu_bgm(quick=True)       # 경기에서 나올 때는 이전 곡이 길게 겹치지 않게 짧게 전환
         self.logo.restart(fast=True)
         self._end_text(commit=False)
         self.rebinding_action = None                     # 화면이 바뀌면 키 바인딩 대기/규칙 창을 닫음 (켜진 채 남으면 M/F1 키가 먹통)
@@ -340,6 +340,7 @@ class CoreMixin:
 
     def start_game(self, mode="SOLO", total_players=100, initial_players=None, practice=False, daily=None, weekly=None, brief=True, quick=False):
         """practice=True: 연습 모드(혼자, 전적 없음). daily="YYYYMMDD": 오늘의 도전(같은 날은 같은 블록 순서/상대 구성, 100인 혼합 난이도 배틀로얄)"""
+        self._long_frame_grace_until = time.time() + self.LONG_FRAME_GRACE      # 시작 직후 첫 장면 준비로 프레임이 길어져도 일시정지하지 않음
         self._end_text(commit=False)
         self.rebinding_action = None                     # 화면이 바뀌면 키 바인딩 대기/규칙 창을 닫음 (켜진 채 남으면 M/F1 키가 먹통)
         self.rules_open = False
@@ -506,7 +507,7 @@ class CoreMixin:
         self._lobby_return_t0 = None
         self.renderer.lobby_return_left = None
         self._clear_input_state()
-        self.sound_mgr.play_menu_bgm()
+        self.sound_mgr.play_menu_bgm(quick=True)       # 경기에서 나올 때는 이전 곡이 길게 겹치지 않게 짧게 전환
         self.logo.restart(fast=True)
         if nm.mode == "HOST":
             nm.host_reopen_room()

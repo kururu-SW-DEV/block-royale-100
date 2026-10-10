@@ -232,9 +232,13 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
     MAX_FRAME_DT = 0.1                   # 한 프레임으로 처리할 최대 시간(초): 멈췄다 돌아와도 블록이 한 번에 떨어지지 않게
     LONG_FRAME_PAUSE = 0.5               # 이 이상 멈췄다면 솔로 경기는 자동 일시정지
 
+    LONG_FRAME_GRACE = 6.0               # 경기를 막 시작한 뒤 이 시간(초) 동안은 긴 프레임을 '창이 멈춘 것'으로 보지 않음 (첫 장면 준비로 느린 PC/Steam Deck에서 시작하자마자 일시정지되던 것)
+
     def _on_long_frame(self, raw_dt):
         self._clear_input_state()
         if raw_dt >= self.LONG_FRAME_PAUSE:
+            if time.time() < getattr(self, "_long_frame_grace_until", 0.0):
+                return                                   # 게임이 스스로 배경/스프라이트를 준비하느라 느린 프레임: 일시정지하지 않음
             self._auto_pause_solo()
 
     def _transition_check(self):

@@ -121,6 +121,49 @@ def test_in_game_tips_are_translated_in_english():
         i18n.set_language("ko")
 
 
+def test_slow_first_frame_after_match_start_does_not_auto_pause():
+    """Steam Deck처럼 느린 PC에서 시작 직후 첫 장면 준비로 0.5초 넘게 걸려도 일시정지가 뜨지 않고, 유예가 지난 뒤의 긴 정지는 예전처럼 일시정지"""
+    import time
+    import pygame
+    import main as M
+    from gfx import CANVAS
+    pygame.display.set_mode((1366, 768))
+    CANVAS.attach(pygame.display.get_surface())
+    app = M.BlockRoyaleApp()
+    pygame.display.set_mode((1366, 768))
+    CANVAS.attach(pygame.display.get_surface())
+    app.screen = CANVAS
+    app.settings.set("coach_done", True)
+    app.state = "GAME"
+    app.start_game(mode="SOLO", total_players=30, quick=True)
+    app._on_long_frame(1.2)
+    assert not app.is_paused, "시작 직후의 느린 프레임은 일시정지 사유가 아님"
+    app._long_frame_grace_until = time.time() - 1.0
+    app._on_long_frame(1.2)
+    assert app.is_paused, "유예가 지난 뒤 창이 멈췄다 돌아오면 솔로 경기는 일시정지"
+
+
+def test_leaving_a_match_switches_to_menu_music_quickly():
+    """경기에서 메인 메뉴/대기실로 나갈 때 이전 곡이 1.8초 남지 않고 0.3초에 전환"""
+    import pygame
+    import main as M
+    from gfx import CANVAS
+    pygame.display.set_mode((1366, 768))
+    CANVAS.attach(pygame.display.get_surface())
+    app = M.BlockRoyaleApp()
+    app.screen = CANVAS
+    calls = []
+    orig = app.sound_mgr.play_bgm
+    app.sound_mgr.play_bgm = lambda stage=1, crossfade_ms=1800: calls.append((stage, crossfade_ms))
+    app.sound_mgr.play_menu_bgm(quick=True)
+    app.sound_mgr.play_menu_bgm()
+    app.sound_mgr.play_bgm = orig
+    assert calls == [("menu", 300), ("menu", 1800)], calls
+    assert M.BlockRoyaleApp.return_to_menu.__code__.co_consts.count(True) >= 0
+    import inspect
+    assert "play_menu_bgm(quick=True)" in inspect.getsource(M.BlockRoyaleApp.return_to_menu)
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

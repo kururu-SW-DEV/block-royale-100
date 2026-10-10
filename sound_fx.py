@@ -1459,9 +1459,9 @@ class SoundManager:
         self.sfx_enabled = bool(enabled)
         self.set_sfx_volume(self.sfx_volume)
 
-    def play_menu_bgm(self):
-        """오프닝 / 타이틀 / 로비 BGM 재생"""
-        self.play_bgm(stage='menu')
+    def play_menu_bgm(self, quick=False):
+        """오프닝 / 타이틀 / 로비 BGM 재생. quick=True: 경기에서 나올 때 이전 곡이 길게 남지 않게 짧은 전환(0.3초)"""
+        self.play_bgm(stage='menu', crossfade_ms=300 if quick else 1800)
 
     def _sets_ready(self):
         """세 단계(1/2/3) 모두 합성이 끝난 세트 수. 첫 실행처럼 뒤에서 아직 합성 중이면 완성된 세트만 고르게 해서, 한 판 안에서 단계마다 다른 세트가 섞이지 않게 함"""
@@ -1494,8 +1494,8 @@ class SoundManager:
             return raw[idx]
         return raw
 
-    def play_bgm(self, stage=1):
-        """듀얼 채널 1.8초 부드러운 크로스페이드로 BGM 전환"""
+    def play_bgm(self, stage=1, crossfade_ms=1800):
+        """듀얼 채널 부드러운 크로스페이드(기본 1.8초)로 BGM 전환"""
         self._results_due = None
         if not self.bgm_ch_a or not self.bgm_ch_b:
             return
@@ -1519,7 +1519,6 @@ class SoundManager:
                     self.unpause_bgm()                 # 일시정지 중 '다시 시작': 멈춘 채널은 busy로 보이므로 여기서 재개하지 않으면 다음 단계까지 무음
                 return
                 
-        crossfade_ms = 1800
         old_channel = self.active_channel
         new_channel = self.bgm_ch_b if old_channel == self.bgm_ch_a else self.bgm_ch_a
         
