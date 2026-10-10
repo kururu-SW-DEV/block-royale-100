@@ -44,16 +44,32 @@ def test_display_fonts_exist_and_fall_back_safely():
     import pygame
     import font_utils
     pygame.font.init()
-    for face in ("display", "num"):
-        assert font_utils.face_font(face, 24) is not None, face
-    assert font_utils.face_can_draw("num", "46,250 K.O. 06:42") and not font_utils.face_can_draw("num", "15 줄")
+    assert font_utils.face_font("display", 24) is not None
+    assert font_utils.face_can_draw("display", "게임 환경 설정 123")
     assert font_utils.face_font("zzz", 20) is None
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    for lic in ("OFL-BlackHanSans.txt", "OFL-Rajdhani.txt"):
+    for lic in ("OFL-BlackHanSans.txt",):
         assert "SIL OPEN FONT LICENSE" in open(os.path.join(root, "assets", "fonts", lic), encoding="utf-8", errors="replace").read().upper()
     from gfx import HiFont
-    f = HiFont("malgungothic", 20, bold=True, face="num")
-    assert f.size("123")[0] > 0 and f.size("한글 123")[0] > 0                 # 한글이 섞이면 기본 글꼴로 그림 (네모가 되지 않음)
+    f = HiFont("malgungothic", 20, bold=True, face="display")
+    assert f.size("123")[0] > 0 and f.size("한글 123")[0] > 0
+    assert not os.path.exists(os.path.join(root, "assets", "fonts", "Rajdhani-Bold.ttf")), "글꼴을 섞지 않기로 해서 Rajdhani는 동봉하지 않음"
+
+
+def test_small_text_is_not_bold_but_large_text_is():
+    """12~15px 굵은 한글은 획이 뭉개져 읽기 어려워서 작은 글씨는 보통 굵기, 16px 이상만 굵게"""
+    import pygame
+    from gfx import HiFont, CANVAS
+    pygame.font.init()
+    S = CANVAS.S
+    small = HiFont("malgungothic", 12, bold=True)
+    big = HiFont("malgungothic", 22, bold=True)
+    small._real()
+    big._real()
+    px_small, px_big = max(6, int(round(12 * S))), max(6, int(round(22 * S)))
+    keys = {k[1]: k[2] for k in HiFont._fonts if k[0] == "malgungothic"}
+    assert keys[px_small] is False or px_small >= 16, keys
+    assert keys[px_big] is True, keys
 
 
 def test_spotlight_picks_threats_then_target_then_titan():

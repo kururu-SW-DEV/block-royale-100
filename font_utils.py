@@ -60,9 +60,9 @@ def make_font(names, px, bold=False):
     return font
 
 
-# 꾸밈용 글꼴 (OFL): 제목/배너는 Black Han Sans(한글+영문), HUD 숫자는 Rajdhani Bold(영문/숫자만).
+# 꾸밈용 글꼴 (OFL): 화면 제목/큰 배너만 Black Han Sans (본문과 숫자는 한 가지 글꼴로 통일해 글꼴이 섞여 보이지 않게).
 # 파일이 없거나 열 수 없으면 None -> 호출한 쪽이 기본 글꼴을 씀 (예전과 같은 화면)
-DISPLAY_FACES = {"display": "BlackHanSans-Regular.ttf", "num": "Rajdhani-Bold.ttf"}
+DISPLAY_FACES = {"display": "BlackHanSans-Regular.ttf"}
 _FACE_CACHE = {}
 
 

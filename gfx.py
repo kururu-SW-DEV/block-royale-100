@@ -293,6 +293,9 @@ pygame.mouse.get_pos = lambda: CANVAS.to_logical(_orig_get_pos())
 from font_utils import make_font, face_font, face_can_draw  # noqa: E402  (OS 글꼴에 한글이 없을 때 동봉 글꼴로 대체)
 
 
+SMALL_BOLD_PX = 16               # 실제 픽셀 크기가 이보다 작으면 굵은 글꼴을 쓰지 않음 (12~15px 굵은 한글은 획이 붙어 가독성이 떨어짐)
+
+
 class HiFont:
     """논리 크기(pt)로 지정하되 실제로는 배율만큼 큰 글꼴로 렌더링하는 글꼴 래퍼"""
     _fonts = {}
@@ -314,10 +317,11 @@ class HiFont:
             ff = face_font(self.face, px)
             if ff is not None:
                 return ff
-        key = (self.names, px, self.bold)
+        bold = self.bold and px >= SMALL_BOLD_PX                   # 작은 글씨는 굵게 하면 획이 뭉개져 읽기 어려우므로 보통 굵기로
+        key = (self.names, px, bold)
         font = HiFont._fonts.get(key)
         if font is None:
-            font = make_font(self.names, px, self.bold)
+            font = make_font(self.names, px, bold)
             HiFont._fonts[key] = font
         return font
 

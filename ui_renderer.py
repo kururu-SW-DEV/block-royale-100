@@ -370,16 +370,16 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
     def _build_fonts(self):
         font_name = "malgungothic,segoeui,consolas,arial"
         bo = self.text_boost
-        self.font_title = HiFont(font_name, 34, bold=True, face="display")
+        self.font_title = HiFont(font_name, 34, bold=True)
         self.font_large = HiFont(font_name, 26, bold=True)
-        self.font_big_num = HiFont(font_name, 26, bold=True, face="num")
-        self.font_num = HiFont(font_name, 23, bold=True, face="num")      # 상단 HUD 숫자 (게이지와 겹치지 않는 크기)
+        self.font_big_num = HiFont(font_name, 24, bold=True)
+        self.font_num = HiFont(font_name, 21, bold=True)      # 상단 HUD 숫자 (게이지와 겹치지 않는 크기)
         self.font_mid = HiFont(font_name, 16 + bo, bold=True)
         self.font_hud = HiFont(font_name, 17, bold=True)
         self.font_small = HiFont(font_name, 13 + bo, bold=True)
         self.font_tiny = HiFont(font_name, 12 + bo, bold=True)
-        self.font_countdown = HiFont(font_name, 120, bold=True, face="num")       # 시작 카운트다운 숫자
-        self.font_banner = {1: HiFont(font_name, 21, bold=True, face="display"), 2: HiFont(font_name, 30, bold=True, face="display"), 3: HiFont(font_name, 40, bold=True, face="display")}      # 액션 배너 단계별 글꼴
+        self.font_countdown = HiFont(font_name, 110, bold=True)       # 시작 카운트다운 숫자
+        self.font_banner = {1: HiFont(font_name, 21, bold=True), 2: HiFont(font_name, 30, bold=True), 3: HiFont(font_name, 40, bold=True)}      # 액션 배너 단계별 글꼴
 
     def set_text_boost(self, boost):
         """게임 화면 글자 크기 옵션 적용: 글꼴을 다시 만들고 글자/패널 캐시를 비움"""
