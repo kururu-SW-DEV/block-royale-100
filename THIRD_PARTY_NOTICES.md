@@ -25,3 +25,13 @@ BLOCK ROYALE 100은 아래 오픈소스 소프트웨어를 사용합니다. 각 
 - 저작권: NHN Corporation / NAVER (정확한 저작권 표시와 예약 글꼴 이름은 글꼴과 함께 받은 `OFL.txt`의 내용을 그대로 따릅니다)
 - 라이선스: SIL Open Font License, Version 1.1 — https://scripts.sil.org/OFL (전문은 `assets/fonts/OFL.txt`)
 - 수정 없이 그대로 동봉하며, 글꼴 파일만 따로 판매하지 않습니다.
+
+## Black Han Sans (블랙한산스) — 제목/배너용 동봉 글꼴
+- 제목, 액션 배너, 메인 메뉴 카드 제목에 쓰입니다 (`assets/fonts/BlackHanSans-Regular.ttf`). 파일이 없으면 기본 글꼴로 대체됩니다.
+- 저작권: 2015 The Black Han Sans Project Authors (https://github.com/zesstype/Black-Han-Sans)
+- 라이선스: SIL Open Font License, Version 1.1 (전문은 `assets/fonts/OFL-BlackHanSans.txt`). 수정 없이 그대로 동봉하며 글꼴 파일만 따로 판매하지 않습니다.
+
+## Rajdhani — HUD 숫자용 동봉 글꼴
+- 시간/점수/APM 등 숫자와 영문 HUD에 쓰입니다 (`assets/fonts/Rajdhani-Bold.ttf`). 한글이 섞인 문구는 기본 글꼴로 그려집니다.
+- 저작권: Copyright (c) 2014, Indian Type Foundry (info@indiantypefoundry.com)
+- 라이선스: SIL Open Font License, Version 1.1 (전문은 `assets/fonts/OFL-Rajdhani.txt`). 수정 없이 그대로 동봉하며 글꼴 파일만 따로 판매하지 않습니다.

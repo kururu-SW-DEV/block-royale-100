@@ -40,6 +40,71 @@ def test_new_mode_names_are_translated():
         i18n.set_language("ko")
 
 
+def test_display_fonts_exist_and_fall_back_safely():
+    import pygame
+    import font_utils
+    pygame.font.init()
+    for face in ("display", "num"):
+        assert font_utils.face_font(face, 24) is not None, face
+    assert font_utils.face_can_draw("num", "46,250 K.O. 06:42") and not font_utils.face_can_draw("num", "15 줄")
+    assert font_utils.face_font("zzz", 20) is None
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for lic in ("OFL-BlackHanSans.txt", "OFL-Rajdhani.txt"):
+        assert "SIL OPEN FONT LICENSE" in open(os.path.join(root, "assets", "fonts", lic), encoding="utf-8", errors="replace").read().upper()
+    from gfx import HiFont
+    f = HiFont("malgungothic", 20, bold=True, face="num")
+    assert f.size("123")[0] > 0 and f.size("한글 123")[0] > 0                 # 한글이 섞이면 기본 글꼴로 그림 (네모가 되지 않음)
+
+
+def test_spotlight_picks_threats_then_target_then_titan():
+    import random
+    import main as M
+    from gfx import CANVAS
+    import pygame
+    pygame.display.set_mode((1366, 768))
+    CANVAS.attach(pygame.display.get_surface())
+    app = M.BlockRoyaleApp()
+    pygame.display.set_mode((1366, 768))
+    CANVAS.attach(pygame.display.get_surface())
+    app.screen = CANVAS
+    app.settings.set("coach_done", True)
+    app.state = "GAME"
+    app.start_game(mode="SOLO", total_players=40)
+    m = app.match
+    m.countdown_until = 0.0
+    me = m.local_player_id
+    bots = [k for k, p in m.players.items() if k != me]
+    r = app.renderer
+    for k in bots:
+        m.players[k]["target_id"] = None
+    m.players[me]["target_id"] = bots[5]
+    got = r._spotlight_picks(m)
+    assert [g[0] for g in got] == [bots[5]] and got[0][1] == "표적", got
+    m.players[bots[1]]["target_id"] = me
+    m.players[bots[2]]["target_id"] = me
+    m.players[bots[1]]["highest_y"], m.players[bots[2]]["highest_y"] = 12, 3
+    got = r._spotlight_picks(m)
+    assert [g[0] for g in got] == [bots[2], bots[1]] and all(g[1] == "위협" for g in got), got          # 더 높이 쌓인 상대가 앞, 최대 2명
+    m.players[bots[1]]["is_alive"] = False
+    assert bots[1] not in [g[0] for g in r._spotlight_picks(m)]
+    for _ in range(3):
+        r.render(m, app.sound_mgr)                                                                     # 그리기에서 오류가 나지 않음
+
+
+def test_in_game_tips_are_translated_in_english():
+    """경기 중 팁은 'TIP  ' + 안내문으로 그려져서, 앞에 붙은 'TIP  ' 때문에 영어에서 한글로 남던 것"""
+    import i18n
+    from screens.game import GameMixin
+    i18n.set_language("en")
+    try:
+        import re
+        for _kind, text in GameMixin.TIPS:
+            out = i18n.tr("TIP  " + text)
+            assert out.startswith("TIP  ") and not re.search(r"[가-힣]", out), out
+    finally:
+        i18n.set_language("ko")
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

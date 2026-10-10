@@ -407,3 +407,9 @@ EXACT.update({"내 보드에 은빛 테두리 장식이 붙습니다": "Your boa
               "내 보드 테두리 장식이 청록빛으로 바뀝니다": "Your board border trim turns teal",
               "내 보드 테두리 장식이 자수정빛 이중 테두리로 바뀝니다": "Your board border trim becomes a double amethyst frame",
               "내 보드 테두리 장식이 황금 이중 테두리로 바뀝니다": "Your board border trim becomes a double gold frame"})
+
+# v1.4.42 주시 대상 칸
+EXACT.update({"주시 대상": "Watch list", "위협": "Threat", "표적": "Target"})
+
+# 경기 중 팁 문구("TIP  " + 안내문)가 영어에서 한글로 남던 것
+TEMPLATES.update({"TIP  {}": "TIP  {}"})

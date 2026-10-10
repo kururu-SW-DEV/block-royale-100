@@ -132,13 +132,13 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         
         # 폰트
         font_name = "malgungothic,segoeui,arial"
-        self.font_title = HiFont(font_name, 44, bold=True)
+        self.font_title = HiFont(font_name, 44, bold=True, face="display")
         self.font_menu = HiFont(font_name, 22, bold=True)
         self.font_mid = HiFont(font_name, 18, bold=True)
         self.font_info = HiFont(font_name, 16, bold=False)
         self.font_small = HiFont(font_name, 13, bold=True)
         self.font_tiny = HiFont(font_name, 12, bold=False)
-        self.font_hero = HiFont(font_name, 26, bold=True)     # 메인 메뉴: 주 카드 제목
+        self.font_hero = HiFont(font_name, 26, bold=True, face="display")     # 메인 메뉴: 주 카드 제목
         self.font_row = HiFont(font_name, 17, bold=True)      # 설정 화면: 행 이름
         self.font_val = HiFont(font_name, 15, bold=True)      # 설정 화면: 컨트롤 값
         self.font_help = HiFont(font_name, 14, bold=False)    # 설정 화면: 도움말/보조 줄

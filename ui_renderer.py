@@ -370,16 +370,16 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
     def _build_fonts(self):
         font_name = "malgungothic,segoeui,consolas,arial"
         bo = self.text_boost
-        self.font_title = HiFont(font_name, 34, bold=True)
+        self.font_title = HiFont(font_name, 34, bold=True, face="display")
         self.font_large = HiFont(font_name, 26, bold=True)
-        self.font_big_num = HiFont(font_name, 24, bold=True)
-        self.font_num = HiFont(font_name, 21, bold=True)      # 상단 HUD 숫자 (게이지와 겹치지 않는 크기)
+        self.font_big_num = HiFont(font_name, 26, bold=True, face="num")
+        self.font_num = HiFont(font_name, 23, bold=True, face="num")      # 상단 HUD 숫자 (게이지와 겹치지 않는 크기)
         self.font_mid = HiFont(font_name, 16 + bo, bold=True)
         self.font_hud = HiFont(font_name, 17, bold=True)
         self.font_small = HiFont(font_name, 13 + bo, bold=True)
         self.font_tiny = HiFont(font_name, 12 + bo, bold=True)
-        self.font_countdown = HiFont(font_name, 110, bold=True)       # 시작 카운트다운 숫자
-        self.font_banner = {1: HiFont(font_name, 21, bold=True), 2: HiFont(font_name, 30, bold=True), 3: HiFont(font_name, 40, bold=True)}      # 액션 배너 단계별 글꼴
+        self.font_countdown = HiFont(font_name, 120, bold=True, face="num")       # 시작 카운트다운 숫자
+        self.font_banner = {1: HiFont(font_name, 21, bold=True, face="display"), 2: HiFont(font_name, 30, bold=True, face="display"), 3: HiFont(font_name, 40, bold=True, face="display")}      # 액션 배너 단계별 글꼴
 
     def set_text_boost(self, boost):
         """게임 화면 글자 크기 옵션 적용: 글꼴을 다시 만들고 글자/패널 캐시를 비움"""
@@ -680,6 +680,7 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
         self._render_bg_pulses(match, ox, oy)
 
         self._render_mini_boards(match, ox, oy)
+        self._render_spotlight(match, ox, oy)
         self._render_attack_effects(match, ox, oy)
         self._render_victory_backdrop(match)                         # 우승 후: 상대 카드를 어둡게 가리고 그 앞에 금빛 광선 (내 보드/왕관은 그 위)
         self._render_send_counter(match, ox, oy)
@@ -2386,6 +2387,73 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
         self._render_mini_grid(others[half:], right_x + ox, start_y + oy, right_w, area_h, match, max_bw, colors)
         if n == 1:                                          # 2인 대전: 비어 있는 쪽에 상대 지표 카드 표시
             self._render_opponent_card(match, others[0][0], right_x + ox, start_y + oy, right_w, area_h, colors)
+
+    SPOTLIGHT_MIN_OTHERS = 12         # 상대가 이만큼 이상일 때만 '주시 대상' 칸을 둠 (작은 판은 미니 보드가 이미 크게 보임)
+
+    def _spotlight_picks(self, match):
+        """주시 대상 최대 2명: 나를 노리는 상대(쌓인 높이가 높은 순) -> 내 조준 대상 -> K.O. 열기가 가장 높은 거물. 반환 [(pid, 역할 문구, 색)]"""
+        me = match.local_player_id
+        players = match.players
+        picks = []
+
+        def add(pid, label, col):
+            p = players.get(pid)
+            if p and p["is_alive"] and pid != me and all(pid != q for q, _l, _c in picks) and len(picks) < 2:
+                picks.append((pid, label, col))
+
+        atk = [q for q, p in players.items() if p["is_alive"] and q != me and p.get("target_id") == me]
+        atk.sort(key=lambda q: players[q].get("highest_y", 20))              # 더 높이 쌓인(위험한) 상대가 앞
+        for q in atk:
+            add(q, "위협", (240, 90, 100))
+        tgt = players[me].get("target_id")
+        if tgt is not None:
+            add(tgt, "표적", (255, 200, 90))
+        best, best_ko = None, 1
+        for q, p in players.items():
+            if p["is_alive"] and q != me and match.badge_points(q) > best_ko:
+                best, best_ko = q, match.badge_points(q)
+        if best is not None:
+            add(best, "거물", (236, 198, 100))
+        return picks
+
+    def _render_spotlight(self, match, ox=0, oy=0):
+        """내 보드 왼쪽 아래 빈 자리에, 지금 가장 신경 쓸 상대 두 명을 미니 보드보다 큰 카드로 보여 줌 (100명 화면에서 읽히는 정보 늘리기)"""
+        if getattr(match, "practice", False) or getattr(match, "is_spectating", False) or match.match_finished or not match.local_is_alive:
+            return
+        if not getattr(match, "attacks_enabled", True) or len(match.players) - 1 < self.SPOTLIGHT_MIN_OTHERS:
+            return
+        y0 = self.main_board_y + 114 + getattr(self, "_stats_h", 200) + 118 + oy
+        h = 758 + oy - y0
+        if h < 150:
+            return
+        picks = self._spotlight_picks(match)
+        if not picks:
+            return
+        rect = pygame.Rect(self._left_x(ox), y0, 108, min(h, 168))
+        self._panel(rect)
+        self._draw_text("주시 대상", self.font_tiny, C_ACCENT, rect.centerx, rect.y + 6, "midtop")
+        cw, chh = 46, 92
+        gap = 4
+        total = len(picks) * cw + (len(picks) - 1) * gap
+        x = rect.x + (rect.w - total) // 2
+        cy0 = rect.y + 40
+        for pid, label, col in picks:
+            p = match.players[pid]
+            card = pygame.Rect(x, cy0, cw, chh)
+            self._panel(card, border=col, bg=(17, 21, 35), radius=3, alpha=255, border_w=2)
+            cg = p.get("cg")
+            if cg and len(cg) == BOARD_HEIGHT:
+                ccp = min((cw - 2) / float(BOARD_WIDTH), (chh - 2) / float(BOARD_HEIGHT))
+                cbx = card.x + 1 + ((cw - 2) - ccp * BOARD_WIDTH) / 2.0
+                cby = card.bottom - 1 - ccp * BOARD_HEIGHT
+                self._loose = bool(getattr(self, "_shaking", False))
+                self._blit_mini_cells(("spot", pid), tuple(cg), cbx, cby, ccp * BOARD_WIDTH, ccp * BOARD_HEIGHT, ccp)
+            name = p["name"]
+            if name.startswith("CPU_"):
+                name = name[4:]
+            self._draw_text(name[:3], self.font_tiny, C_TEXT, x + cw // 2, card.bottom + 3, "midtop")
+            self._draw_text(label, self.font_tiny, col, x + cw // 2, card.y - 14, "midtop")
+            x += cw + gap
 
     def _render_opponent_card(self, match, pid, x, y, w, h, colors):
         """2인 대전에서 미니 보드 반대편에 상대의 실시간 지표(시간, APM, LPM, 점수, 라인, K.O.)를 보여주는 카드"""

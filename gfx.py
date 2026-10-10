@@ -290,7 +290,7 @@ pygame.mouse.get_pos = lambda: CANVAS.to_logical(_orig_get_pos())
 
 # ---------------------------------------------------------------- 글꼴
 
-from font_utils import make_font  # noqa: E402  (OS 글꼴에 한글이 없을 때 동봉 글꼴로 대체)
+from font_utils import make_font, face_font, face_can_draw  # noqa: E402  (OS 글꼴에 한글이 없을 때 동봉 글꼴로 대체)
 
 
 class HiFont:
@@ -299,16 +299,21 @@ class HiFont:
     _fonts_version = -1
     text_filter = None            # 화면에 그리기 직전 글자를 바꾸는 함수 (i18n.tr): 모든 글자가 여기를 지나므로 번역을 한 곳에서 처리함
 
-    def __init__(self, names, size, bold=False):
+    def __init__(self, names, size, bold=False, face=None):
         self.names = names
         self.size_pt = size
         self.bold = bold
+        self.face = face              # 꾸밈 글꼴 종류 ('display' 제목/배너 | 'num' HUD 숫자). 글꼴 파일이 없거나 글자를 못 그리면 기본 글꼴
 
-    def _real(self):
+    def _real(self, text=None):
         if HiFont._fonts_version != CANVAS.version:         # 창 크기가 바뀔 때마다 이전 배율의 글꼴을 비움
             HiFont._fonts.clear()
             HiFont._fonts_version = CANVAS.version
         px = max(6, int(round(self.size_pt * CANVAS.S)))
+        if self.face is not None and (text is None or face_can_draw(self.face, text)):
+            ff = face_font(self.face, px)
+            if ff is not None:
+                return ff
         key = (self.names, px, self.bold)
         font = HiFont._fonts.get(key)
         if font is None:
@@ -319,7 +324,7 @@ class HiFont:
     def render(self, text, antialias=True, color=(255, 255, 255), background=None):
         if HiFont.text_filter is not None:
             text = HiFont.text_filter(text)
-        rendered = self._real().render(text, True, color)
+        rendered = self._real(text).render(text, True, color)
         surf = HiSurf(rendered.get_size(), pygame.SRCALPHA, CANVAS.S)
         surf.blit(rendered, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
         return surf
@@ -327,7 +332,7 @@ class HiFont:
     def size(self, text):
         if HiFont.text_filter is not None:
             text = HiFont.text_filter(text)
-        w, h = self._real().size(text)
+        w, h = self._real(text).size(text)
         return (int(round(w / CANVAS.S)), int(round(h / CANVAS.S)))
 
     def get_height(self):

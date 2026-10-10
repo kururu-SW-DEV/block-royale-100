@@ -58,3 +58,34 @@ def make_font(names, px, bold=False):
         except Exception:
             pass
     return font
+
+
+# 꾸밈용 글꼴 (OFL): 제목/배너는 Black Han Sans(한글+영문), HUD 숫자는 Rajdhani Bold(영문/숫자만).
+# 파일이 없거나 열 수 없으면 None -> 호출한 쪽이 기본 글꼴을 씀 (예전과 같은 화면)
+DISPLAY_FACES = {"display": "BlackHanSans-Regular.ttf", "num": "Rajdhani-Bold.ttf"}
+_FACE_CACHE = {}
+
+
+def face_font(face, px):
+    """꾸밈 글꼴(face: 'display' | 'num')을 px 크기로 열어 돌려줌. 없으면 None"""
+    key = (face, px)
+    if key in _FACE_CACHE:
+        return _FACE_CACHE[key]
+    font = None
+    name = DISPLAY_FACES.get(face)
+    if name:
+        path = resource_path(os.path.join(FONT_DIR, name))
+        if os.path.exists(path):
+            try:
+                font = pygame.font.Font(path, px)
+            except Exception:
+                font = None
+    _FACE_CACHE[key] = font
+    return font
+
+
+def face_can_draw(face, text):
+    """이 꾸밈 글꼴로 text 전체를 그릴 수 있는가 (숫자용 Rajdhani는 한글/기호가 없으므로 그런 글자가 섞이면 기본 글꼴로)"""
+    if face == "num":
+        return all(ord(c) < 0x2000 for c in text)
+    return True
