@@ -48,11 +48,31 @@ def test_os_font_with_hangul_is_used_unchanged():
     made = []
     pygame.font.SysFont = lambda names, px, bold=False: _FakeFont(True)
     pygame.font.Font = lambda *a, **k: made.append(a) or _FakeFont(True)
+    pref = font_utils.PREFER_BUNDLED
+    font_utils.PREFER_BUNDLED = False                                  # '동봉 글꼴 우선'을 끈 경우의 동작 (OS 글꼴 우선)
     try:
         f = font_utils.make_font("malgungothic,arial", 20, True)
+        f2 = font_utils.make_font("consolas", 20, True)                # 맑은 고딕이 아닌 이름은 우선 적용 대상이 아님
+    finally:
+        font_utils.PREFER_BUNDLED = pref
+        pygame.font.SysFont, pygame.font.Font = orig_sys, orig_font
+    assert isinstance(f, _FakeFont) and isinstance(f2, _FakeFont) and not made, "OS 글꼴에 한글이 있으면 동봉 글꼴을 열지 않음"
+
+
+def test_default_font_is_bundled_nanum_gothic_and_other_names_keep_os_fonts():
+    pygame.font.init()
+    orig_sys, orig_font = pygame.font.SysFont, pygame.font.Font
+    made, sysd = [], []
+    pygame.font.SysFont = lambda names, px, bold=False: sysd.append(names) or _FakeFont(True)
+    pygame.font.Font = lambda *a, **k: made.append(a) or _FakeFont(True)
+    try:
+        font_utils.make_font("malgungothic,segoeui,arial", 20, False)
+        font_utils.make_font("malgungothic,segoeui,arial", 20, True)
+        font_utils.make_font("consolas", 20, True)
     finally:
         pygame.font.SysFont, pygame.font.Font = orig_sys, orig_font
-    assert isinstance(f, _FakeFont) and not made, "OS 글꼴에 한글이 있으면 동봉 글꼴을 열지 않음"
+    assert [os.path.basename(a[0]) for a in made] == ["NanumGothic-Regular.ttf", "NanumGothic-Bold.ttf"], made
+    assert sysd == ["consolas"], sysd
 
 
 def test_bundled_font_is_used_only_when_os_font_lacks_hangul():

@@ -16,6 +16,7 @@ FONT_DIR = os.path.join("assets", "fonts")
 REGULAR_CANDIDATES = ("NanumGothic-Regular.ttf", "NanumGothic.ttf")
 BOLD_CANDIDATES = ("NanumGothic-Bold.ttf", "NanumGothicBold.ttf")
 _WARNED = set()
+PREFER_BUNDLED = True            # True: 기본 글꼴(맑은 고딕으로 지정된 곳)을 동봉 나눔고딕으로 그림. 파일이 없으면 자동으로 OS 글꼴
 
 
 def bundled_font_path(bold=False):
@@ -41,6 +42,13 @@ def supports_hangul(font):
 
 def make_font(names, px, bold=False):
     """pygame 글꼴 만들기: OS 글꼴 우선, 한글이 안 나오면 동봉 글꼴"""
+    if PREFER_BUNDLED and str(names).lower().startswith("malgungothic"):      # 게임 기본 글꼴: 모든 PC에서 같은 모양이 되도록 동봉 나눔고딕을 우선 사용
+        path = bundled_font_path(bold)
+        if path is not None:
+            try:
+                return pygame.font.Font(path, px)
+            except Exception:
+                pass                                                         # 열 수 없으면 아래의 OS 글꼴로
     font = pygame.font.SysFont(names, px, bold=bold)
     if supports_hangul(font):
         return font
