@@ -288,7 +288,8 @@ def test_min_mode_keeps_backdrops_but_nothing_moves_or_flashes_to_the_music():
         sm._beat = (120.0, time.time() - off)
         r.fx_setting = "min"
         r.render(m, sm)
-        sums.append(pygame.Surface.get_at(pygame.display.get_surface(), (40, 700))[:3])
+        disp = pygame.display.get_surface()
+        sums.append(pygame.Surface.get_at(disp, (min(40, disp.get_width() - 1), disp.get_height() - 30))[:3])        # 창 크기에 맞춰 (CI는 모니터가 작아 창이 더 작음)
     assert sums[0] == sums[1] == sums[2], sums
     r.fx_setting = None
 
