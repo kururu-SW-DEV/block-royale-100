@@ -71,7 +71,7 @@ def test_default_font_is_bundled_nanum_gothic_and_other_names_keep_os_fonts():
         font_utils.make_font("consolas", 20, True)
     finally:
         pygame.font.SysFont, pygame.font.Font = orig_sys, orig_font
-    assert [os.path.basename(a[0]) for a in made] == ["NanumGothic-Regular.ttf", "NanumGothic-Bold.ttf"], made
+    assert [("Bold" in os.path.basename(a[0]), os.path.basename(a[0]).startswith("Nanum")) for a in made] == [(False, True), (True, True)], made      # 나눔(바른)고딕 보통/굵게
     assert sysd == ["consolas"], sysd
 
 
@@ -137,7 +137,7 @@ def test_real_bundled_nanum_gothic_is_valid_and_replaces_a_missing_os_font():
     import warnings
     pygame.font.init()
     reg, bold = font_utils.bundled_font_path(False), font_utils.bundled_font_path(True)
-    assert reg and bold and reg != bold and reg.endswith("Regular.ttf") and bold.endswith("Bold.ttf"), (reg, bold)
+    assert reg and bold and reg != bold and os.path.basename(reg).startswith("Nanum") and "Bold" in os.path.basename(bold), (reg, bold)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         f = font_utils.make_font("zzz-no-such-font", 24, False)

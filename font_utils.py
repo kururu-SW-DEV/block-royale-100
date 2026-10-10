@@ -13,8 +13,8 @@ import pygame
 from app_paths import resource_path
 
 FONT_DIR = os.path.join("assets", "fonts")
-REGULAR_CANDIDATES = ("NanumGothic-Regular.ttf", "NanumGothic.ttf")
-BOLD_CANDIDATES = ("NanumGothic-Bold.ttf", "NanumGothicBold.ttf")
+REGULAR_CANDIDATES = ("NanumBarunGothic-Regular.ttf", "NanumBarunGothic.ttf", "NanumGothic-Regular.ttf", "NanumGothic.ttf")      # 나눔바른고딕이 폴더에 있으면 우선, 없으면 나눔고딕
+BOLD_CANDIDATES = ("NanumBarunGothic-Bold.ttf", "NanumBarunGothicBold.ttf", "NanumGothic-Bold.ttf", "NanumGothicBold.ttf")
 _WARNED = set()
 PREFER_BUNDLED = True            # True: 기본 글꼴(맑은 고딕으로 지정된 곳)을 동봉 나눔고딕으로 그림. 파일이 없으면 자동으로 OS 글꼴
 
