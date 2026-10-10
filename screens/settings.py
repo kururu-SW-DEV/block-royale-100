@@ -611,6 +611,9 @@ class SettingsMixin:
     def _do_reset_defaults(self):
         self.sound_mgr.play('clear')
         self.settings.reset_to_defaults()
+        from app_paths import running_under_wine
+        if running_under_wine():
+            self.settings.set("text_size", "large", autosave=False)      # 스팀덱(Proton)은 초기화해도 '크게'가 기본
         self.apply_handling()
         self.renderer.mini_detailed = True
         self.renderer.mini_focus = True

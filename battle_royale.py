@@ -807,7 +807,7 @@ class BattleRoyaleMatch:
     RETALIATE_DEFAULT = 0.25
     SMART_TARGET_CHANCE = {"저격형": 0.85}                 # 보통 난이도 봇이 위험도 기반 조준을 쓰는 확률 (성향별)
     SMART_TARGET_DEFAULT = 0.5
-    BOT_BADGE_CAP = 0.5              # 봇에게 적용하는 열기 공격력 증폭 상한 (+50%)
+    BOT_BADGE_CAP = 0.4              # 봇에게 적용하는 열기 공격력 증폭 상한 (+40%: 열기 2단계 수치와 같아 화면 표시와 일치)
     KO_CREDIT_WINDOW = 15.0          # 마지막 공격 후 이 시간(초) 안에 탈락해야 그 공격자에게 K.O.를 인정
     HUMAN_FOCUS_CAP = 2              # 사람 플레이어에게는 더 낮은 상한 (봇보다 상쇄 능력이 낮아 같은 압박이 훨씬 무겁기 때문)
     KILL_EXTRA = 2                   # 탈락시킬 수 있는 마무리 공격은 상한을 이만큼까지만 초과 허용

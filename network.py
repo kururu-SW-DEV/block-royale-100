@@ -25,7 +25,7 @@ def _sanitize_token(tok):
     return ""
 
 
-PROTOCOL_VERSION = 3         # 호환되지 않는 패킷 변경 때 올림. JOIN_REQ의 proto와 다르면 호스트가 거절
+PROTOCOL_VERSION = 4         # 호환되지 않는 패킷 변경 때 올림. JOIN_REQ의 proto와 다르면 호스트가 거절
 
 _DIFFS = ("mixed", "easy", "normal", "hard", "master")     # settings_manager.BOT_DIFFICULTY_OPTIONS와 같아야 함 (테스트로 확인)
 MAX_CHAT_LEN = 120            # 채팅 한 줄 최대 글자 수

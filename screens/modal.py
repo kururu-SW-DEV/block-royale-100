@@ -21,7 +21,7 @@ class ModalMixin:
 
     def _confirm_quit_app(self):
         self._clear_input_state()
-        self._auto_pause_solo()                                # 솔로 게임은 확인 창이 떠 있는 동안 멈춤
+        self._auto_pause_solo("확인 창")                         # 솔로 게임은 확인 창이 떠 있는 동안 멈춤
         self._open_modal("게임을 종료할까요?", ["프로그램을 완전히 종료합니다."],
                          [("stay", "취소", "blue", "ESC"), ("quit_app", "종료", "red", "Y")])
 

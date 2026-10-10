@@ -22,7 +22,7 @@ class CoreMixin:
         from stats_manager import unlocked_skin_ids
         skin = self.settings.get("block_skin")
         stats = getattr(self, "stats_mgr", None)                  # 앱 초기화 중에는 전적이 아직 없을 수 있음
-        self.renderer.block_skin = skin if (stats is None or skin in unlocked_skin_ids(stats.data)) else "classic"      # 잠긴 스킨(전적 초기화 등)은 기본으로
+        self.renderer.block_skin = skin if (stats is None or skin in unlocked_skin_ids(stats.data)) else "crown"      # 잠긴 스킨(전적 초기화 등)은 기본으로
         self.renderer.skyline = bool(self.settings.get("board_skyline", False))      # 지형 윤곽선 (기본 꺼짐)
         boost = 2 if self.settings.get("text_size") == "large" else 0
         self.renderer.set_text_boost(boost)
@@ -346,6 +346,7 @@ class CoreMixin:
 
     def start_game(self, mode="SOLO", total_players=100, initial_players=None, practice=False, daily=None, weekly=None, brief=True, quick=False):
         """practice=True: 연습 모드(혼자, 전적 없음). daily="YYYYMMDD": 오늘의 도전(같은 날은 같은 블록 순서/상대 구성, 100인 혼합 난이도 배틀로얄)"""
+        self._grace_from_first_frame = True
         self._long_frame_grace_until = time.time() + self.LONG_FRAME_GRACE      # 시작 직후 첫 장면 준비로 프레임이 길어져도 일시정지하지 않음
         self._end_text(commit=False)
         self.rebinding_action = None                     # 화면이 바뀌면 키 바인딩 대기/규칙 창을 닫음 (켜진 채 남으면 M/F1 키가 먹통)

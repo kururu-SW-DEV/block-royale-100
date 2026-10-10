@@ -44,7 +44,7 @@ class RulesMixin:
             return
         self.rules_open = True
         self._clear_input_state()
-        if self._auto_pause_solo():                      # 혼자 하는 경기는 규칙을 읽는 동안 멈춤
+        if self._auto_pause_solo("규칙 카드"):                  # 혼자 하는 경기는 규칙을 읽는 동안 멈춤
             self._paused_by_rules = True                 # 규칙 카드가 멈춘 것: 닫으면 다시 이어서 진행
         self.sound_mgr.play('move')
 

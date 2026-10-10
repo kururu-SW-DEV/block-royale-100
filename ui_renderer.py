@@ -511,7 +511,8 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
         surf = self.text_cache.get(key)
         if surf is None:
             if len(self.text_cache) > 800:
-                self.text_cache.clear()
+                for k_ in list(self.text_cache)[:250]:           # 통째로 비우지 않고 오래된 것부터 덜어 냄 (HUD 글자가 한꺼번에 다시 그려져 끊기는 것 방지)
+                    del self.text_cache[k_]
             if self.pad_ui and isinstance(text, str) and ("ESC" in text or "Esc" in text or "Enter" in text or "Space" in text or "PgUp" in text):
                 from gamepad import padify
                 from i18n import tr
@@ -2446,6 +2447,8 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
             return
         if not getattr(match, "attacks_enabled", True) or len(match.players) - 1 < self.SPOTLIGHT_MIN_OTHERS:
             return
+        if getattr(match, "race_ghost", None) is not None:
+            return                                                   # 고스트 레이스 칸이 같은 자리를 쓰므로 겹치지 않게 주시 대상은 생략
         y0 = self.main_board_y + 114 + getattr(self, "_stats_h", 200) + 118 + oy
         h = self.main_board_y + self.main_board_h + oy - y0          # 보드 아래의 조작 키 안내 줄과 겹치지 않게 보드 아래쪽 끝까지만
         if h < 126:
@@ -2455,12 +2458,13 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
             return
         rect = pygame.Rect(self._left_x(ox), y0, 108, min(h, 140))
         self._panel(rect)
+        th_ = self.font_tiny.get_height()                            # 글자 '크게'에서도 제목/라벨/이름이 겹치지 않게 글꼴 높이로 배치
         self._draw_text("주시 대상", self.font_tiny, C_ACCENT, rect.centerx, rect.y + 4, "midtop")
         cw, chh = 40, 80
         gap = 4
         total = len(picks) * cw + (len(picks) - 1) * gap
         x = rect.x + (rect.w - total) // 2
-        cy0 = rect.y + 32
+        cy0 = rect.y + 4 + th_ * 2 + 4
         for pid, label, col in picks:
             p = match.players[pid]
             card = pygame.Rect(x, cy0, cw, chh)
@@ -2479,7 +2483,7 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
             while len(shown) > 2 and self.font_tiny.size(shown)[0] > 40:          # 이웃 카드의 이름과 겹치지 않는 폭 안에서 최대한 길게
                 shown = shown[:-1]
             self._draw_text(shown, self.font_tiny, C_TEXT, x + cw // 2, card.bottom + 2, "midtop")
-            self._draw_text(label, self.font_tiny, col, x + cw // 2, card.y - 13, "midtop")
+            self._draw_text(label, self.font_tiny, col, x + cw // 2, card.y - th_ - 1, "midtop")
             x += cw + gap
 
     def _render_opponent_card(self, match, pid, x, y, w, h, colors):
@@ -2633,6 +2637,7 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
             if pp["is_alive"] and q != match.local_player_id and match.badge_points(q) > leader_ko:
                 leader_id, leader_ko = q, match.badge_points(q)                  # 왕관은 열기 점수(K.O. + 흡수분)가 가장 높은 상대: BADGES 조준 모드가 노리는 상대와 같게
 
+        hover_tags = []
         for idx, (pid, p) in enumerate(player_list):
             r, c = divmod(idx, cols)
             bx = ox + c * slot_w + (slot_w - (bw + strip_w + (4 if strip_w else 0))) / 2
@@ -2798,11 +2803,8 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
             if is_alive and cg and len(cg) == BOARD_HEIGHT:
                 cp = ccp
                 self._blit_mini_cells(pid, cgt, cbx, cby, ccp * BOARD_WIDTH, ccp * BOARD_HEIGHT, cp)
-                if silhouette:                                   # 선택적 흐림: 지금 신경 쓸 상대가 아닌 카드는 어둡게 눌러 눈에 덜 띄게 (집중 보기)
-                    sw_, sh_ = board_rect.w, board_rect.h
-                    self._blit_overlay(("mini_blur", sw_, sh_), (sw_, sh_), lambda surf: surf.fill((8, 10, 20, 120)), (board_rect.x, board_rect.y))
             cpiece = p.get("cpiece")
-            if detailed and is_alive and cpiece and cg and len(cg) == BOARD_HEIGHT:
+            if detailed and is_alive and cpiece and cg and len(cg) == BOARD_HEIGHT and not silhouette:      # 흐린 카드는 조작 블록/착지 위치를 계산하지 않음
                 # 조작 중인 블록도 표시 (고정된 블록보다 밝게)
                 ptype, prot, px, py = cpiece
                 cells = [(px + dx, py + dy) for dx, dy in TETROMINOES[ptype][prot % 4]]
@@ -2919,9 +2921,15 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
                 gw = 2 if bw < 46 else 3
                 CANVAS.display.fill((255, 84, 94) if ig >= 4 else (255, 165, 70), CANVAS.rect_f(cbx + 1, cby + ccp * BOARD_HEIGHT - gh - 1, gw, gh))
 
+            if silhouette and board_rect.collidepoint(pygame.mouse.get_pos()):        # 접근성: 이름표가 없는 흐린 카드는 마우스를 올리면 이름을 보여 줌 (클릭 조준 때 누구인지 알 수 있게)
+                hv_name = p["name"][:12]
+                hv = self._text(hv_name, self.font_tiny, (235, 240, 255))
+                hr = pygame.Rect(board_rect.x, board_rect.y - hv.get_height() - 4, hv.get_width() + 8, hv.get_height() + 2)
+                hr.x = max(2, min(hr.x, self.width - hr.w - 2))
+                hover_tags.append((hr, hv))
             if silhouette:
                 self._blit_overlay(("mini_dim", board_rect.w, board_rect.h), (board_rect.w, board_rect.h),
-                                   lambda surf: surf.fill((9, 11, 20, 255)), board_rect.topleft, alpha=96)      # 신호 대 잡음: 지금 신경 쓸 필요 없는 카드는 한 단계 어둡게
+                                   lambda surf: surf.fill((9, 11, 20, 255)), board_rect.topleft, alpha=170)      # 선택적 흐림(신호 대 잡음): 지금 신경 쓸 필요 없는 카드는 한 번에 눌러 어둡게 (예전의 두 겹 오버레이를 한 장으로 합침)
 
             if is_flashing:
                 a = max(0, min(255, int(220 * (1.0 - flash_age / 0.22))))
@@ -2965,6 +2973,9 @@ class UIRenderer(GlowMixin, GlowBgMixin, GlowSceneMixin, ResultsMixin):
                                                        id(self.font_tiny if bw < 90 else self.font_small)),
                                       board_rect.right + 2, board_rect.y - 3, strip_w + 6, bh + 6, draw_strip,
                                       lkey=(board_rect.w, board_rect.h, strip_w, bw, p.get("hold"), nxt_key, id(self.font_tiny if bw < 90 else self.font_small)))
+        for hr_, hv_ in hover_tags:                                  # 흐린 카드 위에 마우스를 올렸을 때의 이름 (다른 카드에 가리지 않게 마지막에)
+            self._panel(hr_, border=(90, 110, 160), bg=(14, 18, 34), radius=3, alpha=240, border_w=1)
+            self.screen.blit(hv_, (hr_.x + 4, hr_.y + 1))
 
     # ---------------------------------------------------------------- 블록 반응 연출 (v1.1.7)
     SETTLE_SECS = 0.14          # 줄 제거 뒤 위 블록이 내려앉는 시간

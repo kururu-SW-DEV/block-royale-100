@@ -194,6 +194,38 @@ def test_grace_keeps_held_keys_and_auto_pause_reason_is_logged():
     assert app._long_frame_grace_until > time.time() + 3, "브리핑을 닫을 때도 유예"
 
 
+def test_heat_bonus_uses_carry_not_ceil_and_protocol_was_bumped():
+    from block_engine import BlockEngine as TetrisEngine
+    import inspect
+    import network
+    import battle_royale
+    assert network.PROTOCOL_VERSION >= 4, "열기 수치가 바뀌어 옛 버전과는 같은 방에 못 들어오게"
+    assert battle_royale.BattleRoyaleMatch.BOT_BADGE_CAP == 0.4
+    src = inspect.getsource(TetrisEngine)
+    assert "badge_carry" in src and "math.ceil(attack_lines * self.badge_rate)" not in src
+
+
+def test_first_run_defaults_apply_before_first_frame_and_reset_keeps_crown():
+    import tempfile
+    import pygame
+    import main as M
+    import settings_manager as SM
+    from gfx import CANVAS
+    os.environ["BR_DATA_DIR"] = tempfile.mkdtemp()
+    pygame.display.set_mode((1366, 768))
+    CANVAS.attach(pygame.display.get_surface())
+    app = M.BlockRoyaleApp()
+    app.screen = CANVAS
+    app.settings.set("onboard_done", False, autosave=False)             # 처음 설치한 상태를 흉내 (데이터 폴더는 import 때 정해져 이 테스트에서 바꿀 수 없음)
+    app.settings.set("block_skin", "classic", autosave=False)
+    app.stats_mgr.data["total_games"] = 0
+    app.stats_mgr.data.setdefault("survival", {})["total_games"] = 0
+    app._apply_first_run_defaults()
+    app.apply_visual_options()
+    assert app.renderer.block_skin == "crown", "처음 설치한 사람은 왕관석"
+    assert SM.DEFAULT_SETTINGS["block_skin"] == "crown"
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

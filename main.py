@@ -155,6 +155,7 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
         # 전적 및 설정 탭 관리
         self.stats_mgr = StatsManager()
         self._apply_first_run_defaults()
+        self.apply_visual_options()          # 첫 실행 기본값(왕관석 스킨, 스팀덱 글자 크게)과 메뉴 작은 글씨 크기를 이 시점에 다시 적용 (위의 첫 호출은 그 설정이 준비되기 전)
         self.match_recorded = False
         self.match_start_time = 0.0
         self.records_buttons = {}
@@ -235,9 +236,8 @@ class BlockRoyaleApp(CoreMixin, GameMixin, SettingsMixin, RecordsMixin, WidgetsM
     LONG_FRAME_GRACE = 6.0               # 경기를 막 시작한 뒤 이 시간(초) 동안은 긴 프레임을 '창이 멈춘 것'으로 보지 않음 (첫 장면 준비로 느린 PC/Steam Deck에서 시작하자마자 일시정지되던 것)
 
     def _on_long_frame(self, raw_dt):
-        in_grace = time.time() < getattr(self, "_long_frame_grace_until", 0.0)
-        if in_grace and raw_dt >= self.LONG_FRAME_PAUSE:
-            return                                       # 게임이 스스로 배경/스프라이트를 준비하느라 느린 프레임: 눌러 둔 키도, 일시정지도 건드리지 않음
+        if time.time() < getattr(self, "_long_frame_grace_until", 0.0):
+            return                                       # 경기 시작 직후: 게임이 스스로 배경/스프라이트를 준비하느라 느린 프레임(0.1초대도 포함): 눌러 둔 키도, 일시정지도 건드리지 않음
         self._clear_input_state()
         if raw_dt >= self.LONG_FRAME_PAUSE:
             self._auto_pause_solo(f"긴 프레임 {raw_dt:.2f}초")

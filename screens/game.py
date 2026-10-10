@@ -602,6 +602,9 @@ class GameMixin:
         """게임 화면 한 프레임: 업데이트 후 렌더링. 업데이트 중 대기실/메뉴로 전환되면(match 없음) 렌더링하지 않음."""
         # 프레임이 느려지면(평균 25ms 초과) 나와 무관한 봇끼리의 공격 연출을 생략해 조작이 느려지지 않게 함 (다시 빨라지면 복귀)
         self._frame_dt = min(dt, 0.1)
+        if getattr(self, "_grace_from_first_frame", False):        # 유예는 봇/리플레이 준비가 끝나고 첫 프레임이 돌 때부터 센다
+            self._grace_from_first_frame = False
+            self._long_frame_grace_until = time.time() + self.LONG_FRAME_GRACE
         self._dt_ema = getattr(self, "_dt_ema", 1 / 60) * 0.9 + min(dt, 0.25) * 0.1
         if self.match is not None:
             self.match.fx_low = self._dt_ema > 1 / 38 or (self.match.fx_low and self._dt_ema > 1 / 48)

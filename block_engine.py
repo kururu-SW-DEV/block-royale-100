@@ -74,6 +74,7 @@ class BlockEngine:
         self.b2b_chain = 0              # B2B 보너스를 연속으로 받은 횟수 (표시용: B2B x2, x3 ...)
         self.last_move_was_rotation = False  # T-스핀 판정용 회전 플래그
         self.last_kick_index = 0        # 마지막 회전에서 사용된 킥 인덱스 (T-스핀 Mini 판정용)
+        self.badge_carry = 0.0          # 열기 증폭에서 아직 줄로 못 바꾼 소수 부분
         self.badge_rate = 0.0           # 열기 공격력 증폭률 (상쇄 이전에 적용)
         self.last_clear_info = None     # 직전 클리어 상세 (T-Spin, B2B, 행 인덱스 등)
         self.cleared_row_indices = []   # 라인 클리어 시각 이펙트용 행 목록
@@ -396,7 +397,12 @@ class BlockEngine:
 
             # 열기 증폭은 상쇄 이전에 적용 (증폭된 공격력으로 들어오는 쓰레기를 상쇄)
             if self.badge_rate > 0:
-                attack_lines += int(math.ceil(attack_lines * self.badge_rate))
+                exact = attack_lines * self.badge_rate + self.badge_carry          # 올림 대신 소수 누적: +20%가 1줄 공격에서 +100%가 되거나, 작은 공격에서 +20%/+40%가 똑같이 +1줄이 되지 않게 평균이 표시 수치와 맞음
+                bonus = int(exact)
+                self.badge_carry = exact - bonus
+                attack_lines += bonus
+            else:
+                self.badge_carry = 0.0
 
             self.attack_generated_total += attack_lines    # 상쇄로 사라지는 몫도 APM에는 그대로 반영 (수비만 하느라 APM이 0에 묶이지 않게)
 
